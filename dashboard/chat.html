@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>ESP32 对话测试</title>
+  <link rel="icon" href="data:,">
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; background: #f2f3f5; color: #202124; font-family: "Microsoft YaHei", sans-serif; }
+    main { width: min(900px, calc(100% - 28px)); margin: 24px auto; }
+    h1 { margin: 18px 0 8px; font-size: 25px; }
+    a { color: #235b94; }
+    .hint, .meta { color: #666; font-size: 13px; line-height: 1.7; }
+    .toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin: 20px 0; }
+    select { max-width: 100%; padding: 7px; border: 1px solid #ccc; border-radius: 4px; }
+    #status { font-size: 13px; color: #16794b; }
+    #status.error { color: #b42318; }
+    #empty { padding: 48px 20px; border: 1px dashed #ccc; text-align: center; background: white; line-height: 1.8; }
+    article { margin: 12px 0; padding: 14px 18px; border: 1px solid #d9dce1; border-left: 4px solid #4382b8; border-radius: 5px; background: white; }
+    article.assistant { border-left-color: #329367; }
+    article strong { font-size: 14px; }
+    .text { margin-top: 8px; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.7; }
+    .meta { overflow-wrap: anywhere; }
+  </style>
+</head>
+<body>
+<main>
+  <a href="/">← 基础监控</a>
+  <h1>ESP32 对话测试</h1>
+  <div class="hint">对 ESP32 说话后，在这里查看识别文字与机器人回复。回复按语音句子显示。</div>
+  <div class="hint">仅保留网页服务启动以来最近 200 条消息，重启后清空。此页面不发送消息，也不单独调用模型。</div>
+  <div class="toolbar">
+    <label for="device">设备</label><select id="device"><option value="">全部设备</option></select>
+    <span id="status" role="status">正在连接网页服务……</span>
+  </div>
+  <div id="empty">暂时没有对话消息。<br>请启动小智服务，并对已连接的 ESP32 说一句话。</div>
+  <section id="messages" aria-label="对话消息"></section>
+</main>
+<script>
+  const messages = document.getElementById('messages');
+  const empty = document.getElementById('empty');
+  const status = document.getElementById('status');
+  const device = document.getElementById('device');
+  let records = [], signature = '';
+  function render() {
+    const shown = records.filter(m => !device.value || m.device_id === device.value);
+    const next = device.value + ':' + shown.map(m => m.id).join(',');
+    if (next === signature) return;
+    signature = next;
+    const fragment = document.createDocumentFragment();
+    for (const m of shown) {
+      const row = document.createElement('article'); row.className = m.role;
+      const title = document.createElement('strong'); title.textContent = m.role === 'user' ? '用户' : '机器人';
+      const meta = document.createElement('div'); meta.className = 'meta';
+      const when = new Date(m.received_at);
+      meta.textContent = when.toLocaleTimeString('zh-CN') + ' · ' + m.device_id;
+      const text = document.createElement('div'); text.className = 'text'; text.textContent = m.text;
+      row.append(title, meta, text); fragment.append(row);
+    }
+    messages.replaceChildren(fragment); empty.hidden = shown.length > 0;
+  }
+  device.addEventListener('change', render);
+  async function poll() {
+    try {
+      const response = await fetch('/api/dialogue/messages', {cache: 'no-store', signal: AbortSignal.timeout(5000)});
+      if (!response.ok) throw new Error('HTTP ' + response.status);
+      const data = await response.json(); records = data.messages;
+      const selected = device.value;
+      device.replaceChildren(new Option('全部设备', ''));
+      for (const id of new Set(records.map(m => m.device_id))) device.add(new Option(id, id));
+      device.value = [...device.options].some(o => o.value === selected) ? selected : '';
+      render(); status.className = '';
+      status.textContent = '网页服务已连接 · 已收到 ' + records.length + ' 条消息';
+    } catch (_) {
+      status.className = 'error'; status.textContent = '无法读取消息，请确认网页服务正在运行，并使用本机地址打开';
+    } finally { setTimeout(poll, 1000); }
+  }
+  poll();
+</script>
+</body>
+</html>

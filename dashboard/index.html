@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>幼儿巡护监控</title>
+  <link rel="icon" href="data:,">
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; background: #f2f3f5; color: #202124; font-family: "Microsoft YaHei", sans-serif; }
+    main { width: min(1100px, calc(100% - 28px)); margin: 24px auto; }
+    h1 { margin: 0 0 6px; font-size: 25px; }
+    .sub { margin-bottom: 18px; color: #777; font-size: 13px; }
+    .layout { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(300px, .75fr); gap: 14px; }
+    .box { overflow: hidden; border: 1px solid #d9dce1; border-radius: 5px; background: white; }
+    .title { padding: 11px 14px; border-bottom: 1px solid #e3e5e8; font-weight: 700; }
+    .video { position: relative; min-height: 360px; aspect-ratio: 4 / 3; background: #111; }
+    .video img { display: block; width: 100%; height: 100%; object-fit: contain; }
+    .behavior { position: absolute; left: 10px; right: 10px; bottom: 10px; padding: 9px 12px; background: rgba(0,0,0,.72); color: #65d997; }
+    .behavior.alert { color: #ff6868; font-weight: 700; }
+    .sensors { display: grid; grid-template-columns: 1fr 1fr; }
+    .sensor { min-height: 104px; padding: 13px; border-right: 1px solid #eceef1; border-bottom: 1px solid #eceef1; }
+    .sensor:nth-child(even) { border-right: 0; }
+    .label { color: #777; font-size: 13px; }
+    .value { margin-top: 12px; font-size: 25px; font-weight: 700; }
+    .unit { margin-left: 3px; color: #777; font-size: 12px; font-weight: 400; }
+    .connection { grid-column: 1 / -1; padding: 12px 14px; border-top: 1px solid #e3e5e8; background: #fafafa; color: #666; font-size: 13px; }
+    .connection.ok { color: #16794b; }
+    .error { color: #c2362b; }
+    @media (max-width: 760px) { .layout { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>幼儿巡护监控</h1>
+    <div class="sub">第一版：集中显示摄像头画面和传感器数据</div>
+    <p><a href="/chat">打开对话测试页（服务电脑本机）</a></p>
+    <section class="layout">
+      <div class="box">
+        <div class="title">RDK X5 监控画面</div>
+        <div class="video">
+          <img src="/api/rdk/video_feed" alt="RDK 实时画面">
+          <div class="behavior" id="behavior">正在读取行为识别状态……</div>
+        </div>
+      </div>
+      <div class="box">
+        <div class="title">STM32 传感器数据</div>
+        <div class="sensors">
+          <div class="sensor"><div class="label">红外目标温度</div><div class="value"><span id="mlxObj">--</span><span class="unit">℃</span></div></div>
+          <div class="sensor"><div class="label">环境温度</div><div class="value"><span id="shtT">--</span><span class="unit">℃</span></div></div>
+          <div class="sensor"><div class="label">环境湿度</div><div class="value"><span id="shtH">--</span><span class="unit">%</span></div></div>
+          <div class="sensor"><div class="label">eCO₂</div><div class="value"><span id="eco2">--</span><span class="unit">ppm</span></div></div>
+          <div class="sensor"><div class="label">TVOC</div><div class="value"><span id="tvoc">--</span><span class="unit">ppb</span></div></div>
+          <div class="sensor"><div class="label">红外环境温度</div><div class="value"><span id="mlxAmb">--</span><span class="unit">℃</span></div></div>
+        </div>
+        <div class="connection" id="connection">正在连接 RDK 与 STM32……</div>
+      </div>
+    </section>
+  </main>
+  <script>
+    const byId = id => document.getElementById(id);
+
+    function display(id, value, digits = 0) {
+      if (value === null || value === undefined || value === "" || !Number.isFinite(Number(value))) {
+        byId(id).textContent = "--";
+        return;
+      }
+      byId(id).textContent = Number(value).toFixed(digits);
+    }
+
+    async function json(url) {
+      const response = await fetch(url, { cache: "no-store" });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || data.error || `HTTP ${response.status}`);
+      return data;
+    }
+
+    async function refreshStatus() {
+      const target = byId("behavior");
+      try {
+        const data = await json("/api/rdk/status");
+        target.className = "behavior";
+        if (data.alert_type === "fall") {
+          target.textContent = "检测到人员摔倒";
+          target.classList.add("alert");
+        } else if (data.alert_type === "fight") {
+          target.textContent = "检测到打架斗殴";
+          target.classList.add("alert");
+        } else {
+          target.textContent = "行为识别正常";
+        }
+      } catch (error) {
+        target.textContent = `行为状态读取失败：${error.message}`;
+        target.className = "behavior alert";
+      }
+    }
+
+    async function refreshSensors() {
+      const target = byId("connection");
+      try {
+        const data = await json("/api/rdk/sensors");
+        const values = data.properties || {};
+        display("mlxObj", values.mlx_obj, 1);
+        display("mlxAmb", values.mlx_amb, 1);
+        display("shtT", values.sht_t, 1);
+        display("shtH", values.sht_h, 1);
+        display("eco2", values.eco2, 0);
+        display("tvoc", values.tvoc, 0);
+        target.className = data.connected ? "connection ok" : "connection error";
+        target.textContent = data.connected ? "RDK 已连接，STM32 传感器串口在线" : "RDK 已连接，但 STM32 传感器串口未连接";
+      } catch (error) {
+        ["mlxObj", "mlxAmb", "shtT", "shtH", "eco2", "tvoc"].forEach(id => byId(id).textContent = "--");
+        target.className = "connection error";
+        target.textContent = `连接失败：${error.message}`;
+      }
+    }
+
+    refreshStatus();
+    refreshSensors();
+    setInterval(refreshStatus, 800);
+    setInterval(refreshSensors, 1000);
+  </script>
+</body>
+</html>

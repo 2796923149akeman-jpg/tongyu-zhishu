@@ -1,0 +1,34 @@
+server:
+  websocket: ws://192.168.43.236:8000/xiaozhi/v1/
+  auth:
+    enabled: false
+selected_module:
+  VAD: SileroVAD
+  ASR: FunASR
+  LLM: DeepSeekLLM
+  VLLM: ChatGLMVLLM
+  TTS: EdgeTTS
+  Memory: nomem
+  Intent: nointent
+LLM:
+  DeepSeekLLM:
+    type: openai
+    model_name: deepseek-chat
+    url: https://api.deepseek.com
+    api_key: ''
+ASR:
+  FunASR:
+    language: zh
+prompt: '你是一个温柔、耐心、适合幼儿园小朋友的陪伴机器人。
+
+  你说话要简短、亲切、自然，像幼儿园老师一样鼓励孩子表达。
+
+  当孩子开心时，你要积极回应并鼓励分享。
+
+  当孩子难过、生气、害怕、焦虑或想家时，先安抚情绪，再用简单问题引导孩子说出原因。
+
+  不要做医学诊断，不要吓唬孩子，不要给出危险建议。
+
+  如果孩子表达疼痛、受伤、强烈害怕、伤害自己或他人的想法，要温和建议马上找老师或家长帮忙。
+
+  '

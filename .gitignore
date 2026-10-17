@@ -1,0 +1,35 @@
+# Python / editor / environment
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.idea/
+.vscode/
+.env
+.env.*
+!.env.example
+*.log
+*.tmp
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Private configuration and business data; keep *.example.* files.
+/dashboard/model_config.json
+/dashboard/messages.json
+/dashboard/events.json
+/dashboard/conversation_summaries.json
+/dashboard/.model-config-*
+
+# Device-local files, model downloads, generated audio and firmware.
+/xiaozhi-server/data/
+/xiaozhi-server/models/
+/xiaozhi-server/tmp/
+/xiaozhi-server/music/
+/xiaozhi-server/audio_ref/
+/xiaozhi-server/config/assets/wakeup_words/
+/xiaozhi-server/.config.yaml
+/xiaozhi-server/.secrets.yaml
+/xiaozhi-server/.private_config.yaml
+/output/
+

@@ -1,0 +1,2 @@
+-r xiaozhi-server/requirements.txt
+# dashboard uses Python standard library only.

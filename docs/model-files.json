@@ -1,0 +1,78 @@
+[
+  {
+    "path": "SenseVoiceSmall/chn_jpn_yue_eng_ko_spectok.bpe.model",
+    "bytes": 377341
+  },
+  {
+    "path": "SenseVoiceSmall/config.yaml",
+    "bytes": 1952
+  },
+  {
+    "path": "SenseVoiceSmall/configuration.json",
+    "bytes": 409
+  },
+  {
+    "path": "SenseVoiceSmall/demo.py",
+    "bytes": 616
+  },
+  {
+    "path": "SenseVoiceSmall/example/en.mp3",
+    "bytes": 57441
+  },
+  {
+    "path": "SenseVoiceSmall/example/ja.mp3",
+    "bytes": 57837
+  },
+  {
+    "path": "SenseVoiceSmall/example/ko.mp3",
+    "bytes": 27909
+  },
+  {
+    "path": "SenseVoiceSmall/example/yue.mp3",
+    "bytes": 31246
+  },
+  {
+    "path": "SenseVoiceSmall/example/zh.mp3",
+    "bytes": 44973
+  },
+  {
+    "path": "SenseVoiceSmall/model.pt",
+    "bytes": 936291369
+  },
+  {
+    "path": "snakers4_silero-vad/hubconf.py",
+    "bytes": 2048
+  },
+  {
+    "path": "snakers4_silero-vad/src/silero_vad/__init__.py",
+    "bytes": 399
+  },
+  {
+    "path": "snakers4_silero-vad/src/silero_vad/data/__init__.py",
+    "bytes": 0
+  },
+  {
+    "path": "snakers4_silero-vad/src/silero_vad/data/silero_vad.jit",
+    "bytes": 2269612
+  },
+  {
+    "path": "snakers4_silero-vad/src/silero_vad/data/silero_vad.onnx",
+    "bytes": 2327524
+  },
+  {
+    "path": "snakers4_silero-vad/src/silero_vad/data/silero_vad_16k_op15.onnx",
+    "bytes": 1289603
+  },
+  {
+    "path": "snakers4_silero-vad/src/silero_vad/data/silero_vad_half.onnx",
+    "bytes": 1280395
+  },
+  {
+    "path": "snakers4_silero-vad/src/silero_vad/model.py",
+    "bytes": 1178
+  },
+  {
+    "path": "snakers4_silero-vad/src/silero_vad/utils_vad.py",
+    "bytes": 19949
+  }
+]
