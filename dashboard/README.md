@@ -2,17 +2,17 @@
 
 该版本作为课程项目的 Git 历史起点，完成电脑端对 RDK 真实数据的集中显示，并增加一个只读 ESP32 对话测试页。
 
-## 数据链路
+## 数据接口
 
 - 画面：RDK `web_fall.py` 的 `/video_feed`
 - 行为状态：RDK `web_fall.py` 的 `/alert_status`
 - 温度和环境数据：RDK `web_fall.py` 的 `/api/iot_payload`
 
-页面没有模拟温度或空气质量数据。RDK 或 STM32 未连接时显示 `--` 和错误状态。
+页面不生成模拟温度或空气质量数据；接口缺失的数值显示为 `--`，接口异常通过页面状态栏提示。
 
 ## 运行
 
-先在 RDK 启动 `web_fall.py`。电脑与 RDK 连接同一网络后，在 Windows 终端运行：
+配置上游数据接口地址后，在 Windows 终端运行：
 
 ```bat
 cd /d D:\ESP32\tongyu-zhishu-v1\dashboard
