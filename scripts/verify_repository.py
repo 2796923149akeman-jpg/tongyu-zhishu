@@ -11,10 +11,13 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def verify(root=ROOT):
     root = Path(root).resolve()
-    git_root = Path(subprocess.check_output(["git", "-C", str(root), "rev-parse", "--show-toplevel"], text=True).strip()).resolve()
+    # Trust only this explicit checkout for these read-only audit commands.
+    # This avoids global configuration changes when a sandbox created the copy.
+    git = ["git", "-c", "safe.directory=" + root.as_posix(), "-C", str(root)]
+    git_root = Path(subprocess.check_output(git + ["rev-parse", "--show-toplevel"], text=True).strip()).resolve()
     if git_root != root:
         raise RuntimeError("This directory must have its own Git repository")
-    raw = subprocess.check_output(["git", "-C", str(root), "ls-files", "--cached", "--others", "--exclude-standard", "-z"])
+    raw = subprocess.check_output(git + ["ls-files", "--cached", "--others", "--exclude-standard", "-z"])
     candidates = sorted(set(filter(None, raw.decode("utf-8").split("\0"))))
     errors = []
     total = 0

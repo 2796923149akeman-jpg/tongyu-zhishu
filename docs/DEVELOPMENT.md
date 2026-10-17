@@ -32,3 +32,16 @@ git push -u origin feat/your-task
 提交记录只从实际提交开始积累。已完成的旧工作在初始提交说明中承认是导入成果，不倒填日期或伪造过去逐步开发的记录。GitHub 的 Commits 页面可查看每条提交的时间、作者与文件差异；文件 History 可看单文件变化。这里是协作约定，尚未配置强制分支保护。
 
 密钥只填本机 `xiaozhi-server/data/.config.yaml`。不强制添加被忽略的配置、模型、音频缓存或日志；不把密钥粘贴到 Issue、PR 或提交消息中。
+
+## 当前电脑的目录所有者提示
+
+本机副本由隔离环境创建。如果 Git 提示 `detected dubious ownership`，可在每条命令中指定此工程的安全路径，不修改全局信任设置。例如：
+
+```bat
+git -c safe.directory=D:/ESP32/tongyu-zhishu-v1 status
+git -c safe.directory=D:/ESP32/tongyu-zhishu-v1 add dashboard/chat.html
+git -c safe.directory=D:/ESP32/tongyu-zhishu-v1 commit -m "fix: improve dialogue display"
+git -c safe.directory=D:/ESP32/tongyu-zhishu-v1 push
+```
+
+上面的文件名和提交说明仅为格式示例，应替换为实际任务。队友在自己的电脑克隆的新目录通常不需要这个选项。检查脚本已对自身路径采用单次命令配置。
