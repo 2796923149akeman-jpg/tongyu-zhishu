@@ -2,6 +2,24 @@
 
 默认服务地址为 `http://127.0.0.1:8088`。响应 JSON 使用 UTF-8，动态接口均返回 `Cache-Control: no-store`。
 
+## 接口来源与验证说明
+
+本文档同时区分两层地址：
+
+- **设备侧上游接口**：RDK、STM32 和小智服务实际提供数据的地址，例如 RDK 的 `/video_feed`、`/alert_status` 和 `/api/iot_payload`。
+- **V1 网页接口**：浏览器访问 Dashboard 的同源地址，例如 `/api/rdk/video_feed`、`/api/rdk/status`、`/api/rdk/sensors` 和 `/api/dialogue/messages`。
+
+团队此前使用实际设备完成过联调，已确认：
+
+1. RDK 视频流可以从 `/video_feed` 传到服务端并供网页显示。
+2. 行为状态可以从 `/alert_status` 接收，`alert_type` 能够传递 `fall`、`fight` 及正常状态。
+3. STM32 数据可以从 `/api/iot_payload` 接收，已使用的字段包括 `connected`、`properties.mlx_obj`、`mlx_amb`、`sht_t`、`sht_h`、`eco2` 和 `tvoc`。
+4. ESP32 可以连接小智语音服务，对话中的用户识别文字与助手回复可以转发到 Dashboard。
+
+上述联调确认的是传输链路、接收过程和字段解析，不是传感器测量精度或行为识别准确率测试。本仓库当前隔离测试通过模拟上游响应验证 V1 的代理和消息接口；硬件端程序、算法和实际测量精度不在该自动化测试范围内。
+
+下文列出的路由均为 V1 当前已经实现的接口。异常事件、学生名单、测温记录和日报等后续接口，只有在实现、测试并补充到本文档后才属于正式接口。
+
 ## 网页与服务状态
 
 ### `GET /`
@@ -10,7 +28,7 @@
 
 ### `GET /chat`
 
-返回对话测试页面。此页面及其消息读取接口只允许从服务电脑的 `localhost`、`127.0.0.1` 或 `::1` 访问。
+返回只读的对话记录页面。此页面、消息接口和界面配置接口只允许从服务电脑的 `localhost`、`127.0.0.1` 或 `::1` 访问。
 
 ### `GET /health`
 
@@ -127,7 +145,30 @@
 }
 ```
 
-消息仅保存在内存中，网页服务重启后清空。
+服务保留最近 200 条消息，并原子写入 `dashboard/dialogue_messages.json`。该运行时文件已由 Git 忽略；服务重启后会重新加载其中的记录。可通过环境变量 `DIALOGUE_DATA_FILE` 修改保存位置。
+
+### `GET /api/dialogue/config`
+
+返回对话界面的展示设置：
+
+```json
+{
+  "config": {
+    "title": "陪伴对话记录",
+    "refresh_seconds": 2,
+    "page_size": 50,
+    "show_session_id": false,
+    "show_created_at": true,
+    "auto_scroll": true
+  }
+}
+```
+
+### `POST /api/dialogue/config`
+
+保存完整的界面设置对象。标题为 1～40 个字符；刷新间隔可选 `1`、`2`、`3`、`5`、`10` 秒；显示数量可选 `20`、`50`、`100`、`200`。三个显示开关必须为布尔值。配置使用原子写入保存到被 Git 忽略的 `dashboard/dialogue_config.json`，也可通过环境变量 `DIALOGUE_CONFIG_FILE` 修改位置。
+
+示例默认值见 `dashboard/dialogue_config.example.json`。请求格式错误返回 HTTP `400`，保存失败返回 HTTP `500`。
 
 ## 通用错误
 
