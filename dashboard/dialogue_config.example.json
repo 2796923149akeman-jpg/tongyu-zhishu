@@ -1,0 +1,8 @@
+{
+  "title": "陪伴对话记录",
+  "refresh_seconds": 2,
+  "page_size": 50,
+  "show_session_id": false,
+  "show_created_at": true,
+  "auto_scroll": true
+}

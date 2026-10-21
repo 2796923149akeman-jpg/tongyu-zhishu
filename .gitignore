@@ -19,7 +19,11 @@ htmlcov/
 /dashboard/messages.json
 /dashboard/events.json
 /dashboard/conversation_summaries.json
+/dashboard/dialogue_config.json
+/dashboard/dialogue_messages.json
 /dashboard/.model-config-*
+/dashboard/.dialogue_config.json-*
+/dashboard/.dialogue_messages.json-*
 
 # Device-local files, model downloads, generated audio and firmware.
 /xiaozhi-server/data/
@@ -32,4 +36,3 @@ htmlcov/
 /xiaozhi-server/.secrets.yaml
 /xiaozhi-server/.private_config.yaml
 /output/
-

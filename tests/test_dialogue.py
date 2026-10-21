@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 import threading
 import time
+import tempfile
 from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, patch
@@ -25,6 +26,12 @@ def load(name, relative):
 class DialogueTests(unittest.TestCase):
     def setUp(self):
         self.web = load('test_dashboard', 'dashboard/server.py')
+        self.temp = tempfile.TemporaryDirectory()
+        self.web.DIALOGUE_DATA_FILE = Path(self.temp.name) / 'dialogue_messages.json'
+        self.web.DIALOGUE_CONFIG_FILE = Path(self.temp.name) / 'dialogue_config.json'
+        self.web.MESSAGES.clear()
+        self.web.DIALOGUE_CONFIG.clear()
+        self.web.DIALOGUE_CONFIG.update(self.web.DEFAULT_DIALOGUE_CONFIG)
         self.web.Handler.log_message = lambda *args: None
         self.http = self.web.ThreadingHTTPServer(('127.0.0.1', 0), self.web.Handler)
         self.thread = threading.Thread(target=self.http.serve_forever, daemon=True)
@@ -37,6 +44,7 @@ class DialogueTests(unittest.TestCase):
         self.http.shutdown()
         self.http.server_close()
         self.thread.join()
+        self.temp.cleanup()
 
     def request(self, path='/api/dialogue/messages', data=None, headers=None):
         hdr = {'Content-Type': 'application/json'}
@@ -53,7 +61,7 @@ class DialogueTests(unittest.TestCase):
         return dict(id=ident, role='user', text='你好', device_id='test-esp32', session_id='test-session', created_at='2026-10-17T00:00:00+00:00', **overrides)
 
     def test_monitor_and_chat_routes(self):
-        for path, marker in [('/', 'RDK X5'), ('/chat', 'ESP32 对话测试')]:
+        for path, marker in [('/', 'RDK X5'), ('/chat', '陪伴对话记录')]:
             status, body = self.request(path)
             self.assertEqual(status, 200)
             self.assertIn(marker, body)
@@ -61,6 +69,27 @@ class DialogueTests(unittest.TestCase):
         with patch.object(self.web, 'read_rdk_json', return_value={'temperature': 24.5}) as upstream:
             self.assertEqual(self.request('/api/rdk/sensors')[1], {'temperature': 24.5})
             upstream.assert_called_once_with('/api/iot_payload')
+
+    def test_dialogue_interface_config(self):
+        status, body = self.request('/api/dialogue/config')
+        self.assertEqual(status, 200)
+        self.assertEqual(body['config']['page_size'], 50)
+        configured = {
+            'title': '一班对话记录',
+            'refresh_seconds': 5,
+            'page_size': 20,
+            'show_session_id': True,
+            'show_created_at': False,
+            'auto_scroll': False,
+        }
+        status, body = self.request('/api/dialogue/config', configured)
+        self.assertEqual(status, 200)
+        self.assertEqual(body['config'], configured)
+        self.assertEqual(json.loads(self.web.DIALOGUE_CONFIG_FILE.read_text(encoding='utf-8')), configured)
+
+        invalid = configured | {'page_size': 21}
+        self.assertEqual(self.request('/api/dialogue/config', invalid)[0], 400)
+        self.assertEqual(self.request('/api/dialogue/config')[1]['config'], configured)
 
     def test_validation_and_unknown_routes(self):
         for payload in [{}, [], {'role': 'system'}, self.message() | {'text': ''}, self.message() | {'text': 'x'*8193}]:
@@ -83,6 +112,9 @@ class DialogueTests(unittest.TestCase):
         self.assertEqual(len(messages), 200)
         self.assertEqual(messages[0]['id'], '5')
         self.assertEqual(messages[-1]['id'], '204')
+        loaded = self.web.load_messages()
+        self.assertEqual(len(loaded), 200)
+        self.assertEqual(loaded[0]['id'], '5')
 
     def test_production_hooks_reach_http_in_order(self):
         # Compile the actual changed hooks without importing GPU/audio providers.
