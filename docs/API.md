@@ -138,7 +138,14 @@
       "device_id": "设备编号",
       "session_id": "会话编号",
       "created_at": "2026-10-17T10:00:01+00:00",
-      "received_at": "2026-10-17T10:00:01.100000+00:00"
+      "received_at": "2026-10-17T10:00:01.100000+00:00",
+      "emotion": {
+        "label": "happy",
+        "label_text": "开心",
+        "confidence": 0.86,
+        "attention": "none",
+        "source": "model+lexicon"
+      }
     }
   ],
   "limit": 200
@@ -146,6 +153,12 @@
 ```
 
 服务保留最近 200 条消息，并原子写入 `dashboard/dialogue_messages.json`。该运行时文件已由 Git 忽略；服务重启后会重新加载其中的记录。可通过环境变量 `DIALOGUE_DATA_FILE` 修改保存位置。
+
+`emotion.source` 可能为模型结合词库、纯词库或模型失败后的词库兜底。`attention` 取值为 `none`、`watch`、`urgent`，只表示文本线索的查看优先级。
+
+### `GET /api/dialogue/conversations`
+
+按“优先查看、建议留意、普通”的顺序返回会话卡片，包括标题、摘要、主导情绪、留意原因、消息数量和更新时间。模型总结未生成或不可用时返回本地简要摘要。
 
 ### `GET /api/dialogue/config`
 
@@ -169,6 +182,22 @@
 保存完整的界面设置对象。标题为 1～40 个字符；刷新间隔可选 `1`、`2`、`3`、`5`、`10` 秒；显示数量可选 `20`、`50`、`100`、`200`。三个显示开关必须为布尔值。配置使用原子写入保存到被 Git 忽略的 `dashboard/dialogue_config.json`，也可通过环境变量 `DIALOGUE_CONFIG_FILE` 修改位置。
 
 示例默认值见 `dashboard/dialogue_config.example.json`。请求格式错误返回 HTTP `400`，保存失败返回 HTTP `500`。
+
+## 智能分析接口
+
+### `GET /api/analysis/config`
+
+返回总结开关、情绪分析方式、模型来源和模型名称。密钥字段不会返回，只返回 `summary_api_key_set`、`emotion_api_key_set` 和 `xiaozhi_model_available`。
+
+### `POST /api/analysis/config`
+
+保存智能分析设置。总结模型可选 `xiaozhi` 或 `custom`；情绪模式可选 `model_fallback` 或 `lexicon`；情绪模型来源可选 `shared`、`xiaozhi` 或 `custom`。自定义模型只接受 HTTPS 地址，或本机 `localhost`/`127.0.0.1` 的 HTTP 地址。密钥保存在被 Git 忽略的 `dashboard/analysis_config.json`。
+
+### `POST /api/analysis/rebuild`
+
+请求体为 `{}`，返回 HTTP `202`，把现有消息的情绪分析和会话总结加入后台队列。后台分析不阻塞 ESP32 消息接收和语音链路。
+
+以上接口与对话页面一样，仅允许服务电脑本机同源访问。
 
 ## 通用错误
 

@@ -16,6 +16,7 @@ htmlcov/
 
 # Private configuration and business data; keep *.example.* files.
 /dashboard/model_config.json
+/dashboard/analysis_config.json
 /dashboard/messages.json
 /dashboard/events.json
 /dashboard/conversation_summaries.json

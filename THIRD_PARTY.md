@@ -6,6 +6,8 @@
 
 另有配置层调整：默认示例凭据清空；本机模型与儿童陪伴提示词提供脱敏模板；MCP 外部服务默认空；依赖清单中的 `pyyml` 替换为实际使用的 `PyYAML==6.0.3`。
 
-基础监控网页来自本机 `tongyu-zhishu/baseline-dashboard`，本次增加对话测试入口与消息接口。历史完整看板及其情绪分析、模型热更新等改动没有作为已完成能力导入本版。
+基础监控网页来自本机 `tongyu-zhishu/baseline-dashboard`，之后增加对话入口、情绪线索和会话总结。
+
+情绪类别设计参考 [cnsenti](https://github.com/hiDaDeng/cnsenti) 与 [cntext](https://github.com/hiDaDeng/cntext) 展示的中文情绪分类，两者代码仓库采用 MIT 许可证。本仓库没有复制其内置第三方大词典；`dashboard/emotion_lexicon.json` 的儿童日常词条由本项目独立整理，并在元数据中保留参考链接。
 
 模型权重与第三方 Python 依赖遵循各自许可，模型不随 Git 分发。团队新增代码的整体授权方式由团队决定；小智代码保留其原许可证。

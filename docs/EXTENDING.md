@@ -26,6 +26,10 @@
 
 对话页位于 `dashboard/chat.html`，当前每秒读取 `/api/dialogue/messages`。新增筛选或显示字段时，应使用 `textContent` 写入外部文本，避免把消息当作 HTML 解释。消息缓存由服务端 `deque(maxlen=200)` 管理。
 
+情绪词库位于 `dashboard/emotion_lexicon.json`。可在 `categories` 中补充日常表达，在 `attention.watch` 和 `attention.urgent` 中增加经过人工确认的留意短语。每次修改后运行 `python -m unittest discover -s tests -v`；词库命中只是提示人工核实，不应当被描述为诊断结论。
+
+模型调用、词库评分与会话总结位于 `dashboard/analysis.py`。模型异常必须回退到本地结果，任何模型或网络调用都不能放到 ESP32 消息接收线程中。
+
 若需要历史记录，应新建明确的数据存储模块，定义保存期限、并发写入、隐私字段和清理策略，而不是直接把当前内存队列写入 Git 跟踪文件。
 
 ## 调整对话消息转发

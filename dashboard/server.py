@@ -1,14 +1,15 @@
 """课程项目 V1：电脑端基础监控页面。
 
 RDK 运行 web_fall.py，本服务在电脑端把 RDK 的实时画面、行为状态和
-STM32 传感器数据转发到同一个简易网页，并提供只读的 ESP32 对话测试页。
-本页不调用大模型，不包含情绪分析、事件处置、名单或历史日志功能。
+STM32 传感器数据转发到同一个简易网页，并提供 ESP32 对话回顾页。
+对话页可在后台进行词库/模型情绪分析与会话总结，不影响设备语音链路。
 """
 
 from __future__ import annotations
 
 import json
 import os
+import queue
 import tempfile
 import threading
 from collections import deque
@@ -21,6 +22,16 @@ from urllib.parse import urlparse
 
 
 ROOT = Path(__file__).resolve().parent
+import sys
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from analysis import (
+    ATTENTION_ORDER, DEFAULT_ANALYSIS_CONFIG, analyze_emotion, analyze_lexicon,
+    load_lexicon, load_xiaozhi_model, local_conversation_summary,
+    public_analysis_config, summarize_conversation, validate_analysis_config,
+)
+
 HOST = os.environ.get("DASHBOARD_HOST", "0.0.0.0")
 PORT = int(os.environ.get("DASHBOARD_PORT", "8088"))
 RDK_BASE = os.environ.get("RDK_BASE", "http://192.168.43.54:5000").rstrip("/")
@@ -30,6 +41,15 @@ DIALOGUE_DATA_FILE = Path(
 )
 DIALOGUE_CONFIG_FILE = Path(
     os.environ.get("DIALOGUE_CONFIG_FILE", str(ROOT / "dialogue_config.json"))
+)
+ANALYSIS_CONFIG_FILE = Path(
+    os.environ.get("ANALYSIS_CONFIG_FILE", str(ROOT / "analysis_config.json"))
+)
+CONVERSATION_SUMMARIES_FILE = Path(
+    os.environ.get("CONVERSATION_SUMMARIES_FILE", str(ROOT / "conversation_summaries.json"))
+)
+EMOTION_LEXICON_FILE = Path(
+    os.environ.get("EMOTION_LEXICON_FILE", str(ROOT / "emotion_lexicon.json"))
 )
 DEFAULT_DIALOGUE_CONFIG = {
     "title": "陪伴对话记录",
@@ -41,6 +61,12 @@ DEFAULT_DIALOGUE_CONFIG = {
 }
 MESSAGES_LOCK = threading.Lock()
 DIALOGUE_CONFIG_LOCK = threading.Lock()
+ANALYSIS_CONFIG_LOCK = threading.Lock()
+SUMMARIES_LOCK = threading.Lock()
+ANALYSIS_QUEUE = queue.Queue(maxsize=512)
+ANALYSIS_WORKER_STARTED = False
+SUMMARY_TIMERS = {}
+SUMMARY_TIMERS_LOCK = threading.Lock()
 
 
 def read_json_file(path: Path, fallback):
@@ -107,8 +133,145 @@ def load_dialogue_config() -> dict:
         return DEFAULT_DIALOGUE_CONFIG.copy()
 
 
+def load_analysis_config() -> dict:
+    data = read_json_file(ANALYSIS_CONFIG_FILE, {})
+    try:
+        return validate_analysis_config(data)
+    except ValueError:
+        return DEFAULT_ANALYSIS_CONFIG.copy()
+
+
+def load_summaries() -> dict:
+    data = read_json_file(CONVERSATION_SUMMARIES_FILE, {})
+    return data if isinstance(data, dict) else {}
+
+
 MESSAGES = load_messages()
 DIALOGUE_CONFIG = load_dialogue_config()
+ANALYSIS_CONFIG = load_analysis_config()
+CONVERSATION_SUMMARIES = load_summaries()
+EMOTION_LEXICON = load_lexicon(EMOTION_LEXICON_FILE)
+
+
+def messages_for_session(session_id: str) -> list[dict]:
+    with MESSAGES_LOCK:
+        return [dict(item) for item in MESSAGES if item.get("session_id") == session_id]
+
+
+def conversation_items() -> list[dict]:
+    with MESSAGES_LOCK:
+        snapshot = [dict(item) for item in MESSAGES]
+    grouped = {}
+    for item in snapshot:
+        grouped.setdefault(item.get("session_id") or "unknown", []).append(item)
+    with SUMMARIES_LOCK:
+        saved = {key: dict(value) for key, value in CONVERSATION_SUMMARIES.items() if isinstance(value, dict)}
+    result = []
+    for session_id, messages in grouped.items():
+        local = local_conversation_summary(messages, session_id)
+        item = saved.get(session_id) if saved.get(session_id, {}).get("message_count") == len(messages) else local
+        item = dict(item)
+        item["last_message_at"] = messages[-1].get("received_at", messages[-1].get("created_at", ""))
+        result.append(item)
+    return sorted(
+        result,
+        key=lambda item: (ATTENTION_ORDER.get(item.get("attention", "none"), 0), item.get("last_message_at", "")),
+        reverse=True,
+    )
+
+
+def save_summaries() -> None:
+    atomic_write_json(CONVERSATION_SUMMARIES_FILE, CONVERSATION_SUMMARIES)
+
+
+def enqueue_analysis(kind: str, value: str) -> None:
+    if not ANALYSIS_WORKER_STARTED:
+        return
+    try:
+        ANALYSIS_QUEUE.put_nowait((kind, value))
+    except queue.Full:
+        pass
+
+
+def schedule_summary(session_id: str) -> None:
+    if not ANALYSIS_WORKER_STARTED or not session_id:
+        return
+    with SUMMARY_TIMERS_LOCK:
+        previous = SUMMARY_TIMERS.pop(session_id, None)
+        if previous:
+            previous.cancel()
+        timer = threading.Timer(1.5, lambda: enqueue_analysis("summary", session_id))
+        timer.daemon = True
+        SUMMARY_TIMERS[session_id] = timer
+        timer.start()
+
+
+def analysis_worker() -> None:
+    while True:
+        kind, value = ANALYSIS_QUEUE.get()
+        try:
+            with ANALYSIS_CONFIG_LOCK:
+                config = ANALYSIS_CONFIG.copy()
+            if kind == "emotion":
+                with MESSAGES_LOCK:
+                    message = next((dict(item) for item in MESSAGES if item.get("id") == value), None)
+                if message and message.get("role") == "user":
+                    result = analyze_emotion(message.get("text", ""), config, EMOTION_LEXICON, ROOT.parent)
+                    with MESSAGES_LOCK:
+                        target = next((item for item in MESSAGES if item.get("id") == value), None)
+                        if target:
+                            target["emotion"] = result
+                            save_messages()
+            elif kind == "summary":
+                messages = messages_for_session(value)
+                if messages:
+                    result = summarize_conversation(messages, value, config, ROOT.parent)
+                    with SUMMARIES_LOCK:
+                        CONVERSATION_SUMMARIES[value] = result
+                        save_summaries()
+            elif kind == "rebuild":
+                with MESSAGES_LOCK:
+                    snapshot = list(MESSAGES)
+                for item in snapshot:
+                    if item.get("role") == "user":
+                        enqueue_analysis("emotion", item.get("id", ""))
+                for session_id in {item.get("session_id") for item in snapshot if item.get("session_id")}:
+                    enqueue_analysis("summary", session_id)
+        except Exception as exc:
+            print(f"[ANALYSIS] {kind} failed: {type(exc).__name__}")
+        finally:
+            ANALYSIS_QUEUE.task_done()
+
+
+def start_analysis_worker() -> None:
+    global ANALYSIS_WORKER_STARTED
+    if ANALYSIS_WORKER_STARTED:
+        return
+    ANALYSIS_WORKER_STARTED = True
+    changed = False
+    retry_ids = []
+    sessions = set()
+    with MESSAGES_LOCK:
+        for item in MESSAGES:
+            if not isinstance(item.get("emotion"), dict):
+                item["emotion"] = analyze_lexicon(item.get("text", ""), EMOTION_LEXICON)
+                if item.get("role") != "user":
+                    item["emotion"]["attention"] = "none"
+                    item["emotion"]["attention_reason"] = "助手回复不参与用户留意判断"
+                changed = True
+            elif item.get("role") == "user" and item["emotion"].get("source") in {"lexicon-fallback", "lexicon-no-model"}:
+                retry_ids.append(item.get("id", ""))
+            if item.get("session_id"):
+                sessions.add(item["session_id"])
+        if changed:
+            save_messages()
+    threading.Thread(target=analysis_worker, name="dialogue-analysis", daemon=True).start()
+    for message_id in retry_ids[-20:]:
+        enqueue_analysis("emotion", message_id)
+    with SUMMARIES_LOCK:
+        summarized_sessions = set(CONVERSATION_SUMMARIES)
+    for session_id in sessions - summarized_sessions:
+        enqueue_analysis("summary", session_id)
 
 
 def read_rdk_json(path: str) -> dict:
@@ -160,12 +323,12 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:
         path = urlparse(self.path).path
-        if path not in ('/api/dialogue/messages', '/api/dialogue/config'):
+        if path not in ('/api/dialogue/messages', '/api/dialogue/config', '/api/analysis/config', '/api/analysis/rebuild'):
             self.send_json(404, {'ok': False, 'error': 'not found'})
             return
         try:
             length = int(self.headers.get('Content-Length', '0'))
-            limit = 4096 if path == '/api/dialogue/config' else 65536
+            limit = 8192 if path in ('/api/dialogue/config', '/api/analysis/config', '/api/analysis/rebuild') else 65536
             if not 0 < length <= limit:
                 raise ValueError('Invalid body size')
             if self.headers.get_content_type() != 'application/json':
@@ -187,6 +350,24 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_json(200, {'ok': True, 'config': DIALOGUE_CONFIG.copy()})
                 return
 
+            if path == '/api/analysis/config':
+                with ANALYSIS_CONFIG_LOCK:
+                    config = validate_analysis_config(item, ANALYSIS_CONFIG)
+                    atomic_write_json(ANALYSIS_CONFIG_FILE, config)
+                    ANALYSIS_CONFIG.clear()
+                    ANALYSIS_CONFIG.update(config)
+                    public = public_analysis_config(config, load_xiaozhi_model(ROOT.parent))
+                enqueue_analysis('rebuild', 'all')
+                self.send_json(200, {'ok': True, 'config': public})
+                return
+
+            if path == '/api/analysis/rebuild':
+                if not isinstance(item, dict):
+                    raise ValueError('Invalid rebuild request')
+                enqueue_analysis('rebuild', 'all')
+                self.send_json(202, {'ok': True, 'status': 'queued'})
+                return
+
             if not isinstance(item, dict) or item.get('role') not in ('user', 'assistant'):
                 raise ValueError('Invalid role')
             for key, limit in [('id', 64), ('text', 8192), ('device_id', 160), ('session_id', 160), ('created_at', 64)]:
@@ -196,13 +377,30 @@ class Handler(BaseHTTPRequestHandler):
                 raise ValueError('Empty message')
             record = {key: item[key] for key in ('id', 'role', 'text', 'device_id', 'session_id', 'created_at')}
             record['received_at'] = datetime.now(timezone.utc).isoformat()
+            record['emotion'] = analyze_lexicon(record['text'], EMOTION_LEXICON)
+            if record['role'] != 'user':
+                record['emotion']['attention'] = 'none'
+                record['emotion']['attention_reason'] = '助手回复不参与用户留意判断'
+            inserted = False
             with MESSAGES_LOCK:
                 if not any(m['id'] == record['id'] for m in MESSAGES):
                     MESSAGES.append(record)
                     save_messages()
+                    inserted = True
+            if inserted:
+                if record['role'] == 'user':
+                    enqueue_analysis('emotion', record['id'])
+                schedule_summary(record['session_id'])
             self.send_json(200, {'ok': True})
         except (ValueError, UnicodeError, TimeoutError):
-            error = 'Invalid dialogue config' if path == '/api/dialogue/config' else 'Invalid dialogue message'
+            if path == '/api/dialogue/config':
+                error = 'Invalid dialogue config'
+            elif path == '/api/analysis/config':
+                error = 'Invalid analysis config'
+            elif path == '/api/analysis/rebuild':
+                error = 'Invalid rebuild request'
+            else:
+                error = 'Invalid dialogue message'
             self.send_json(400, {'ok': False, 'error': error})
         except OSError:
             self.send_json(500, {'ok': False, 'error': 'Unable to save dialogue data'})
@@ -252,7 +450,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:
         path = urlparse(self.path).path
-        if path in ('/chat', '/chat.html', '/api/dialogue/messages', '/api/dialogue/config'):
+        if path in ('/chat', '/chat.html', '/api/dialogue/messages', '/api/dialogue/config', '/api/dialogue/conversations', '/api/analysis/config'):
             if not self.local_dialogue_request():
                 return
             if path == '/api/dialogue/messages':
@@ -262,6 +460,12 @@ class Handler(BaseHTTPRequestHandler):
             elif path == '/api/dialogue/config':
                 with DIALOGUE_CONFIG_LOCK:
                     config = DIALOGUE_CONFIG.copy()
+                self.send_json(200, {'config': config})
+            elif path == '/api/dialogue/conversations':
+                self.send_json(200, {'conversations': conversation_items()})
+            elif path == '/api/analysis/config':
+                with ANALYSIS_CONFIG_LOCK:
+                    config = public_analysis_config(ANALYSIS_CONFIG.copy(), load_xiaozhi_model(ROOT.parent))
                 self.send_json(200, {'config': config})
             else:
                 self.send_bytes(200, 'text/html; charset=utf-8', (ROOT / 'chat.html').read_bytes())
@@ -288,9 +492,10 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def main() -> None:
+    start_analysis_worker()
     print(f"Tongyu dashboard: http://127.0.0.1:{PORT}")
     print(f"RDK input: {RDK_BASE}")
-    print("This version only displays real RDK and STM32 input; it has no demo sensor values.")
+    print("Dialogue emotion analysis and summaries run in the dashboard background.")
     ThreadingHTTPServer((HOST, PORT), Handler).serve_forever()
 
 

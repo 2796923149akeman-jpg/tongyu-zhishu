@@ -29,9 +29,14 @@ class DialogueTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.web.DIALOGUE_DATA_FILE = Path(self.temp.name) / 'dialogue_messages.json'
         self.web.DIALOGUE_CONFIG_FILE = Path(self.temp.name) / 'dialogue_config.json'
+        self.web.ANALYSIS_CONFIG_FILE = Path(self.temp.name) / 'analysis_config.json'
+        self.web.CONVERSATION_SUMMARIES_FILE = Path(self.temp.name) / 'conversation_summaries.json'
         self.web.MESSAGES.clear()
+        self.web.CONVERSATION_SUMMARIES.clear()
         self.web.DIALOGUE_CONFIG.clear()
         self.web.DIALOGUE_CONFIG.update(self.web.DEFAULT_DIALOGUE_CONFIG)
+        self.web.ANALYSIS_CONFIG.clear()
+        self.web.ANALYSIS_CONFIG.update(self.web.DEFAULT_ANALYSIS_CONFIG)
         self.web.Handler.log_message = lambda *args: None
         self.http = self.web.ThreadingHTTPServer(('127.0.0.1', 0), self.web.Handler)
         self.thread = threading.Thread(target=self.http.serve_forever, daemon=True)
@@ -91,6 +96,33 @@ class DialogueTests(unittest.TestCase):
         self.assertEqual(self.request('/api/dialogue/config', invalid)[0], 400)
         self.assertEqual(self.request('/api/dialogue/config')[1]['config'], configured)
 
+    def test_emotion_and_conversation_routes(self):
+        self.assertEqual(self.request(data=self.message() | {'text': '我每天都哭，不想上学'})[0], 200)
+        message = self.request()[1]['messages'][0]
+        self.assertEqual(message['emotion']['label'], 'sad')
+        self.assertEqual(message['emotion']['attention'], 'watch')
+        status, body = self.request('/api/dialogue/conversations')
+        self.assertEqual(status, 200)
+        self.assertEqual(body['conversations'][0]['session_id'], 'test-session')
+        self.assertEqual(body['conversations'][0]['attention'], 'watch')
+
+    def test_analysis_config_redacts_keys(self):
+        configured = {
+            'summary_enabled': True, 'summary_model_source': 'custom',
+            'summary_base_url': 'https://api.example.com', 'summary_model_name': 'summary-model',
+            'summary_api_key': 'private-summary-key', 'emotion_mode': 'model_fallback',
+            'emotion_model_source': 'custom', 'emotion_base_url': 'https://api.example.com',
+            'emotion_model_name': 'emotion-model', 'emotion_api_key': 'private-emotion-key',
+        }
+        status, body = self.request('/api/analysis/config', configured)
+        self.assertEqual(status, 200)
+        self.assertNotIn('summary_api_key', body['config'])
+        self.assertNotIn('emotion_api_key', body['config'])
+        self.assertTrue(body['config']['summary_api_key_set'])
+        saved = json.loads(self.web.ANALYSIS_CONFIG_FILE.read_text(encoding='utf-8'))
+        self.assertEqual(saved['summary_api_key'], 'private-summary-key')
+        self.assertNotIn('private-summary-key', json.dumps(self.request('/api/analysis/config')[1]))
+
     def test_validation_and_unknown_routes(self):
         for payload in [{}, [], {'role': 'system'}, self.message() | {'text': ''}, self.message() | {'text': 'x'*8193}]:
             self.assertEqual(self.request(data=payload)[0], 400)
@@ -101,6 +133,7 @@ class DialogueTests(unittest.TestCase):
         for headers in [{'Host': 'attacker.example'}, {'Origin': 'https://attacker.example'}, {'Sec-Fetch-Site': 'cross-site'}]:
             self.assertEqual(self.request(headers=headers)[0], 403)
             self.assertEqual(self.request(data=self.message(), headers=headers)[0], 403)
+            self.assertEqual(self.request('/api/analysis/config', headers=headers)[0], 403)
 
     def test_capacity_and_duplicate_ids(self):
         self.request(data=self.message())
