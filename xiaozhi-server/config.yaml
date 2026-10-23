@@ -66,9 +66,13 @@ context_providers:
     Authorization: ''
 plugins:
   get_weather:
+    provider: open_meteo
+    default_location: 长沙
+    prefer_default_location: true
+    latitude: 28.2282
+    longitude: 112.9388
     api_host: mj7p3y7naa.re.qweatherapi.com
     api_key: ''
-    default_location: 广州
   get_news_from_chinanews:
     default_rss_url: https://www.chinanews.com.cn/rss/society.xml
     society_rss_url: https://www.chinanews.com.cn/rss/society.xml

@@ -143,6 +143,11 @@ class PromptManager:
 
     def _get_location_info(self, client_ip: str) -> str:
         """获取位置信息"""
+        weather_config = self.config.get("plugins", {}).get("get_weather", {})
+        if weather_config.get("prefer_default_location") and weather_config.get("default_location"):
+            location = weather_config["default_location"]
+            self.cache_manager.set(self.CacheType.LOCATION, client_ip, location)
+            return location
         try:
             # 先从缓存获取
             cached_location = self.cache_manager.get(self.CacheType.LOCATION, client_ip)

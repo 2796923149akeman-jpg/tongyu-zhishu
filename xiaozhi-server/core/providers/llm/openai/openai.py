@@ -11,6 +11,7 @@ logger = setup_logging()
 
 # 需要禁用思考模式的平台域名及其对应参数（默认关闭思考模式）
 THINKING_DISABLED_DOMAINS = {
+    "api.deepseek.com": {"thinking": {"type": "disabled"}},
     "aliyuncs.com": {"enable_thinking": False},
     "bigmodel.cn": {"thinking": {"type": "disabled"}},
     "moonshot.cn": {"thinking": {"type": "disabled"}},

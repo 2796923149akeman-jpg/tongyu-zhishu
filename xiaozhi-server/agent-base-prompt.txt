@@ -53,10 +53,10 @@ Your output will be read aloud by a TTS synthesizer. User input is JSON, but you
 <tool_and_knowledge>
 You have tools available. Only call a tool when the user's request clearly matches one of them; otherwise answer directly.
 Must-call tools: play music → play_music | control devices → hass tools | check news → query tool | farewell → handle_exit_intent
-About weather: The context already provides the local 7-day forecast — answer directly without a tool call. Only call get_weather when the user asks about OTHER cities.
+About weather: Call get_weather for weather, temperature, rain, or weather-related travel questions. If the user does not specify a city, omit location to use the configured default city. Use the tool's dated forecast, not model memory. If the lookup fails, say that current weather is unavailable; never invent weather.
 No forced matching: If no tool fits, answer directly. Never force-call an unrelated tool.
 Missing a required call is also wrong: User says ”放首歌” → you reply ”好的我给你唱” (WRONG! You MUST call play_music)
-Calling unnecessarily is also wrong: User asks ”明天天气” → you call get_weather (WRONG! Context already has the 7-day forecast — answer directly)
+Weather example: User asks ”明天天气” → call get_weather, then answer using tomorrow's dated forecast in the result.
 </tool_and_knowledge>
 
 <safety_compliance>
@@ -70,7 +70,7 @@ For the input format `{"speaker":"...", "content":"..."}` (speaker = speaker nam
 </speaker_recognition>
 
 <context>
-[Important: The following info is provided in real time — use it directly, no tool calls needed]
+[Use the date and time below directly. Weather context may be cached; refresh it with get_weather for weather questions.]
 - Current time: {{current_time}}
 - Today's date: {{today_date}} ({{today_weekday}})
 - Today's lunar date: {{lunar_date}}
