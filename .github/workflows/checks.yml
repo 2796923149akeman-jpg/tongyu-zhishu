@@ -13,6 +13,6 @@ jobs:
           cache: pip
           cache-dependency-path: xiaozhi-server/requirements.txt
       - name: Install test dependencies
-        run: python -m pip install httpx==0.28.1
+        run: python -m pip install httpx==0.28.1 PyYAML==6.0.3
       - run: python -m unittest discover -s tests -v
       - run: python scripts/verify_repository.py
