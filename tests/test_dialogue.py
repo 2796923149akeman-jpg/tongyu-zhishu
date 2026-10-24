@@ -31,6 +31,14 @@ class DialogueTests(unittest.TestCase):
         self.web.DIALOGUE_CONFIG_FILE = Path(self.temp.name) / 'dialogue_config.json'
         self.web.ANALYSIS_CONFIG_FILE = Path(self.temp.name) / 'analysis_config.json'
         self.web.CONVERSATION_SUMMARIES_FILE = Path(self.temp.name) / 'conversation_summaries.json'
+        self.web.PROJECT_ROOT = Path(self.temp.name)
+        private_config = self.web.PROJECT_ROOT / 'xiaozhi-server/data/.config.yaml'
+        private_config.parent.mkdir(parents=True)
+        private_config.write_text(
+            'selected_module:\n  LLM: TestLLM\nLLM:\n  TestLLM:\n    type: openai\n'
+            '    url: https://api.example.com\n    model_name: test-chat\n    api_key: test-private-key\n',
+            encoding='utf-8',
+        )
         self.web.MESSAGES.clear()
         self.web.CONVERSATION_SUMMARIES.clear()
         self.web.DIALOGUE_CONFIG.clear()
@@ -70,6 +78,9 @@ class DialogueTests(unittest.TestCase):
             status, body = self.request(path)
             self.assertEqual(status, 200)
             self.assertIn(marker, body)
+        chat = self.request('/chat')[1]
+        self.assertIn('对话模型与情绪设置', chat)
+        self.assertNotIn('<h3>对话总结</h3>', chat)
         self.assertEqual(self.request()[1]['messages'], [])
         with patch.object(self.web, 'read_rdk_json', return_value={'temperature': 24.5}) as upstream:
             self.assertEqual(self.request('/api/rdk/sensors')[1], {'temperature': 24.5})
@@ -123,6 +134,27 @@ class DialogueTests(unittest.TestCase):
         self.assertEqual(saved['summary_api_key'], 'private-summary-key')
         self.assertNotIn('private-summary-key', json.dumps(self.request('/api/analysis/config')[1]))
 
+    def test_dialogue_model_config_updates_xiaozhi_and_redacts_key(self):
+        status, body = self.request('/api/dialogue/model')
+        self.assertEqual(status, 200)
+        self.assertEqual(body['model']['model_name'], 'test-chat')
+        self.assertTrue(body['model']['api_key_set'])
+        self.assertNotIn('test-private-key', json.dumps(body))
+
+        status, body = self.request('/api/dialogue/model', {
+            'base_url': 'https://api.changed.example/v1',
+            'model_name': 'changed-chat',
+            'api_key': '',
+        })
+        self.assertEqual(status, 200)
+        self.assertEqual(body['model']['model_name'], 'changed-chat')
+        saved = self.web.load_xiaozhi_model(self.web.PROJECT_ROOT)
+        self.assertEqual(saved['base_url'], 'https://api.changed.example/v1')
+        self.assertEqual(saved['api_key'], 'test-private-key')
+        self.assertEqual(self.request('/api/dialogue/model', {
+            'base_url': 'http://remote.example', 'model_name': 'x', 'api_key': ''
+        })[0], 400)
+
     def test_validation_and_unknown_routes(self):
         for payload in [{}, [], {'role': 'system'}, self.message() | {'text': ''}, self.message() | {'text': 'x'*8193}]:
             self.assertEqual(self.request(data=payload)[0], 400)
@@ -134,6 +166,7 @@ class DialogueTests(unittest.TestCase):
             self.assertEqual(self.request(headers=headers)[0], 403)
             self.assertEqual(self.request(data=self.message(), headers=headers)[0], 403)
             self.assertEqual(self.request('/api/analysis/config', headers=headers)[0], 403)
+            self.assertEqual(self.request('/api/dialogue/model', headers=headers)[0], 403)
 
     def test_capacity_and_duplicate_ids(self):
         self.request(data=self.message())

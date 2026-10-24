@@ -48,7 +48,6 @@
     .conversation-card.watch { border-color: #f3d2a7; background: #fffaf3; }
     .conversation-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
     .conversation-title { min-width: 0; overflow: hidden; font-size: 13px; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
-    .conversation-summary { display: -webkit-box; margin-top: 6px; overflow: hidden; color: var(--muted); font-size: 11px; line-height: 1.55; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
     .conversation-meta { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 8px; color: #87939e; font-size: 10px; }
     .sidebar-foot { padding: 12px 15px; border-top: 1px solid var(--line); color: var(--muted); font-size: 11px; line-height: 1.6; }
     .main { display: flex; min-width: 0; min-height: 0; flex-direction: column; }
@@ -126,7 +125,7 @@
         <div><h1 id="pageTitle">陪伴对话记录</h1><p class="subtitle">回顾设备对话、情绪线索与需要留意的会话</p></div>
       </div>
       <div class="top-actions">
-        <button class="button soft" id="analysisButton" type="button">智能分析设置</button>
+        <button class="button soft" id="analysisButton" type="button">模型与情绪设置</button>
         <button class="button" id="settingsButton" type="button">界面设置</button>
         <a class="button" href="/">返回监控</a>
       </div>
@@ -177,33 +176,23 @@
 
   <dialog class="wide" id="analysisDialog">
     <form id="analysisForm">
-      <div class="dialog-head"><div><h2>智能分析设置</h2><p class="subtitle">总结与情绪分析在网页服务后台运行</p></div><button class="close" id="closeAnalysis" type="button" aria-label="关闭">×</button></div>
+      <div class="dialog-head"><div><h2>对话模型与情绪设置</h2><p class="subtitle">统一管理机器人对话模型和情绪分析方式</p></div><button class="close" id="closeAnalysis" type="button" aria-label="关闭">×</button></div>
       <div class="settings">
         <section class="settings-section">
-          <h3>对话总结</h3>
-          <p class="section-note">按会话整理主题、摘要和整体情绪，显示在左侧对话列表。</p>
-          <div class="checks"><label><input id="summaryEnabled" type="checkbox">启用模型对话总结</label></div>
-          <div class="field"><label for="summarySource">总结模型</label><select id="summarySource"><option value="xiaozhi">复用小智服务当前模型</option><option value="custom">单独设置 OpenAI 兼容模型</option></select></div>
-          <div class="settings-grid" id="summaryCustom">
-            <div class="field full"><label for="summaryUrl">接口地址</label><input id="summaryUrl" type="url" placeholder="https://api.deepseek.com"></div>
-            <div class="field"><label for="summaryModel">模型名称</label><input id="summaryModel" placeholder="deepseek-v4-pro"></div>
-            <div class="field"><label for="summaryKey">API 密钥</label><input id="summaryKey" type="password" autocomplete="new-password" placeholder="留空则保持原密钥"></div>
+          <h3>对话模型</h3>
+          <p class="section-note">直接修改小智服务当前使用的 OpenAI 兼容模型。后台会话整理和“模型分析”情绪模式会自动复用此模型。</p>
+          <div class="settings-grid">
+            <div class="field full"><label for="modelUrl">接口地址</label><input id="modelUrl" type="url" placeholder="https://api.deepseek.com" required></div>
+            <div class="field"><label for="modelName">模型名称</label><input id="modelName" placeholder="deepseek-v4-pro" required></div>
+            <div class="field"><label for="modelKey">API 密钥</label><input id="modelKey" type="password" autocomplete="new-password" placeholder="留空则保持原密钥"></div>
           </div>
         </section>
         <section class="settings-section">
           <h3>单句情绪分析</h3>
-          <p class="section-note">“模型 + 词库兜底”会优先使用模型；模型不可用时自动使用本地词库。纯词库模式不会把对话发送给情绪模型。</p>
-          <div class="field"><label for="emotionMode">分析方式</label><select id="emotionMode"><option value="model_fallback">模型分析，词库兜底</option><option value="lexicon">仅使用本地词库</option></select></div>
-          <div id="emotionModelFields">
-            <div class="field"><label for="emotionSource">情绪模型</label><select id="emotionSource"><option value="shared">与对话总结共用</option><option value="xiaozhi">复用小智服务当前模型</option><option value="custom">单独设置 OpenAI 兼容模型</option></select></div>
-            <div class="settings-grid" id="emotionCustom">
-              <div class="field full"><label for="emotionUrl">接口地址</label><input id="emotionUrl" type="url" placeholder="https://api.deepseek.com"></div>
-              <div class="field"><label for="emotionModel">模型名称</label><input id="emotionModel" placeholder="deepseek-v4-pro"></div>
-              <div class="field"><label for="emotionKey">API 密钥</label><input id="emotionKey" type="password" autocomplete="new-password" placeholder="留空则保持原密钥"></div>
-            </div>
-          </div>
+          <p class="section-note">模型分析会使用上面的对话模型，调用失败时自动回退本地词库；本地词库模式不会发送单句文本给模型。</p>
+          <div class="field"><label for="emotionMode">分析方式</label><select id="emotionMode"><option value="model_fallback">模型分析（失败时词库兜底）</option><option value="lexicon">本地词库分析</option></select></div>
         </section>
-        <div class="privacy-note" id="analysisNote">密钥仅保存在本机被 Git 忽略的配置文件中，不会返回浏览器或提交到仓库。启用模型分析时，对话文本会发送给所配置的模型服务。</div>
+        <div class="privacy-note" id="analysisNote">API 密钥只保存在小智服务的本机配置中，不会返回浏览器或提交到仓库。修改对话模型后需重启小智服务。</div>
         <div class="save-state" id="analysisSaveState" role="status"></div>
         <div class="dialog-actions"><button class="button" id="rebuildAnalysis" type="button">重新分析现有记录</button><button class="button" id="cancelAnalysis" type="button">取消</button><button class="button primary" type="submit">保存设置</button></div>
       </div>
@@ -222,7 +211,7 @@
     const emotionNames = {happy: '开心', sad: '难过', angry: '生气', scared: '害怕', anxious: '焦虑', disgusted: '厌恶', surprised: '惊讶', neutral: '平静'};
     const emotionIcons = {happy: '●', sad: '●', angry: '●', scared: '●', anxious: '●', disgusted: '●', surprised: '●', neutral: '○'};
     const sourceNames = {'model+lexicon': '模型+词库', lexicon: '本地词库', 'lexicon-fallback': '词库兜底', 'lexicon-no-model': '无模型·词库'};
-    let records = [], conversations = [], config = {...defaults}, analysisConfig = {}, selectedSession = '', pollTimer = null, renderedSignature = '';
+    let records = [], conversations = [], config = {...defaults}, analysisConfig = {}, dialogueModel = {}, selectedSession = '', pollTimer = null, renderedSignature = '';
 
     function formatTime(value, withDate = false) {
       const time = new Date(value);
@@ -260,18 +249,17 @@
     function renderConversations() {
       const fragment = document.createDocumentFragment();
       const total = document.createElement('button'); total.type = 'button'; total.className = `conversation-card ${selectedSession ? '' : 'active'}`;
-      total.innerHTML = '<div class="conversation-top"><span class="conversation-title">全部对话</span></div><div class="conversation-summary">查看所有设备与会话的消息时间线</div>';
+      total.innerHTML = '<div class="conversation-top"><span class="conversation-title">全部对话</span></div>';
       total.addEventListener('click', () => { selectedSession = ''; render(true); renderConversations(); }); fragment.append(total);
       for (const item of conversations) {
         const card = document.createElement('button'); card.type = 'button'; card.className = `conversation-card ${item.attention || ''} ${selectedSession === item.session_id ? 'active' : ''}`;
         const top = document.createElement('div'); top.className = 'conversation-top';
         const title = document.createElement('span'); title.className = 'conversation-title'; title.textContent = item.title || '未命名会话'; top.append(title);
         const [attentionText, attentionClass] = attentionChip(item.attention); if (attentionText) top.append(createChip(attentionText, attentionClass));
-        const summary = document.createElement('div'); summary.className = 'conversation-summary'; summary.textContent = item.summary || '等待生成对话摘要';
         const meta = document.createElement('div'); meta.className = 'conversation-meta';
         const emotion = document.createElement('span'); emotion.textContent = `情绪 ${item.dominant_emotion_text || emotionNames[item.dominant_emotion] || '平静'}`;
         const time = document.createElement('span'); time.textContent = formatTime(item.last_message_at, true); meta.append(emotion, time);
-        card.append(top, summary, meta); card.title = item.attention_reason || '';
+        card.append(top, meta); card.title = item.attention_reason || '';
         card.addEventListener('click', () => { selectedSession = item.session_id; render(true); renderConversations(); }); fragment.append(card);
       }
       elements.conversations.replaceChildren(fragment);
@@ -312,7 +300,7 @@
       elements.list.replaceChildren(fragment); elements.empty.hidden = shown.length > 0; if (!shown.length) elements.list.append(elements.empty);
       const current = conversations.find(item => item.session_id === selectedSession);
       elements.currentTitle.textContent = current ? current.title : '全部消息';
-      elements.summary.textContent = current ? current.summary : `筛选结果 ${shown.length} 条，共收到 ${records.length} 条`;
+      elements.summary.textContent = current ? `当前会话显示 ${shown.length} 条消息` : `筛选结果 ${shown.length} 条，共收到 ${records.length} 条`;
       $('messageStats').textContent = `${records.length} 条记录 · ${conversations.length} 个会话`;
       if (config.auto_scroll && shown.length) elements.list.scrollTop = elements.list.scrollHeight;
     }
@@ -321,20 +309,14 @@
       $('configTitle').value = config.title; $('refreshSeconds').value = String(config.refresh_seconds); $('pageSize').value = String(config.page_size);
       $('showSessionId').checked = config.show_session_id; $('showCreatedAt').checked = config.show_created_at; $('autoScroll').checked = config.auto_scroll; render(true);
     }
-    function updateAnalysisVisibility() {
-      $('summaryCustom').hidden = $('summarySource').value !== 'custom';
-      $('emotionModelFields').hidden = $('emotionMode').value === 'lexicon';
-      $('emotionCustom').hidden = $('emotionSource').value !== 'custom';
-    }
     function applyAnalysisConfig(next) {
-      analysisConfig = {...next}; $('summaryEnabled').checked = Boolean(next.summary_enabled); $('summarySource').value = next.summary_model_source || 'xiaozhi';
-      $('summaryUrl').value = next.summary_base_url || ''; $('summaryModel').value = next.summary_model_name || ''; $('summaryKey').value = '';
-      $('summaryKey').placeholder = next.summary_api_key_set ? '已保存，留空保持不变' : '输入 API 密钥';
-      $('emotionMode').value = next.emotion_mode || 'model_fallback'; $('emotionSource').value = next.emotion_model_source || 'shared';
-      $('emotionUrl').value = next.emotion_base_url || ''; $('emotionModel').value = next.emotion_model_name || ''; $('emotionKey').value = '';
-      $('emotionKey').placeholder = next.emotion_api_key_set ? '已保存，留空保持不变' : '输入 API 密钥';
-      const inherited = next.xiaozhi_model_available ? `已检测到小智模型：${next.xiaozhi_model_name || '已配置模型'}。` : '未检测到小智模型密钥，模型不可用时将自动使用本地词库。';
-      $('analysisNote').textContent = inherited + ' 密钥仅保存在本机且不会返回浏览器。启用模型分析时，对话文本会发送给配置的模型服务。'; updateAnalysisVisibility();
+      analysisConfig = {...next}; $('emotionMode').value = next.emotion_mode || 'model_fallback';
+    }
+    function applyDialogueModel(next) {
+      dialogueModel = {...next}; $('modelUrl').value = next.base_url || ''; $('modelName').value = next.model_name || ''; $('modelKey').value = '';
+      $('modelKey').placeholder = next.api_key_set ? '已保存，留空保持不变' : '输入 API 密钥';
+      const selected = next.selected_module ? `当前模块：${next.selected_module}。` : '尚未检测到可配置的对话模型。';
+      $('analysisNote').textContent = selected + ' 密钥只保存在小智服务的本机配置中，不会返回浏览器或提交到仓库。保存后请重启 xiaozhi-server，网页后台分析会直接使用新配置。';
     }
     async function requestJson(url, options = {}) {
       const response = await fetch(url, {cache: 'no-store', signal: AbortSignal.timeout(30000), ...options}); const data = await response.json();
@@ -342,6 +324,7 @@
     }
     async function loadConfig() { const data = await requestJson('/api/dialogue/config'); applyConfig(data.config); }
     async function loadAnalysisConfig() { const data = await requestJson('/api/analysis/config'); applyAnalysisConfig(data.config); }
+    async function loadDialogueModel() { const data = await requestJson('/api/dialogue/model'); applyDialogueModel(data.model); }
     async function poll() {
       clearTimeout(pollTimer);
       try {
@@ -360,24 +343,24 @@
       try { const data = await requestJson('/api/dialogue/config', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(next)}); applyConfig(data.config); elements.settingsDialog.close(); clearTimeout(pollTimer); poll(); }
       catch (error) { $('saveState').textContent = `保存失败：${error.message}`; }
     });
-    $('analysisButton').addEventListener('click', async () => { $('analysisSaveState').textContent = ''; try { await loadAnalysisConfig(); } catch (_) {} elements.analysisDialog.showModal(); });
+    $('analysisButton').addEventListener('click', async () => { $('analysisSaveState').textContent = ''; try { await Promise.all([loadDialogueModel(), loadAnalysisConfig()]); } catch (_) {} elements.analysisDialog.showModal(); });
     for (const id of ['closeAnalysis', 'cancelAnalysis']) $(id).addEventListener('click', () => elements.analysisDialog.close());
-    for (const id of ['summarySource', 'emotionMode', 'emotionSource']) $(id).addEventListener('change', updateAnalysisVisibility);
     $('analysisForm').addEventListener('submit', async event => {
-      event.preventDefault(); const next = {
-        summary_enabled: $('summaryEnabled').checked, summary_model_source: $('summarySource').value,
-        summary_base_url: $('summaryUrl').value.trim(), summary_model_name: $('summaryModel').value.trim(), summary_api_key: $('summaryKey').value.trim(),
-        emotion_mode: $('emotionMode').value, emotion_model_source: $('emotionSource').value,
-        emotion_base_url: $('emotionUrl').value.trim(), emotion_model_name: $('emotionModel').value.trim(), emotion_api_key: $('emotionKey').value.trim()
-      };
-      try { const data = await requestJson('/api/analysis/config', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(next)}); applyAnalysisConfig(data.config); $('analysisSaveState').style.color = '#176b67'; $('analysisSaveState').textContent = '设置已保存，现有记录正在后台更新。'; }
+      event.preventDefault();
+      const model = {base_url: $('modelUrl').value.trim(), model_name: $('modelName').value.trim(), api_key: $('modelKey').value.trim()};
+      const analysis = {summary_enabled: true, summary_model_source: 'xiaozhi', emotion_mode: $('emotionMode').value, emotion_model_source: 'shared'};
+      try {
+        const modelData = await requestJson('/api/dialogue/model', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(model)}); applyDialogueModel(modelData.model);
+        const analysisData = await requestJson('/api/analysis/config', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(analysis)}); applyAnalysisConfig(analysisData.config);
+        $('analysisSaveState').style.color = '#176b67'; $('analysisSaveState').textContent = '设置已保存并开始更新分析；请重启小智服务使实时对话使用新模型。';
+      }
       catch (error) { $('analysisSaveState').style.color = 'var(--danger)'; $('analysisSaveState').textContent = `保存失败：${error.message}`; }
     });
     $('rebuildAnalysis').addEventListener('click', async () => {
       try { await requestJson('/api/analysis/rebuild', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: '{}'}); $('analysisSaveState').style.color = '#176b67'; $('analysisSaveState').textContent = '已加入后台分析队列。'; }
       catch (error) { $('analysisSaveState').textContent = `启动失败：${error.message}`; }
     });
-    Promise.allSettled([loadConfig(), loadAnalysisConfig()]).finally(poll);
+    Promise.allSettled([loadConfig(), loadDialogueModel(), loadAnalysisConfig()]).finally(poll);
   </script>
 </body>
 </html>

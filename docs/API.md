@@ -158,7 +158,7 @@
 
 ### `GET /api/dialogue/conversations`
 
-按“优先查看、建议留意、普通”的顺序返回会话卡片，包括标题、摘要、主导情绪、留意原因、消息数量和更新时间。模型总结未生成或不可用时返回本地简要摘要。
+按“优先查看、建议留意、普通”的顺序返回会话卡片数据，包括标题、后台摘要、主导情绪、留意原因、消息数量和更新时间。模型总结未生成或不可用时返回本地简要摘要；当前页面不展示摘要正文。
 
 ### `GET /api/dialogue/config`
 
@@ -183,15 +183,23 @@
 
 示例默认值见 `dashboard/dialogue_config.example.json`。请求格式错误返回 HTTP `400`，保存失败返回 HTTP `500`。
 
+### `GET /api/dialogue/model`
+
+返回小智服务当前对话模型的模块名、接口地址、模型名称和密钥是否已设置。接口不会返回 API 密钥原文。
+
+### `POST /api/dialogue/model`
+
+直接更新 `xiaozhi-server/data/.config.yaml` 中当前选中的 LLM。请求字段为 `base_url`、`model_name` 和 `api_key`；密钥留空会保留原值。公网接口只接受 HTTPS，本机 `localhost`、`127.0.0.1` 或 `::1` 可使用 HTTP。保存后需重启小智服务，新的实时对话才会使用新模型。
+
 ## 智能分析接口
 
 ### `GET /api/analysis/config`
 
-返回总结开关、情绪分析方式、模型来源和模型名称。密钥字段不会返回，只返回 `summary_api_key_set`、`emotion_api_key_set` 和 `xiaozhi_model_available`。
+返回后台分析配置。页面只使用其中的情绪分析方式；对话总结固定在后台启用并复用小智对话模型。
 
 ### `POST /api/analysis/config`
 
-保存智能分析设置。总结模型可选 `xiaozhi` 或 `custom`；情绪模式可选 `model_fallback` 或 `lexicon`；情绪模型来源可选 `shared`、`xiaozhi` 或 `custom`。自定义模型只接受 HTTPS 地址，或本机 `localhost`/`127.0.0.1` 的 HTTP 地址。密钥保存在被 Git 忽略的 `dashboard/analysis_config.json`。
+保存智能分析设置。当前页面只允许情绪模式选择 `model_fallback`（对话模型分析，失败时词库兜底）或 `lexicon`（仅本地词库）。服务端会固定启用后台会话总结，并让总结和模型情绪分析共同复用小智对话模型。
 
 ### `POST /api/analysis/rebuild`
 

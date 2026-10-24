@@ -8,12 +8,19 @@ from __future__ import annotations
 
 import json
 import math
+import os
 import re
+import tempfile
 import urllib.request
 from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlparse
+
+try:
+    import yaml
+except ImportError:  # Dashboard can still use its local lexicon without PyYAML.
+    yaml = None
 
 
 EMOTION_NAMES = {
@@ -151,19 +158,82 @@ def public_analysis_config(config: dict, xiaozhi_model: dict | None) -> dict:
     return result
 
 
-def load_xiaozhi_model(project_root: Path) -> dict | None:
+def _load_xiaozhi_config(project_root: Path) -> tuple[Path, dict]:
     path = project_root / "xiaozhi-server" / "data" / ".config.yaml"
+    if yaml is None:
+        raise RuntimeError("PyYAML is required to manage the dialogue model")
+    data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    if not isinstance(data, dict):
+        raise ValueError("Invalid xiaozhi configuration")
+    return path, data
+
+
+def load_xiaozhi_model(project_root: Path) -> dict | None:
     try:
-        import yaml
-        data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        _, data = _load_xiaozhi_config(project_root)
         selected = data.get("selected_module", {}).get("LLM")
         model = data.get("LLM", {}).get(selected, {})
         base_url = model.get("base_url", model.get("url", ""))
         if not selected or not base_url or not model.get("model_name"):
             return None
-        return {"base_url": base_url.rstrip("/"), "model_name": model["model_name"], "api_key": model.get("api_key", "")}
-    except (OSError, UnicodeError, ValueError, ImportError, AttributeError):
+        return {
+            "base_url": base_url.rstrip("/"), "model_name": model["model_name"],
+            "api_key": model.get("api_key", ""), "selected_module": selected,
+            "provider_type": model.get("type", ""),
+        }
+    except (OSError, UnicodeError, ValueError, RuntimeError, AttributeError):
         return None
+
+
+def public_xiaozhi_model(project_root: Path) -> dict:
+    model = load_xiaozhi_model(project_root) or {}
+    return {
+        "selected_module": model.get("selected_module", ""),
+        "provider_type": model.get("provider_type", ""),
+        "base_url": model.get("base_url", ""),
+        "model_name": model.get("model_name", ""),
+        "api_key_set": bool(model.get("api_key")),
+        "available": bool(model),
+        "restart_required": True,
+    }
+
+
+def update_xiaozhi_model(project_root: Path, values: dict) -> dict:
+    if not isinstance(values, dict) or set(values) - {"base_url", "model_name", "api_key"}:
+        raise ValueError("Invalid dialogue model configuration")
+    base_url = values.get("base_url")
+    model_name = values.get("model_name")
+    api_key = values.get("api_key", "")
+    if not isinstance(base_url, str) or not base_url.strip() or len(base_url) > 300 or not _valid_url(base_url.strip().rstrip("/")):
+        raise ValueError("Invalid model URL")
+    if not isinstance(model_name, str) or not model_name.strip() or len(model_name.strip()) > 120:
+        raise ValueError("Invalid model name")
+    if not isinstance(api_key, str) or len(api_key) > 500:
+        raise ValueError("Invalid API key")
+
+    path, data = _load_xiaozhi_config(project_root)
+    selected = data.get("selected_module", {}).get("LLM")
+    model = data.get("LLM", {}).get(selected)
+    if not selected or not isinstance(model, dict):
+        raise ValueError("Selected dialogue model was not found")
+    url_field = "base_url" if "base_url" in model else "url"
+    model[url_field] = base_url.strip().rstrip("/")
+    model["model_name"] = model_name.strip()
+    if api_key.strip():
+        model["api_key"] = api_key.strip()
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, temporary_name = tempfile.mkstemp(prefix=f".{path.name}-", dir=path.parent)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as stream:
+            yaml.safe_dump(data, stream, allow_unicode=True, sort_keys=False)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary_name, path)
+    finally:
+        if os.path.exists(temporary_name):
+            os.unlink(temporary_name)
+    return public_xiaozhi_model(project_root)
 
 
 def resolve_model(config: dict, purpose: str, project_root: Path) -> dict | None:

@@ -29,12 +29,14 @@ if str(ROOT) not in sys.path:
 from analysis import (
     ATTENTION_ORDER, DEFAULT_ANALYSIS_CONFIG, analyze_emotion, analyze_lexicon,
     load_lexicon, load_xiaozhi_model, local_conversation_summary,
-    public_analysis_config, summarize_conversation, validate_analysis_config,
+    public_analysis_config, public_xiaozhi_model, summarize_conversation,
+    update_xiaozhi_model, validate_analysis_config,
 )
 
 HOST = os.environ.get("DASHBOARD_HOST", "0.0.0.0")
 PORT = int(os.environ.get("DASHBOARD_PORT", "8088"))
 RDK_BASE = os.environ.get("RDK_BASE", "http://192.168.43.54:5000").rstrip("/")
+PROJECT_ROOT = Path(os.environ.get("PROJECT_ROOT", str(ROOT.parent)))
 DIALOGUE_LIMIT = 200
 DIALOGUE_DATA_FILE = Path(
     os.environ.get("DIALOGUE_DATA_FILE", str(ROOT / "dialogue_messages.json"))
@@ -136,9 +138,15 @@ def load_dialogue_config() -> dict:
 def load_analysis_config() -> dict:
     data = read_json_file(ANALYSIS_CONFIG_FILE, {})
     try:
-        return validate_analysis_config(data)
+        config = validate_analysis_config(data)
     except ValueError:
-        return DEFAULT_ANALYSIS_CONFIG.copy()
+        config = DEFAULT_ANALYSIS_CONFIG.copy()
+    # The page exposes one real dialogue model. Background summaries and model
+    # emotion analysis always reuse that model; only the emotion mode is user-selectable.
+    config["summary_enabled"] = True
+    config["summary_model_source"] = "xiaozhi"
+    config["emotion_model_source"] = "shared"
+    return config
 
 
 def load_summaries() -> dict:
@@ -216,7 +224,7 @@ def analysis_worker() -> None:
                 with MESSAGES_LOCK:
                     message = next((dict(item) for item in MESSAGES if item.get("id") == value), None)
                 if message and message.get("role") == "user":
-                    result = analyze_emotion(message.get("text", ""), config, EMOTION_LEXICON, ROOT.parent)
+                    result = analyze_emotion(message.get("text", ""), config, EMOTION_LEXICON, PROJECT_ROOT)
                     with MESSAGES_LOCK:
                         target = next((item for item in MESSAGES if item.get("id") == value), None)
                         if target:
@@ -225,7 +233,7 @@ def analysis_worker() -> None:
             elif kind == "summary":
                 messages = messages_for_session(value)
                 if messages:
-                    result = summarize_conversation(messages, value, config, ROOT.parent)
+                    result = summarize_conversation(messages, value, config, PROJECT_ROOT)
                     with SUMMARIES_LOCK:
                         CONVERSATION_SUMMARIES[value] = result
                         save_summaries()
@@ -323,12 +331,12 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:
         path = urlparse(self.path).path
-        if path not in ('/api/dialogue/messages', '/api/dialogue/config', '/api/analysis/config', '/api/analysis/rebuild'):
+        if path not in ('/api/dialogue/messages', '/api/dialogue/config', '/api/dialogue/model', '/api/analysis/config', '/api/analysis/rebuild'):
             self.send_json(404, {'ok': False, 'error': 'not found'})
             return
         try:
             length = int(self.headers.get('Content-Length', '0'))
-            limit = 8192 if path in ('/api/dialogue/config', '/api/analysis/config', '/api/analysis/rebuild') else 65536
+            limit = 8192 if path in ('/api/dialogue/config', '/api/dialogue/model', '/api/analysis/config', '/api/analysis/rebuild') else 65536
             if not 0 < length <= limit:
                 raise ValueError('Invalid body size')
             if self.headers.get_content_type() != 'application/json':
@@ -350,13 +358,21 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_json(200, {'ok': True, 'config': DIALOGUE_CONFIG.copy()})
                 return
 
+            if path == '/api/dialogue/model':
+                model = update_xiaozhi_model(PROJECT_ROOT, item)
+                self.send_json(200, {'ok': True, 'model': model})
+                return
+
             if path == '/api/analysis/config':
                 with ANALYSIS_CONFIG_LOCK:
                     config = validate_analysis_config(item, ANALYSIS_CONFIG)
+                    config['summary_enabled'] = True
+                    config['summary_model_source'] = 'xiaozhi'
+                    config['emotion_model_source'] = 'shared'
                     atomic_write_json(ANALYSIS_CONFIG_FILE, config)
                     ANALYSIS_CONFIG.clear()
                     ANALYSIS_CONFIG.update(config)
-                    public = public_analysis_config(config, load_xiaozhi_model(ROOT.parent))
+                    public = public_analysis_config(config, load_xiaozhi_model(PROJECT_ROOT))
                 enqueue_analysis('rebuild', 'all')
                 self.send_json(200, {'ok': True, 'config': public})
                 return
@@ -395,6 +411,8 @@ class Handler(BaseHTTPRequestHandler):
         except (ValueError, UnicodeError, TimeoutError):
             if path == '/api/dialogue/config':
                 error = 'Invalid dialogue config'
+            elif path == '/api/dialogue/model':
+                error = 'Invalid dialogue model config'
             elif path == '/api/analysis/config':
                 error = 'Invalid analysis config'
             elif path == '/api/analysis/rebuild':
@@ -450,7 +468,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:
         path = urlparse(self.path).path
-        if path in ('/chat', '/chat.html', '/api/dialogue/messages', '/api/dialogue/config', '/api/dialogue/conversations', '/api/analysis/config'):
+        if path in ('/chat', '/chat.html', '/api/dialogue/messages', '/api/dialogue/config', '/api/dialogue/model', '/api/dialogue/conversations', '/api/analysis/config'):
             if not self.local_dialogue_request():
                 return
             if path == '/api/dialogue/messages':
@@ -463,9 +481,11 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_json(200, {'config': config})
             elif path == '/api/dialogue/conversations':
                 self.send_json(200, {'conversations': conversation_items()})
+            elif path == '/api/dialogue/model':
+                self.send_json(200, {'model': public_xiaozhi_model(PROJECT_ROOT)})
             elif path == '/api/analysis/config':
                 with ANALYSIS_CONFIG_LOCK:
-                    config = public_analysis_config(ANALYSIS_CONFIG.copy(), load_xiaozhi_model(ROOT.parent))
+                    config = public_analysis_config(ANALYSIS_CONFIG.copy(), load_xiaozhi_model(PROJECT_ROOT))
                 self.send_json(200, {'config': config})
             else:
                 self.send_bytes(200, 'text/html; charset=utf-8', (ROOT / 'chat.html').read_bytes())
