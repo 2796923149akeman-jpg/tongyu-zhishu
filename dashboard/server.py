@@ -501,6 +501,9 @@ class Handler(BaseHTTPRequestHandler):
         if path in ("/", "/index.html"):
             self.serve_index()
             return
+        if path in ("/events", "/events.html"):
+            self.send_bytes(200, "text/html; charset=utf-8", (ROOT / "events.html").read_bytes())
+            return
         if path == "/api/config":
             self.send_json(200, {"rdk_base": RDK_BASE})
             return

@@ -86,6 +86,13 @@ class DialogueTests(unittest.TestCase):
             self.assertEqual(self.request('/api/rdk/sensors')[1], {'temperature': 24.5})
             upstream.assert_called_once_with('/api/iot_payload')
 
+    def test_event_page_is_served_with_demo_marker(self):
+        for path in ('/events', '/events.html'):
+            status, body = self.request(path)
+            self.assertEqual(status, 200)
+            self.assertIn('异常事件', body)
+            self.assertIn('演示数据', body)
+
     def test_dialogue_interface_config(self):
         status, body = self.request('/api/dialogue/config')
         self.assertEqual(status, 200)
