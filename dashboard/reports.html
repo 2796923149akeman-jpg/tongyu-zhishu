@@ -1,0 +1,282 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <meta name="description" content="童域智枢当日日报：安全事件处置、关注对话与测温完成情况汇总。">
+  <title>当日日报 · 童域智枢</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="health-report.css">
+</head>
+<body data-page="reports">
+  <div class="app">
+    <aside class="sidebar">
+      <a class="brand" href="index.html" aria-label="童域智枢实时监控首页">
+        <span class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 20.5s-7.4-4.4-7.4-10A4.1 4.1 0 0 1 12 7.6a4.1 4.1 0 0 1 7.4 2.9c0 5.6-7.4 10-7.4 10Z"/>
+            <path d="M9 12.5h2.1l1-2.3 1.7 4 1-1.7H16"/>
+          </svg>
+        </span>
+        <span class="brand-copy">
+          <strong>童域智枢</strong>
+          <small>幼儿园陪伴机器人</small>
+        </span>
+      </a>
+
+      <div class="nav-label">工作台</div>
+      <nav class="nav" aria-label="主导航">
+        <a class="nav-link" href="index.html">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <rect x="3" y="4.5" width="18" height="13" rx="2.2"/>
+            <path d="M8 21h8M12 17.5V21M8.5 9.5h.01M15.5 9.5h.01"/>
+          </svg>
+          <span>实时监控</span>
+        </a>
+        <a class="nav-link" href="events.html">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M12 3.5 21 20H3L12 3.5Z"/>
+            <path d="M12 9v4.5M12 16.6h.01"/>
+          </svg>
+          <span>异常事件</span>
+        </a>
+        <a class="nav-link" href="chat.html">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M20 12.5a7.5 7.5 0 0 1-7.5 7.5H6.8L3.5 22v-6.1A8.5 8.5 0 1 1 20 12.5Z"/>
+            <path d="M8.5 11.5h.01M12 11.5h.01M15.5 11.5h.01"/>
+          </svg>
+          <span>对话与情绪</span>
+        </a>
+        <a class="nav-link" href="health.html">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M20.5 12.5a8.5 8.5 0 1 1-2.5-6"/>
+            <path d="M8.5 12h7M12 8.5v7"/>
+            <path d="M18 3.5v4h4"/>
+          </svg>
+          <span>学生测温</span>
+        </a>
+        <a class="nav-link" href="reports.html" aria-current="page">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M6 3.5h8l4 4v13H6v-17Z"/>
+            <path d="M14 3.5v4h4M9 12h6M9 15.5h6M9 8.5h2"/>
+          </svg>
+          <span>当日日报</span>
+        </a>
+      </nav>
+
+      <div class="side-foot">
+        <div class="system-mini">
+          <span class="dot idle" id="sideDot"></span>
+          <span id="sideStatus">正在连接服务</span>
+        </div>
+        <span>日报汇总当日事件、对话与测温</span>
+      </div>
+    </aside>
+
+    <main class="main">
+      <div class="main-inner">
+        <header class="page-head">
+          <div>
+            <p class="eyebrow">每日复盘</p>
+            <h1>当日日报</h1>
+            <p class="page-sub" id="pageDate">正在读取系统时间…</p>
+          </div>
+          <div class="head-tools">
+            <div class="clock-box">
+              <strong id="liveClock">--:--:--</strong>
+              <small>Asia/Shanghai</small>
+            </div>
+            <button class="btn" id="printReport" type="button">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M7 9V4h10v5"/>
+                <path d="M5 9h14v7h-3v4H8v-4H5V9Z"/>
+                <path d="M8 12.5h8"/>
+              </svg>
+              <span>打印日报</span>
+            </button>
+            <button class="btn btn-primary" id="refreshBtn" type="button">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M20 11a8 8 0 1 0-2.3 6.3M20 4.5V11h-6.5"/>
+              </svg>
+              <span>刷新</span>
+            </button>
+          </div>
+        </header>
+
+        <section class="demo-banner" id="demoBanner" data-mode="loading" aria-labelledby="demoTitle" hidden>
+          <span class="demo-tag" id="demoTag">检查中</span>
+          <div class="demo-copy">
+            <strong id="demoTitle">正在检查日报接口</strong>
+            <p id="demoText">日报接口尚未实现时，本页使用带“演示数据”标识的样例完成布局与交互。</p>
+          </div>
+          <div class="demo-actions">
+            <button class="btn btn-sm" id="demoRetry" type="button">重新检测</button>
+          </div>
+        </section>
+
+        <section class="report-controls" aria-label="日报筛选">
+          <div class="field">
+            <label for="reportDate">日报日期</label>
+            <input id="reportDate" type="date">
+          </div>
+          <div class="date-switch">
+            <button class="btn btn-sm" id="prevDay" type="button" aria-label="前一天">前一天</button>
+            <button class="btn btn-sm" id="todayBtn" type="button">回到今天</button>
+            <button class="btn btn-sm" id="nextDay" type="button" aria-label="后一天">后一天</button>
+          </div>
+          <div class="field">
+            <label for="reportClass">班级范围</label>
+            <select id="reportClass">
+              <option value="">全部班级</option>
+            </select>
+          </div>
+          <span class="chip" id="reportChip" data-tone="idle">等待数据</span>
+        </section>
+
+        <div id="reportBody">
+          <section class="stat-grid" data-layout="six" aria-label="当日关键数字">
+            <article class="stat-card" data-tone="warn">
+              <p class="stat-label">安全事件</p>
+              <p class="stat-value" id="statEvents">--<small>起</small></p>
+              <p class="stat-note" id="statEventsNote">等待事件数据</p>
+            </article>
+            <article class="stat-card" data-tone="ok">
+              <p class="stat-label">已完成处置</p>
+              <p class="stat-value" id="statHandled">--<small>起</small></p>
+              <p class="stat-note" id="statHandledNote">处置率 --</p>
+            </article>
+            <article class="stat-card" data-tone="bad">
+              <p class="stat-label">关注对话</p>
+              <p class="stat-value" id="statDialogues">--<small>段</small></p>
+              <p class="stat-note" id="statDialoguesNote">紧急关注 --</p>
+            </article>
+            <article class="stat-card" data-tone="ok">
+              <p class="stat-label">今日已测</p>
+              <p class="stat-value" id="statMeasured">--<small>人</small></p>
+              <p class="stat-note" id="statMeasuredNote">完成率 --</p>
+            </article>
+            <article class="stat-card" data-tone="warn">
+              <p class="stat-label">未测温</p>
+              <p class="stat-value" id="statPending">--<small>人</small></p>
+              <p class="stat-note" id="statPendingNote">名单中尚未登记</p>
+            </article>
+            <article class="stat-card" data-tone="bad">
+              <p class="stat-label">需要复测</p>
+              <p class="stat-value" id="statRecheck">--<small>人</small></p>
+              <p class="stat-note" id="statRecheckNote">体温仍偏高</p>
+            </article>
+          </section>
+
+          <div class="report-grid">
+            <section class="card" aria-labelledby="eventTitle">
+              <div class="card-head">
+                <div class="card-title">
+                  <h2 id="eventTitle">安全事件与处置</h2>
+                  <p>来源：行为识别与管理端登记</p>
+                </div>
+                <span class="chip" id="eventChip" data-tone="idle">--</span>
+              </div>
+              <ul class="event-list" id="eventList"></ul>
+              <div class="state" id="eventEmpty" hidden>
+                <span class="state-icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M12 21s7.5-3.8 7.5-9.5V5.7L12 3 4.5 5.7v5.8C4.5 17.2 12 21 12 21Z"/>
+                    <path d="m8.6 11.8 2.2 2.2 4.6-4.7"/>
+                  </svg>
+                </span>
+                <strong>当日没有安全事件</strong>
+                <p>行为识别未上报摔倒或斗殴，也没有人工补录事件。</p>
+              </div>
+            </section>
+
+            <section class="card" aria-labelledby="dialogueTitle">
+              <div class="card-head">
+                <div class="card-title">
+                  <h2 id="dialogueTitle">需要关注的对话</h2>
+                  <p>只展示留意原因与摘要，不复制完整对话</p>
+                </div>
+                <span class="chip" id="dialogueChip" data-tone="idle">--</span>
+              </div>
+              <ul class="attention-list" id="attentionList"></ul>
+              <div class="state" id="attentionEmpty" hidden>
+                <span class="state-icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M20 12.5a7.5 7.5 0 0 1-7.5 7.5H6.8L3.5 22v-6.1A8.5 8.5 0 1 1 20 12.5Z"/>
+                    <path d="m8.6 13 2.4-2.4 2 2 2.4-2.4"/>
+                  </svg>
+                </span>
+                <strong>当日没有需要关注的对话</strong>
+                <p>对话框记录中没有出现需要留意的文本线索。</p>
+              </div>
+            </section>
+
+            <section class="card" aria-labelledby="classTitle">
+              <div class="card-head">
+                <div class="card-title">
+                  <h2 id="classTitle">测温完成情况</h2>
+                  <p>按班级统计已测、未测与复测</p>
+                </div>
+                <span class="chip" id="classChip" data-tone="idle">--</span>
+              </div>
+              <div class="class-list" id="classList"></div>
+            </section>
+          </div>
+
+          <div class="report-summary">
+            <section class="card" aria-labelledby="summaryTitle">
+              <div class="card-head">
+                <div class="card-title">
+                  <h2 id="summaryTitle">当日结论</h2>
+                  <p>根据当日数据自动生成的摘要，供交接班参考</p>
+                </div>
+              </div>
+              <ul class="bullet-list" id="summaryList"></ul>
+              <p class="hint" style="margin-top:10px;color:var(--muted-2);font-size:11.5px;">
+                摘要只复述当日记录，不做健康或安全结论；异常情况以教师现场判断为准。
+              </p>
+            </section>
+
+            <section class="card" aria-labelledby="detailTitle">
+              <div class="card-head">
+                <div class="card-title">
+                  <h2 id="detailTitle">值班信息</h2>
+                  <p>交接班时核对的数据范围</p>
+                </div>
+              </div>
+              <dl class="kv-list" id="detailList"></dl>
+              <p class="field-label" style="margin-top:12px;">未测温与需复测名单</p>
+              <div class="unmeasured-list" id="unmeasuredList"></div>
+            </section>
+          </div>
+        </div>
+
+        <div class="state" id="reportEmpty" hidden>
+          <span class="state-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M6 3.5h8l4 4v13H6v-17Z"/>
+              <path d="M14 3.5v4h4M9 12h6M9 15.5h6"/>
+            </svg>
+          </span>
+          <strong id="reportEmptyTitle">当日暂无日报数据</strong>
+          <p id="reportEmptyText">该日期没有事件、对话或测温记录。可以切换到有数据的日期，或先到学生测温页登记体温。</p>
+        </div>
+
+        <footer class="page-foot">
+          <span id="footerMeta">数据范围：当日 00:00–24:00（Asia/Shanghai）。</span>
+          <span>日报只汇总已接入的数据；接口未实现时，页面内容为明确标注的演示数据。</span>
+        </footer>
+      </div>
+    </main>
+  </div>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <div class="sr-only" id="srAnnounce" role="status" aria-live="polite"></div>
+
+  <noscript>
+    <p style="padding:16px 24px;color:#b42318;background:#fef0ee;">当日日报需要 JavaScript 才能汇总当日数据。</p>
+  </noscript>
+
+  <script src="health-report.js"></script>
+</body>
+</html>

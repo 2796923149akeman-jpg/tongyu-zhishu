@@ -14,7 +14,13 @@ def verify(root=ROOT):
     # Trust only this explicit checkout for these read-only audit commands.
     # This avoids global configuration changes when a sandbox created the copy.
     git = ["git", "-c", "safe.directory=" + root.as_posix(), "-C", str(root)]
-    git_root = Path(subprocess.check_output(git + ["rev-parse", "--show-toplevel"], text=True).strip()).resolve()
+    # Git always writes paths as UTF-8; decoding with the console code page (for
+    # example cp936 on Chinese Windows) would break the comparison below.
+    git_root = Path(
+        subprocess.check_output(
+            git + ["rev-parse", "--show-toplevel"], encoding="utf-8"
+        ).strip()
+    ).resolve()
     if git_root != root:
         raise RuntimeError("This directory must have its own Git repository")
     raw = subprocess.check_output(git + ["ls-files", "--cached", "--others", "--exclude-standard", "-z"])
