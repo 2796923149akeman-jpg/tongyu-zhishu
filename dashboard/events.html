@@ -1,0 +1,1830 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>异常事件 · 童域智枢</title>
+  <style>
+    :root {
+      --bg: #f3f5fa;
+      --surface: #ffffff;
+      --surface-soft: #f8fafc;
+      --ink: #182230;
+      --ink-2: #344054;
+      --muted: #667085;
+      --muted-2: #98a2b3;
+      --line: #e4e7ec;
+      --brand: #176b67;
+      --brand-soft: #e5f4f1;
+      --ok: #0b8a5c;
+      --ok-soft: #e9f8f1;
+      --warn: #a86500;
+      --warn-soft: #fff6e6;
+      --bad: #c4321f;
+      --bad-soft: #fef0ee;
+      --idle: #667085;
+      --idle-soft: #f2f4f7;
+      --radius: 18px;
+      --shadow: 0 1px 2px rgba(16, 24, 40, 0.04), 0 10px 30px rgba(16, 24, 40, 0.04);
+      --sidebar: 240px;
+    }
+
+    * { box-sizing: border-box; }
+
+    html { min-width: 320px; background: var(--bg); }
+
+    body {
+      margin: 0;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at 100% 0%, rgba(23, 107, 103, 0.06), transparent 28rem),
+        var(--bg);
+      font-family: "PingFang SC", "Microsoft YaHei", "Segoe UI", system-ui, -apple-system, sans-serif;
+      font-size: 14px;
+      line-height: 1.55;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    [hidden] { display: none !important; }
+
+    button, a, input, select, textarea { -webkit-tap-highlight-color: transparent; }
+    button, input, select, textarea { font: inherit; }
+    a { color: inherit; text-decoration: none; }
+    h1, h2, h3, h4, p, dl, dd, ol { margin: 0; }
+
+    .sr-only {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      border: 0;
+    }
+
+    .app {
+      display: grid;
+      grid-template-columns: var(--sidebar) minmax(0, 1fr);
+      min-height: 100vh;
+    }
+
+    .sidebar {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      padding: 22px 14px 18px;
+      color: #d7deea;
+      background:
+        radial-gradient(circle at 0% 0%, rgba(54, 174, 164, 0.18), transparent 18rem),
+        linear-gradient(180deg, #131c2e 0%, #0c1321 100%);
+      border-right: 1px solid rgba(255, 255, 255, 0.05);
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 2px 10px 22px;
+    }
+
+    .brand-mark {
+      display: grid;
+      flex: 0 0 42px;
+      width: 42px;
+      height: 42px;
+      place-items: center;
+      color: #fff;
+      background: linear-gradient(145deg, #2a9d93, #176b67);
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      border-radius: 13px;
+      box-shadow: 0 8px 22px rgba(23, 107, 103, 0.4);
+    }
+
+    .brand-mark svg { width: 24px; height: 24px; }
+
+    .brand-copy { display: grid; line-height: 1.25; }
+    .brand-copy strong { color: #fff; font-size: 17px; letter-spacing: 0.04em; }
+    .brand-copy small { margin-top: 4px; color: #93a1b7; font-size: 11px; letter-spacing: 0.06em; }
+
+    .nav-label {
+      padding: 0 14px 9px;
+      color: #738198;
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.16em;
+    }
+
+    .nav { display: grid; gap: 5px; }
+
+    .nav-link {
+      position: relative;
+      display: flex;
+      align-items: center;
+      gap: 11px;
+      min-height: 44px;
+      padding: 9px 13px;
+      color: #aeb9ca;
+      border: 1px solid transparent;
+      border-radius: 11px;
+      transition: color 160ms ease, background 160ms ease, border-color 160ms ease;
+    }
+
+    .nav-link svg { flex: 0 0 19px; width: 19px; height: 19px; opacity: 0.88; }
+    .nav-link:hover { color: #fff; background: rgba(255, 255, 255, 0.05); }
+    .nav-link:focus-visible { outline: 2px solid #7fe0d6; outline-offset: 1px; }
+
+    .nav-link[aria-current="page"] {
+      color: #fff;
+      background: linear-gradient(90deg, rgba(63, 184, 173, 0.22), rgba(63, 184, 173, 0.07));
+      border-color: rgba(111, 224, 213, 0.2);
+    }
+
+    .nav-link[aria-current="page"]::before {
+      position: absolute;
+      top: 11px;
+      bottom: 11px;
+      left: -14px;
+      width: 3px;
+      content: "";
+      background: #5fd0c6;
+      border-radius: 0 3px 3px 0;
+      box-shadow: 0 0 12px rgba(95, 208, 198, 0.7);
+    }
+
+    .side-foot {
+      display: grid;
+      gap: 9px;
+      margin-top: auto;
+      padding: 14px 12px 4px;
+      color: #8593a9;
+      font-size: 11px;
+      border-top: 1px solid rgba(255, 255, 255, 0.07);
+    }
+
+    .system-mini { display: flex; align-items: center; gap: 8px; color: #c6d0de; font-size: 12px; }
+
+    .main { min-width: 0; padding: 26px 30px 42px; }
+    .main-inner { width: 100%; max-width: 1480px; margin: 0 auto; }
+
+    .page-head {
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 24px;
+      margin-bottom: 18px;
+    }
+
+    .eyebrow {
+      margin-bottom: 4px;
+      color: var(--brand);
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+    }
+
+    .page-head h1 { font-size: 30px; line-height: 1.2; letter-spacing: -0.02em; }
+    .page-sub { margin-top: 6px; color: var(--muted); font-size: 13px; }
+
+    .head-tools { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
+
+    .demo-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 10px;
+      color: #7a4b00;
+      font-size: 11px;
+      font-weight: 700;
+      background: var(--warn-soft);
+      border: 1px solid #efd39a;
+      border-radius: 999px;
+      white-space: nowrap;
+    }
+
+    .demo-chip::before {
+      width: 6px;
+      height: 6px;
+      content: "";
+      background: #d9951f;
+      border-radius: 50%;
+    }
+
+    .clock-box {
+      display: grid;
+      min-width: 124px;
+      padding: 8px 13px;
+      text-align: right;
+      background: rgba(255, 255, 255, 0.72);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+    }
+
+    .clock-box strong { font-size: 17px; font-variant-numeric: tabular-nums; letter-spacing: 0.02em; }
+    .clock-box small { color: var(--muted-2); font-size: 10px; letter-spacing: 0.04em; }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 7px;
+      min-height: 40px;
+      padding: 0 15px;
+      color: var(--ink-2);
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 11px;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: transform 140ms ease, box-shadow 140ms ease, background 140ms ease;
+    }
+
+    .btn svg { width: 16px; height: 16px; }
+    .btn:hover { background: #fbfcff; box-shadow: 0 5px 16px rgba(16, 24, 40, 0.08); transform: translateY(-1px); }
+    .btn:active { transform: translateY(0); }
+    .btn:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+    .btn:disabled { cursor: not-allowed; opacity: 0.5; box-shadow: none; transform: none; }
+
+    .btn-primary { color: #fff; background: var(--brand); border-color: var(--brand); }
+    .btn-primary:hover { background: #115a56; }
+
+    .btn-danger { color: var(--bad); background: #fff; border-color: #f2c6bf; }
+    .btn-danger:hover { background: #fff5f2; }
+
+    .btn-quiet { min-height: 38px; padding: 0 11px; font-size: 12px; }
+
+    .btn.is-busy svg { animation: spin 0.9s linear infinite; }
+
+    .chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      width: fit-content;
+      padding: 3px 8px;
+      color: var(--idle);
+      font-size: 10px;
+      font-weight: 700;
+      line-height: 1.35;
+      white-space: nowrap;
+      background: var(--idle-soft);
+      border: 1px solid transparent;
+      border-radius: 999px;
+    }
+
+    .chip::before {
+      width: 5px;
+      height: 5px;
+      content: "";
+      background: currentColor;
+      border-radius: 50%;
+      opacity: 0.85;
+    }
+
+    .chip[data-tone="ok"] { color: var(--ok); background: var(--ok-soft); border-color: #c8efdd; }
+    .chip[data-tone="warn"] { color: var(--warn); background: var(--warn-soft); border-color: #f2ddb2; }
+    .chip[data-tone="bad"] { color: var(--bad); background: var(--bad-soft); border-color: #f7cbc4; }
+    .chip[data-tone="idle"] { color: var(--idle); background: var(--idle-soft); border-color: #e1e6ed; }
+
+    .dot { display: inline-block; flex: 0 0 7px; width: 7px; height: 7px; background: var(--idle); border-radius: 50%; }
+    .dot.ok { background: #22a06b; }
+    .dot.warn { background: #d9951f; }
+    .dot.bad { background: #e04f3d; }
+    .dot.idle { background: #98a2b3; }
+
+    .demo-banner {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      padding: 14px 16px;
+      margin-bottom: 12px;
+      background: linear-gradient(135deg, #fff8e8, #fffdf8);
+      border: 1px solid #efd39a;
+      border-radius: 15px;
+      box-shadow: 0 1px 2px rgba(16, 24, 40, 0.03);
+    }
+
+    .demo-badge {
+      flex: 0 0 auto;
+      padding: 5px 8px;
+      color: #7a4b00;
+      font-size: 10px;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      background: #f5d38a;
+      border-radius: 7px;
+    }
+
+    .demo-copy { flex: 1 1 320px; min-width: 0; }
+    .demo-copy strong { font-size: 13px; }
+    .demo-copy p { margin-top: 2px; color: #7a5a1e; font-size: 11px; line-height: 1.6; }
+
+    .api-status {
+      padding: 9px 12px;
+      margin: -2px 0 14px;
+      color: var(--muted);
+      font-size: 11px;
+      line-height: 1.6;
+      overflow-wrap: anywhere;
+      background: var(--surface-soft);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+    }
+
+    .api-status[data-tone="ok"] { color: var(--ok); background: var(--ok-soft); border-color: #c8efdd; }
+    .api-status[data-tone="warn"] { color: #8a5600; background: var(--warn-soft); border-color: #f0d8a9; }
+
+    .summary-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+      margin-bottom: 18px;
+    }
+
+    .summary-card {
+      position: relative;
+      min-width: 0;
+      padding: 14px 16px 13px 18px;
+      overflow: hidden;
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 15px;
+      box-shadow: 0 1px 2px rgba(16, 24, 40, 0.03);
+    }
+
+    .summary-card::before {
+      position: absolute;
+      top: 14px;
+      bottom: 14px;
+      left: 0;
+      width: 3px;
+      content: "";
+      background: #98a2b3;
+      border-radius: 0 3px 3px 0;
+    }
+
+    .summary-card[data-tone="bad"]::before { background: #e04f3d; }
+    .summary-card[data-tone="warn"]::before { background: #d9951f; }
+    .summary-card[data-tone="ok"]::before { background: #22a06b; }
+    .summary-card[data-tone="brand"]::before { background: var(--brand); }
+
+    .summary-card span { color: var(--muted); font-size: 11px; }
+    .summary-card strong { display: block; margin-top: 3px; font-size: 27px; line-height: 1.15; font-variant-numeric: tabular-nums; }
+    .summary-card small { display: block; margin-top: 3px; color: var(--muted-2); font-size: 10px; }
+    .summary-card small b { color: var(--bad); font-weight: 700; }
+
+    .workspace-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1.25fr) minmax(350px, 0.75fr);
+      gap: 18px;
+      align-items: start;
+    }
+
+    .card {
+      min-width: 0;
+      padding: 19px 20px;
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+    }
+
+    .card-head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 14px;
+      margin-bottom: 12px;
+    }
+
+    .card-title h2 { font-size: 17px; line-height: 1.4; }
+    .card-title p { margin-top: 3px; color: var(--muted); font-size: 11px; overflow-wrap: anywhere; }
+
+    .filter-bar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      padding: 10px;
+      margin-bottom: 12px;
+      background: var(--surface-soft);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+    }
+
+    .search-field {
+      display: flex;
+      flex: 1 1 230px;
+      align-items: center;
+      gap: 7px;
+      min-height: 38px;
+      padding: 0 10px;
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 9px;
+    }
+
+    .search-field svg { flex: 0 0 15px; width: 15px; height: 15px; color: var(--muted-2); }
+
+    .search-field input {
+      width: 100%;
+      min-width: 0;
+      padding: 0;
+      color: var(--ink);
+      background: transparent;
+      border: 0;
+      outline: 0;
+      font-size: 12px;
+    }
+
+    .filter-bar select {
+      flex: 1 1 125px;
+      min-width: 112px;
+      min-height: 38px;
+      padding: 0 8px;
+      color: var(--ink-2);
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 9px;
+      outline: 0;
+      font-size: 12px;
+    }
+
+    .filter-bar select:focus,
+    .search-field:focus-within {
+      border-color: var(--brand);
+      box-shadow: 0 0 0 3px var(--brand-soft);
+    }
+
+    .event-list {
+      display: grid;
+      gap: 8px;
+      max-height: 640px;
+      padding-right: 2px;
+      overflow: auto;
+      overscroll-behavior: contain;
+    }
+
+    .event-row {
+      display: grid;
+      grid-template-columns: 4px minmax(0, 1fr) auto;
+      gap: 11px;
+      width: 100%;
+      padding: 12px;
+      color: var(--ink);
+      text-align: left;
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      cursor: pointer;
+      transition: border-color 160ms ease, background 160ms ease, box-shadow 160ms ease;
+    }
+
+    .event-row:hover { border-color: #b9d9d5; box-shadow: 0 5px 16px rgba(16, 24, 40, 0.05); }
+    .event-row:focus-visible { outline: 2px solid var(--brand); outline-offset: 1px; }
+
+    .event-row.is-selected {
+      background: linear-gradient(90deg, var(--brand-soft), #fff);
+      border-color: #9fcfc9;
+      box-shadow: inset 0 0 0 1px rgba(23, 107, 103, 0.06);
+    }
+
+    .level-mark { width: 4px; min-height: 54px; background: #d0d5dd; border-radius: 4px; }
+    .level-mark[data-level="urgent"] { background: #e04f3d; }
+    .level-mark[data-level="watch"] { background: #d9951f; }
+    .level-mark[data-level="info"] { background: #98a2b3; }
+
+    .event-main { min-width: 0; }
+    .event-title-row { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
+    .event-title { font-size: 13px; font-weight: 700; line-height: 1.45; overflow-wrap: anywhere; }
+
+    .mini-level {
+      padding: 1px 6px;
+      font-size: 9px;
+      font-weight: 700;
+      border-radius: 999px;
+    }
+
+    .mini-level[data-tone="bad"] { color: var(--bad); background: var(--bad-soft); }
+    .mini-level[data-tone="warn"] { color: var(--warn); background: var(--warn-soft); }
+    .mini-level[data-tone="idle"] { color: var(--idle); background: var(--idle-soft); }
+
+    .event-meta { margin-top: 3px; color: var(--muted); font-size: 11px; line-height: 1.5; overflow-wrap: anywhere; }
+    .event-side { display: flex; flex-direction: column; align-items: flex-end; gap: 5px; }
+    .event-time { color: var(--muted); font-size: 10px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+
+    .empty-state {
+      display: grid;
+      min-height: 250px;
+      padding: 20px;
+      place-items: center;
+      text-align: center;
+      color: var(--muted);
+      background: var(--surface-soft);
+      border: 1px dashed var(--line);
+      border-radius: 12px;
+    }
+
+    .empty-state strong { display: block; margin-bottom: 5px; color: var(--ink); font-size: 14px; }
+    .empty-state p { font-size: 11px; }
+    .empty-state .btn { margin-top: 10px; }
+
+    .detail-card { align-self: start; }
+
+    .detail-empty {
+      display: grid;
+      min-height: 300px;
+      padding: 20px;
+      place-items: center;
+      text-align: center;
+      color: var(--muted);
+      background: var(--surface-soft);
+      border: 1px dashed var(--line);
+      border-radius: 12px;
+    }
+
+    .detail-empty strong { display: block; margin-bottom: 5px; color: var(--ink); font-size: 14px; }
+    .detail-empty p { font-size: 11px; }
+
+    .detail-head {
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .detail-icon {
+      display: grid;
+      flex: 0 0 42px;
+      width: 42px;
+      height: 42px;
+      place-items: center;
+      color: var(--brand);
+      background: var(--brand-soft);
+      border-radius: 12px;
+    }
+
+    .detail-icon[data-tone="bad"] { color: var(--bad); background: var(--bad-soft); }
+    .detail-icon[data-tone="warn"] { color: var(--warn); background: var(--warn-soft); }
+    .detail-icon[data-tone="idle"] { color: var(--idle); background: var(--idle-soft); }
+    .detail-icon svg { width: 22px; height: 22px; }
+
+    .detail-title-wrap { min-width: 0; }
+    .detail-tags { display: flex; gap: 5px; flex-wrap: wrap; margin-bottom: 4px; }
+    .detail-title-wrap h3 { font-size: 16px; line-height: 1.45; overflow-wrap: anywhere; }
+    .detail-title-wrap p { margin-top: 3px; color: var(--muted); font-size: 11px; overflow-wrap: anywhere; }
+
+    .detail-meta {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1px;
+      margin: 14px 0;
+      overflow: hidden;
+      background: var(--line);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+    }
+
+    .detail-meta > div { min-width: 0; padding: 8px 10px; background: var(--surface-soft); }
+    .detail-meta dt { color: var(--muted); font-size: 10px; }
+    .detail-meta dd { margin-top: 2px; color: var(--ink-2); font-size: 11px; font-weight: 600; overflow-wrap: anywhere; }
+
+    .detail-block { margin-top: 14px; }
+    .detail-block h4 { margin-bottom: 6px; font-size: 12px; }
+
+    .detail-description {
+      padding: 10px 12px;
+      color: var(--ink-2);
+      font-size: 12px;
+      line-height: 1.7;
+      overflow-wrap: anywhere;
+      background: var(--surface-soft);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+    }
+
+    .block-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+    .counter { color: var(--muted-2); font-size: 10px; font-variant-numeric: tabular-nums; }
+
+    .detail-block textarea {
+      display: block;
+      width: 100%;
+      min-height: 78px;
+      padding: 9px 10px;
+      resize: vertical;
+      color: var(--ink);
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 9px;
+      outline: 0;
+      font-size: 12px;
+      line-height: 1.6;
+    }
+
+    .detail-block textarea:focus {
+      border-color: var(--brand);
+      box-shadow: 0 0 0 3px var(--brand-soft);
+    }
+
+    .note-actions { display: flex; justify-content: flex-end; margin-top: 7px; }
+    .note-actions .btn { min-height: 34px; padding: 0 12px; font-size: 11px; }
+    .action-row { display: flex; flex-wrap: wrap; gap: 7px; }
+    .action-row .btn { min-height: 36px; padding: 0 11px; font-size: 11px; }
+    .action-note { margin-top: 6px; color: var(--muted-2); font-size: 10px; line-height: 1.6; }
+
+    .timeline { display: grid; gap: 0; padding: 0; margin: 0; list-style: none; }
+
+    .timeline li {
+      position: relative;
+      padding: 0 0 11px 18px;
+      border-left: 1px solid var(--line);
+    }
+
+    .timeline li:last-child { padding-bottom: 0; border-left-color: transparent; }
+
+    .timeline-dot {
+      position: absolute;
+      top: 3px;
+      left: -4px;
+      width: 7px;
+      height: 7px;
+      background: var(--brand);
+      border: 2px solid #fff;
+      border-radius: 50%;
+      box-shadow: 0 0 0 1px var(--line);
+    }
+
+    .timeline strong { display: block; font-size: 11px; }
+    .timeline span { display: block; margin-top: 1px; color: var(--muted); font-size: 10px; overflow-wrap: anywhere; }
+    .timeline p { margin-top: 4px; color: var(--ink-2); font-size: 11px; line-height: 1.6; overflow-wrap: anywhere; }
+    .timeline-empty { color: var(--muted); font-size: 11px; }
+
+    .detail-disclaimer {
+      margin-top: 14px;
+      padding: 9px 10px;
+      color: #7a5a1e;
+      font-size: 10px;
+      line-height: 1.6;
+      background: var(--warn-soft);
+      border: 1px solid #f1ddb2;
+      border-radius: 8px;
+    }
+
+    .page-foot {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      gap: 8px 24px;
+      margin-top: 24px;
+      padding: 14px 2px 0;
+      color: var(--muted-2);
+      font-size: 10px;
+      line-height: 1.7;
+      border-top: 1px solid var(--line);
+    }
+
+    .page-foot span { max-width: 820px; }
+
+    .toast {
+      position: fixed;
+      right: 22px;
+      bottom: 22px;
+      z-index: 100;
+      max-width: min(380px, calc(100% - 32px));
+      padding: 11px 14px;
+      color: #fff;
+      font-size: 12px;
+      line-height: 1.6;
+      overflow-wrap: anywhere;
+      background: #182230;
+      border-radius: 10px;
+      box-shadow: 0 12px 30px rgba(16, 24, 40, 0.24);
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    @media (max-width: 1180px) {
+      .workspace-grid { grid-template-columns: minmax(0, 1fr); }
+      .detail-card { position: static; }
+      .event-list { max-height: 520px; }
+    }
+
+    @media (max-width: 920px) {
+      :root { --sidebar: 0px; }
+      .app { display: block; }
+
+      .sidebar {
+        position: sticky;
+        top: 0;
+        z-index: 30;
+        display: block;
+        width: 100%;
+        height: auto;
+        padding: 10px 14px;
+        border-right: 0;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      }
+
+      .brand { padding: 0 0 9px; }
+      .brand-mark { flex-basis: 34px; width: 34px; height: 34px; border-radius: 10px; }
+      .brand-mark svg { width: 20px; height: 20px; }
+      .brand-copy strong { font-size: 15px; }
+      .brand-copy small, .nav-label, .side-foot { display: none; }
+
+      .nav {
+        display: flex;
+        gap: 6px;
+        padding-bottom: 1px;
+        overflow-x: auto;
+        scrollbar-width: none;
+      }
+
+      .nav::-webkit-scrollbar { display: none; }
+      .nav-link { flex: 0 0 auto; gap: 7px; min-height: 36px; padding: 6px 11px; font-size: 12px; border-radius: 9px; }
+      .nav-link svg { width: 16px; height: 16px; }
+      .nav-link[aria-current="page"]::before { display: none; }
+
+      .main { padding: 20px 16px 34px; }
+      .page-head { align-items: flex-start; }
+    }
+
+    @media (max-width: 700px) {
+      .page-head { flex-direction: column; gap: 12px; }
+      .head-tools { width: 100%; justify-content: space-between; }
+      .clock-box { text-align: left; }
+      .summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .demo-banner { align-items: flex-start; flex-wrap: wrap; }
+      .demo-copy { flex-basis: calc(100% - 62px); }
+      .demo-banner .btn { width: 100%; }
+      .event-list { max-height: none; }
+    }
+
+    @media (max-width: 620px) {
+      .event-row { grid-template-columns: 4px minmax(0, 1fr); }
+      .event-side {
+        grid-column: 2;
+        display: flex;
+        flex-direction: row;
+        align-items: center;
+        justify-content: space-between;
+        margin-top: 2px;
+      }
+    }
+
+    @media (max-width: 560px) {
+      .page-head h1 { font-size: 25px; }
+      .card { padding: 16px; }
+      .summary-card { padding: 12px 13px 12px 16px; }
+      .summary-card strong { font-size: 23px; }
+      .filter-bar select { flex-basis: calc(50% - 4px); min-width: 0; }
+      .filter-bar .btn-quiet { flex: 1 1 100%; }
+      .detail-meta { grid-template-columns: 1fr; }
+      .toast { right: 16px; bottom: 16px; }
+    }
+
+    @media (max-width: 380px) {
+      .summary-grid { grid-template-columns: 1fr; }
+      .head-tools { align-items: stretch; flex-direction: column; }
+      .clock-box { text-align: left; }
+      .head-tools .btn { width: 100%; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        scroll-behavior: auto !important;
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <a class="brand" href="index.html" aria-label="童域智枢实时监控首页">
+        <span class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 20.5s-7.4-4.4-7.4-10A4.1 4.1 0 0 1 12 7.6a4.1 4.1 0 0 1 7.4 2.9c0 5.6-7.4 10-7.4 10Z"/>
+            <path d="M9 12.5h2.1l1-2.3 1.7 4 1-1.7H16"/>
+          </svg>
+        </span>
+        <span class="brand-copy">
+          <strong>童域智枢</strong>
+          <small>幼儿园陪伴机器人</small>
+        </span>
+      </a>
+
+      <div class="nav-label">工作台</div>
+      <nav class="nav" aria-label="主导航">
+        <a class="nav-link" href="index.html">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <rect x="3" y="4.5" width="18" height="13" rx="2.2"/>
+            <path d="M8 21h8M12 17.5V21M8.5 9.5h.01M15.5 9.5h.01"/>
+          </svg>
+          <span>实时监控</span>
+        </a>
+        <a class="nav-link" href="events.html" aria-current="page">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M12 3.5 21 20H3L12 3.5Z"/>
+            <path d="M12 9v4.5M12 16.6h.01"/>
+          </svg>
+          <span>异常事件</span>
+        </a>
+        <a class="nav-link" href="chat.html">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M20 12.5a7.5 7.5 0 0 1-7.5 7.5H6.8L3.5 22v-6.1A8.5 8.5 0 1 1 20 12.5Z"/>
+            <path d="M8.5 11.5h.01M12 11.5h.01M15.5 11.5h.01"/>
+          </svg>
+          <span>对话与情绪</span>
+        </a>
+        <a class="nav-link" href="health.html">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M20.5 12.5a8.5 8.5 0 1 1-2.5-6"/>
+            <path d="M8.5 12h7M12 8.5v7"/>
+            <path d="M18 3.5v4h4"/>
+          </svg>
+          <span>学生测温</span>
+        </a>
+        <a class="nav-link" href="reports.html">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M6 3.5h8l4 4v13H6v-17Z"/>
+            <path d="M14 3.5v4h4M9 12h6M9 15.5h6M9 8.5h2"/>
+          </svg>
+          <span>当日日报</span>
+        </a>
+      </nav>
+
+      <div class="side-foot">
+        <div class="system-mini">
+          <span class="dot warn"></span>
+          <span>演示模式</span>
+        </div>
+        <span>事件数据不会写入服务器</span>
+      </div>
+    </aside>
+
+    <main class="main">
+      <div class="main-inner">
+        <header class="page-head">
+          <div>
+            <p class="eyebrow">事件中心</p>
+            <h1>异常事件</h1>
+            <p class="page-sub" id="pageDate">正在读取系统时间…</p>
+          </div>
+          <div class="head-tools">
+            <span class="demo-chip">演示数据</span>
+            <div class="clock-box">
+              <strong id="liveClock">--:--:--</strong>
+              <small>Asia/Shanghai</small>
+            </div>
+            <button class="btn" id="resetDemoBtn" type="button">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M20 11a8 8 0 1 0-2.3 6.3M20 4.5V11h-6.5"/>
+              </svg>
+              <span>重置演示</span>
+            </button>
+          </div>
+        </header>
+
+        <section class="demo-banner" aria-label="演示数据说明">
+          <span class="demo-badge">DEMO</span>
+          <div class="demo-copy">
+            <strong>当前页面展示的是演示数据</strong>
+            <p>异常事件接口尚未实现。筛选、状态更新和备注只会修改浏览器内的样例，不会写入服务器，也不能作为真实处置记录。</p>
+          </div>
+          <button class="btn" id="checkApiBtn" type="button">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M9 3.5v5M15 3.5v5M7.5 8.5h9v3a4.5 4.5 0 0 1-9 0v-3Z"/>
+              <path d="M12 16v4.5"/>
+            </svg>
+            <span>检查接口状态</span>
+          </button>
+        </section>
+        <p class="api-status" id="apiStatus" hidden></p>
+
+        <section class="summary-grid" aria-label="事件统计">
+          <article class="summary-card" data-tone="bad">
+            <span>待处理</span>
+            <strong id="pendingCount">0</strong>
+            <small>其中紧急 <b id="urgentPending">0</b> 条</small>
+          </article>
+          <article class="summary-card" data-tone="brand">
+            <span>今日事件</span>
+            <strong id="todayCount">0</strong>
+            <small>按 Asia/Shanghai 统计</small>
+          </article>
+          <article class="summary-card" data-tone="ok">
+            <span>已处理</span>
+            <strong id="resolvedCount">0</strong>
+            <small>含历史演示样例</small>
+          </article>
+          <article class="summary-card" data-tone="warn">
+            <span>误报</span>
+            <strong id="falseAlarmCount">0</strong>
+            <small>已标记为误报</small>
+          </article>
+        </section>
+
+        <div class="workspace-grid">
+          <section class="card list-card" aria-labelledby="listTitle">
+            <div class="card-head">
+              <div class="card-title">
+                <h2 id="listTitle">事件列表</h2>
+                <p id="resultCount">共 0 条演示样例</p>
+              </div>
+              <span class="chip" id="dataChip" data-tone="warn">演示数据</span>
+            </div>
+
+            <div class="filter-bar" role="search" aria-label="事件筛选">
+              <label class="search-field">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <circle cx="10.8" cy="10.8" r="6.3"/>
+                  <path d="m16 16 4.3 4.3"/>
+                </svg>
+                <span class="sr-only">搜索事件</span>
+                <input id="searchInput" type="search" placeholder="搜索编号、摘要、位置" autocomplete="off">
+              </label>
+              <select id="statusFilter" aria-label="处理状态">
+                <option value="">全部状态</option>
+                <option value="pending">待处理</option>
+                <option value="resolved">已处理</option>
+                <option value="false_alarm">误报</option>
+              </select>
+              <select id="levelFilter" aria-label="事件等级">
+                <option value="">全部等级</option>
+                <option value="urgent">紧急</option>
+                <option value="watch">关注</option>
+                <option value="info">提示</option>
+              </select>
+              <select id="sourceFilter" aria-label="事件来源">
+                <option value="">全部来源</option>
+                <option value="rdk">RDK 视觉</option>
+                <option value="sensor">环境传感器</option>
+                <option value="dialogue">对话分析</option>
+                <option value="device">设备状态</option>
+                <option value="manual">人工登记</option>
+              </select>
+              <select id="dateFilter" aria-label="日期范围">
+                <option value="today">今天</option>
+                <option value="all">全部日期</option>
+              </select>
+              <select id="sortFilter" aria-label="排序方式">
+                <option value="newest">最新优先</option>
+                <option value="oldest">最早优先</option>
+              </select>
+              <button class="btn btn-quiet" id="resetFilters" type="button">清除筛选</button>
+            </div>
+
+            <div class="event-list" id="eventList" aria-label="异常事件列表"></div>
+            <div class="empty-state" id="emptyState" hidden>
+              <div>
+                <strong>没有符合条件的事件</strong>
+                <p>可以换一个关键词，或清除筛选查看全部演示样例。</p>
+                <button class="btn btn-quiet" id="emptyReset" type="button">清除筛选</button>
+              </div>
+            </div>
+          </section>
+
+          <aside class="card detail-card" aria-labelledby="detailTitle">
+            <div class="card-head">
+              <div class="card-title">
+                <h2 id="detailTitle">事件详情</h2>
+                <p id="detailHint">选择左侧事件查看</p>
+              </div>
+              <span class="chip" id="detailStatus" data-tone="idle">未选择</span>
+            </div>
+
+            <div class="detail-empty" id="detailEmpty">
+              <div>
+                <strong>请选择一条事件</strong>
+                <p>点击左侧列表中的事件，查看来源、等级、时间和处理记录。</p>
+              </div>
+            </div>
+
+            <div id="detailContent" hidden>
+              <div class="detail-head">
+                <span class="detail-icon" id="detailIcon" data-tone="idle" aria-hidden="true"></span>
+                <div class="detail-title-wrap">
+                  <div class="detail-tags">
+                    <span class="chip" id="detailLevel" data-tone="warn">关注</span>
+                    <span class="chip" id="detailTypeChip" data-tone="idle">事件</span>
+                  </div>
+                  <h3 id="detailType">--</h3>
+                  <p id="detailSummary">--</p>
+                </div>
+              </div>
+
+              <dl class="detail-meta">
+                <div><dt>事件编号</dt><dd id="detailId">--</dd></div>
+                <div><dt>发生时间</dt><dd id="detailTime">--</dd></div>
+                <div><dt>来源</dt><dd id="detailSource">--</dd></div>
+                <div><dt>设备</dt><dd id="detailDevice">--</dd></div>
+                <div><dt>位置</dt><dd id="detailLocation">--</dd></div>
+                <div><dt>置信度</dt><dd id="detailConfidence">--</dd></div>
+              </dl>
+
+              <section class="detail-block">
+                <h4>事件描述</h4>
+                <p class="detail-description" id="detailDescription">--</p>
+              </section>
+
+              <section class="detail-block">
+                <div class="block-head">
+                  <h4>处理备注</h4>
+                  <span class="counter" id="noteCount">0 / 200</span>
+                </div>
+                <textarea id="noteInput" maxlength="200" rows="3" placeholder="记录现场确认、处置或误报原因（演示）"></textarea>
+                <div class="note-actions">
+                  <button class="btn" id="saveNoteBtn" type="button">保存备注</button>
+                </div>
+              </section>
+
+              <section class="detail-block">
+                <h4>状态处置</h4>
+                <div class="action-row">
+                  <button class="btn btn-primary" id="resolveBtn" type="button">标记已处理</button>
+                  <button class="btn btn-danger" id="falseAlarmBtn" type="button">标记误报</button>
+                  <button class="btn" id="reopenBtn" type="button">重新打开</button>
+                </div>
+                <p class="action-note">演示操作仅修改当前页面，刷新后会恢复初始样例。</p>
+              </section>
+
+              <section class="detail-block">
+                <h4>处理记录</h4>
+                <ol class="timeline" id="timeline"></ol>
+              </section>
+
+              <p class="detail-disclaimer">以上为演示数据，不代表真实儿童事件。真实接口接入后需由老师确认并记录。</p>
+            </div>
+          </aside>
+        </div>
+
+        <footer class="page-foot">
+          <span>页面范围：异常事件筛选、详情查看、状态处置和备注。当前没有正式事件接口，页面明确使用演示数据。</span>
+          <span>待实现接口字段、验收示例与 Issue 草案见 docs/MONITOR_EVENTS_UI.md。</span>
+        </footer>
+      </div>
+    </main>
+  </div>
+
+  <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+
+  <script>
+    (() => {
+      "use strict";
+
+      const $ = (selector) => document.querySelector(selector);
+      const timeFormatter = new Intl.DateTimeFormat("zh-CN", {
+        timeZone: "Asia/Shanghai",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        hourCycle: "h23"
+      });
+      const dateFormatter = new Intl.DateTimeFormat("zh-CN", {
+        timeZone: "Asia/Shanghai",
+        year: "numeric",
+        month: "long",
+        day: "numeric",
+        weekday: "long"
+      });
+      const dateTimeFormatter = new Intl.DateTimeFormat("zh-CN", {
+        timeZone: "Asia/Shanghai",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        hourCycle: "h23"
+      });
+      const dateKeyFormatter = new Intl.DateTimeFormat("en-CA", {
+        timeZone: "Asia/Shanghai",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit"
+      });
+
+      const els = {
+        pageDate: $("#pageDate"),
+        liveClock: $("#liveClock"),
+        resetDemoBtn: $("#resetDemoBtn"),
+        checkApiBtn: $("#checkApiBtn"),
+        apiStatus: $("#apiStatus"),
+        pendingCount: $("#pendingCount"),
+        urgentPending: $("#urgentPending"),
+        todayCount: $("#todayCount"),
+        resolvedCount: $("#resolvedCount"),
+        falseAlarmCount: $("#falseAlarmCount"),
+        resultCount: $("#resultCount"),
+        dataChip: $("#dataChip"),
+        searchInput: $("#searchInput"),
+        statusFilter: $("#statusFilter"),
+        levelFilter: $("#levelFilter"),
+        sourceFilter: $("#sourceFilter"),
+        dateFilter: $("#dateFilter"),
+        sortFilter: $("#sortFilter"),
+        resetFilters: $("#resetFilters"),
+        emptyReset: $("#emptyReset"),
+        eventList: $("#eventList"),
+        emptyState: $("#emptyState"),
+        detailStatus: $("#detailStatus"),
+        detailHint: $("#detailHint"),
+        detailEmpty: $("#detailEmpty"),
+        detailContent: $("#detailContent"),
+        detailIcon: $("#detailIcon"),
+        detailLevel: $("#detailLevel"),
+        detailTypeChip: $("#detailTypeChip"),
+        detailType: $("#detailType"),
+        detailSummary: $("#detailSummary"),
+        detailId: $("#detailId"),
+        detailTime: $("#detailTime"),
+        detailSource: $("#detailSource"),
+        detailDevice: $("#detailDevice"),
+        detailLocation: $("#detailLocation"),
+        detailConfidence: $("#detailConfidence"),
+        detailDescription: $("#detailDescription"),
+        noteInput: $("#noteInput"),
+        noteCount: $("#noteCount"),
+        saveNoteBtn: $("#saveNoteBtn"),
+        resolveBtn: $("#resolveBtn"),
+        falseAlarmBtn: $("#falseAlarmBtn"),
+        reopenBtn: $("#reopenBtn"),
+        timeline: $("#timeline"),
+        toast: $("#toast")
+      };
+
+      const LEVELS = {
+        urgent: { label: "紧急", tone: "bad" },
+        watch: { label: "关注", tone: "warn" },
+        info: { label: "提示", tone: "idle" }
+      };
+      const STATUSES = {
+        pending: { label: "待处理", tone: "warn" },
+        resolved: { label: "已处理", tone: "ok" },
+        false_alarm: { label: "误报", tone: "idle" }
+      };
+      const SOURCES = {
+        rdk: "RDK 视觉",
+        sensor: "环境传感器",
+        dialogue: "对话分析",
+        device: "设备状态",
+        manual: "人工登记"
+      };
+      const TYPES = {
+        fall: { label: "摔倒", icon: "fall" },
+        fight: { label: "斗殴", icon: "fight" },
+        device_offline: { label: "设备离线", icon: "device" },
+        sensor_expired: { label: "数据过期", icon: "sensor" },
+        environment: { label: "环境异常", icon: "leaf" },
+        dialogue_attention: { label: "对话关注", icon: "chat" },
+        sensor_recovered: { label: "数据恢复", icon: "check" }
+      };
+      const ICONS = {
+        fall: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3.5 21 20H3L12 3.5Z"/><path d="M12 9v4.5M12 16.6h.01"/></svg>',
+        fight: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m13 2.8-8 10h5l-1 8.4 8-10h-5l1-8.4Z"/></svg>',
+        device: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="5" width="16" height="11" rx="2"/><path d="M8 20h8M12 16v4M8 9h.01M16 9h.01"/></svg>',
+        sensor: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 17.5a7 7 0 0 1 14 0"/><path d="M8 14a4.5 4.5 0 0 1 8 0M12 18v3"/></svg>',
+        leaf: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19.5 4.5C11 4.2 5.5 8.1 5.5 14.3c0 2.3 1.3 4.2 3.4 5.2 4.1-1.1 8.5-5 10.6-15Z"/><path d="M5.5 20.5c1.2-4.6 4-8.2 8.3-10.9"/></svg>',
+        chat: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 12.5a7.5 7.5 0 0 1-7.5 7.5H6.8L3.5 22v-6.1A8.5 8.5 0 1 1 20 12.5Z"/><path d="M8.5 11.5h.01M12 11.5h.01M15.5 11.5h.01"/></svg>',
+        check: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 11.5a8 8 0 1 1-2.3-5.6"/><path d="m8.5 12.2 2.3 2.3 5-5.1"/></svg>',
+        info: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M12 10.5V16M12 7.8h.01"/></svg>'
+      };
+
+      const state = {
+        events: [],
+        selectedId: null,
+        filters: { q: "", status: "", level: "", source: "", date: "today", sort: "newest" }
+      };
+      let toastTimer = null;
+
+      function setText(element, value) {
+        const next = String(value ?? "");
+        if (element && element.textContent !== next) element.textContent = next;
+      }
+
+      function setChip(element, tone, text) {
+        if (!element) return;
+        element.dataset.tone = tone;
+        setText(element, text);
+      }
+
+      function formatTime(iso) {
+        const date = new Date(iso);
+        return Number.isNaN(date.getTime()) ? "--" : timeFormatter.format(date);
+      }
+
+      function formatDateTime(iso) {
+        const date = new Date(iso);
+        return Number.isNaN(date.getTime()) ? "--" : dateTimeFormatter.format(date);
+      }
+
+      function dateKey(iso) {
+        const date = new Date(iso);
+        return Number.isNaN(date.getTime()) ? "" : dateKeyFormatter.format(date);
+      }
+
+      function isoMinutesAgo(minutes) {
+        return new Date(Date.now() - minutes * 60000).toISOString();
+      }
+
+      function eventId(index, iso) {
+        return `EVT-${dateKey(iso).replace(/-/g, "")}-${String(index).padStart(3, "0")}`;
+      }
+
+      function makeEvent(config) {
+        const occurredAt = config.occurred_at || isoMinutesAgo(20);
+        return {
+          id: config.id || eventId(1, occurredAt),
+          type: config.type || "environment",
+          level: config.level || "watch",
+          source: config.source || "manual",
+          status: config.status || "pending",
+          occurred_at: occurredAt,
+          location: config.location || "活动室 A",
+          summary: config.summary || "异常事件",
+          detail: config.detail || "暂无补充描述。",
+          device_id: config.device_id || "rdk-x5-01",
+          confidence: Number.isFinite(config.confidence) ? config.confidence : null,
+          handled_at: config.handled_at || null,
+          handled_by: config.handled_by || null,
+          note: config.note || "",
+          history: Array.isArray(config.history) ? config.history : [
+            { at: occurredAt, action: "系统检测", by: "演示数据源", note: "由前端样例生成，非真实设备事件" }
+          ]
+        };
+      }
+
+      function buildDemoEvents() {
+        const first = isoMinutesAgo(22);
+        const second = isoMinutesAgo(48);
+        const third = isoMinutesAgo(76);
+        const fourth = isoMinutesAgo(125);
+        const fifth = isoMinutesAgo(161);
+        const sixth = isoMinutesAgo(201);
+        const seventh = isoMinutesAgo(1530);
+        const eighth = isoMinutesAgo(1685);
+        const ninth = isoMinutesAgo(1810);
+        const tenth = isoMinutesAgo(19);
+        return [
+          makeEvent({
+            id: eventId(1, first),
+            type: "fall",
+            level: "urgent",
+            source: "rdk",
+            status: "pending",
+            occurred_at: first,
+            location: "活动室 A",
+            summary: "检测到疑似摔倒",
+            detail: "行为识别连续 3 帧返回 fall，画面中一名儿童突然倒地。请立即查看实时画面并通知现场老师确认。",
+            device_id: "rdk-x5-01",
+            confidence: 0.86,
+            history: [
+              { at: first, action: "系统检测", by: "RDK 行为识别", note: "连续 3 帧返回 fall" },
+              { at: isoMinutesAgo(21), action: "等待确认", by: "演示系统", note: "尚未收到现场处理结果" }
+            ]
+          }),
+          makeEvent({
+            id: eventId(2, second),
+            type: "device_offline",
+            level: "watch",
+            source: "device",
+            status: "resolved",
+            occurred_at: second,
+            location: "监控主机",
+            summary: "RDK 视频流中断",
+            detail: "视频流超过 10 秒没有返回画面，页面保留最后一次传感器数据。网络恢复后视频重新连上。",
+            device_id: "rdk-x5-01",
+            handled_at: isoMinutesAgo(41),
+            handled_by: "演示老师",
+            note: "检查交换机后视频恢复。",
+            history: [
+              { at: second, action: "系统检测", by: "设备状态", note: "视频流中断" },
+              { at: isoMinutesAgo(41), action: "标记已处理", by: "演示老师", note: "检查交换机后视频恢复。" }
+            ]
+          }),
+          makeEvent({
+            id: eventId(3, third),
+            type: "fight",
+            level: "urgent",
+            source: "rdk",
+            status: "pending",
+            occurred_at: third,
+            location: "户外活动区",
+            summary: "检测到疑似斗殴",
+            detail: "行为识别返回 fight，画面中两名儿童发生推搡。请立即查看画面并联系现场老师。",
+            device_id: "rdk-x5-02",
+            confidence: 0.78,
+            history: [
+              { at: third, action: "系统检测", by: "RDK 行为识别", note: "返回 alert_type=fight" }
+            ]
+          }),
+          makeEvent({
+            id: eventId(4, fourth),
+            type: "sensor_expired",
+            level: "watch",
+            source: "sensor",
+            status: "pending",
+            occurred_at: fourth,
+            location: "午睡室",
+            summary: "环境传感器 20 秒未更新",
+            detail: "传感器数据超过 20 秒没有刷新，最后收到的室温为 24.8 ℃。页面保留最后数据并继续自动重试。",
+            device_id: "stm32-sensor-01",
+            history: [
+              { at: fourth, action: "系统检测", by: "环境传感器", note: "数据刷新超时" }
+            ]
+          }),
+          makeEvent({
+            id: eventId(5, fifth),
+            type: "environment",
+            level: "watch",
+            source: "sensor",
+            status: "false_alarm",
+            occurred_at: fifth,
+            location: "活动室 A",
+            summary: "eCO2 偏高",
+            detail: "eCO2 连续两次采样超过 1000 ppm。开窗通风后数值回落，现场未发现明显异常。",
+            device_id: "stm32-sensor-01",
+            handled_at: isoMinutesAgo(150),
+            handled_by: "演示老师",
+            note: "开窗通风后恢复正常，判定为误报。",
+            history: [
+              { at: fifth, action: "系统检测", by: "环境传感器", note: "eCO2 超过 1000 ppm" },
+              { at: isoMinutesAgo(150), action: "标记误报", by: "演示老师", note: "开窗通风后恢复正常。" }
+            ]
+          }),
+          makeEvent({
+            id: eventId(6, sixth),
+            type: "dialogue_attention",
+            level: "watch",
+            source: "dialogue",
+            status: "pending",
+            occurred_at: sixth,
+            location: "倾诉角",
+            summary: "对话出现需要留意的表达",
+            detail: "对话文本出现“想妈妈”“不开心”等关键词，仅作为老师关注线索，不作为心理或医学诊断。",
+            device_id: "esp32-device-01",
+            history: [
+              { at: sixth, action: "情绪线索", by: "对话分析", note: "仅展示文本线索，不进行诊断" }
+            ]
+          }),
+          makeEvent({
+            id: eventId(7, seventh),
+            type: "fall",
+            level: "urgent",
+            source: "rdk",
+            status: "resolved",
+            occurred_at: seventh,
+            location: "午睡室",
+            summary: "检测到疑似摔倒",
+            detail: "行为识别返回 fall，现场确认是儿童蹲下捡玩具，并非摔倒。",
+            device_id: "rdk-x5-01",
+            confidence: 0.7,
+            handled_at: isoMinutesAgo(1525),
+            handled_by: "演示老师",
+            note: "现场确认安全，儿童没有受伤。",
+            history: [
+              { at: seventh, action: "系统检测", by: "RDK 行为识别", note: "返回 fall" },
+              { at: isoMinutesAgo(1525), action: "标记已处理", by: "演示老师", note: "现场确认安全，儿童没有受伤。" }
+            ]
+          }),
+          makeEvent({
+            id: eventId(8, eighth),
+            type: "sensor_expired",
+            level: "watch",
+            source: "sensor",
+            status: "false_alarm",
+            occurred_at: eighth,
+            location: "午睡室",
+            summary: "传感器数据短暂中断",
+            detail: "网络抖动导致一次数据刷新失败，后续采样自动恢复。",
+            device_id: "stm32-sensor-01",
+            handled_at: isoMinutesAgo(1678),
+            handled_by: "演示老师",
+            note: "网络恢复，判定为误报。",
+            history: [
+              { at: eighth, action: "系统检测", by: "环境传感器", note: "一次数据刷新失败" },
+              { at: isoMinutesAgo(1678), action: "标记误报", by: "演示老师", note: "网络恢复。" }
+            ]
+          }),
+          makeEvent({
+            id: eventId(9, ninth),
+            type: "device_offline",
+            level: "info",
+            source: "device",
+            status: "resolved",
+            occurred_at: ninth,
+            location: "监控主机",
+            summary: "设备短暂离线后恢复",
+            detail: "设备心跳中断 8 秒，随后自动恢复。历史页面保留了最后一次数据。",
+            device_id: "rdk-x5-01",
+            handled_at: isoMinutesAgo(1804),
+            handled_by: "演示系统",
+            note: "自动恢复，无需人工操作。",
+            history: [
+              { at: ninth, action: "系统检测", by: "设备状态", note: "心跳中断" },
+              { at: isoMinutesAgo(1804), action: "自动恢复", by: "演示系统", note: "心跳恢复" }
+            ]
+          }),
+          makeEvent({
+            id: eventId(10, tenth),
+            type: "sensor_recovered",
+            level: "info",
+            source: "sensor",
+            status: "resolved",
+            occurred_at: tenth,
+            location: "活动室 A",
+            summary: "TVOC 恢复到参考范围",
+            detail: "TVOC 数值从 260 ppb 回落到 118 ppb，传感器数据持续更新。",
+            device_id: "stm32-sensor-01",
+            handled_at: isoMinutesAgo(18),
+            handled_by: "演示系统",
+            note: "数据自动恢复。",
+            history: [
+              { at: tenth, action: "数据恢复", by: "环境传感器", note: "TVOC 回到参考范围" },
+              { at: isoMinutesAgo(18), action: "状态更新", by: "演示系统", note: "数据自动恢复。" }
+            ]
+          })
+        ];
+      }
+
+      function typeMeta(type) {
+        return TYPES[type] || { label: type || "未知事件", icon: "info" };
+      }
+
+      function levelMeta(level) {
+        return LEVELS[level] || LEVELS.watch;
+      }
+
+      function statusMeta(status) {
+        return STATUSES[status] || STATUSES.pending;
+      }
+
+      function sourceLabel(source) {
+        return SOURCES[source] || source || "未知来源";
+      }
+
+      function currentEvent() {
+        return state.events.find((item) => item.id === state.selectedId) || null;
+      }
+
+      function filteredEvents() {
+        const keyword = state.filters.q.trim().toLocaleLowerCase("zh-CN");
+        const todayKey = dateKey(new Date().toISOString());
+        const result = state.events.filter((item) => {
+          if (state.filters.status && item.status !== state.filters.status) return false;
+          if (state.filters.level && item.level !== state.filters.level) return false;
+          if (state.filters.source && item.source !== state.filters.source) return false;
+          if (state.filters.date === "today" && dateKey(item.occurred_at) !== todayKey) return false;
+          if (!keyword) return true;
+          const haystack = [
+            item.id,
+            item.summary,
+            item.detail,
+            item.location,
+            item.device_id,
+            sourceLabel(item.source),
+            typeMeta(item.type).label
+          ].join(" ").toLocaleLowerCase("zh-CN");
+          return haystack.includes(keyword);
+        });
+        result.sort((a, b) => {
+          const difference = new Date(a.occurred_at).getTime() - new Date(b.occurred_at).getTime();
+          return state.filters.sort === "oldest" ? difference : -difference;
+        });
+        return result;
+      }
+
+      function renderSummary() {
+        const todayKey = dateKey(new Date().toISOString());
+        const pending = state.events.filter((item) => item.status === "pending");
+        setText(els.pendingCount, pending.length);
+        setText(els.urgentPending, pending.filter((item) => item.level === "urgent").length);
+        setText(els.todayCount, state.events.filter((item) => dateKey(item.occurred_at) === todayKey).length);
+        setText(els.resolvedCount, state.events.filter((item) => item.status === "resolved").length);
+        setText(els.falseAlarmCount, state.events.filter((item) => item.status === "false_alarm").length);
+      }
+
+      function createEventRow(event) {
+        const row = document.createElement("button");
+        row.type = "button";
+        row.className = "event-row";
+        row.dataset.eventId = event.id;
+        row.setAttribute("aria-pressed", String(event.id === state.selectedId));
+        if (event.id === state.selectedId) row.classList.add("is-selected");
+
+        const mark = document.createElement("span");
+        mark.className = "level-mark";
+        mark.dataset.level = event.level;
+        mark.setAttribute("aria-hidden", "true");
+
+        const main = document.createElement("div");
+        main.className = "event-main";
+        const titleRow = document.createElement("div");
+        titleRow.className = "event-title-row";
+        const title = document.createElement("span");
+        title.className = "event-title";
+        title.textContent = event.summary;
+        const level = levelMeta(event.level);
+        const miniLevel = document.createElement("span");
+        miniLevel.className = "mini-level";
+        miniLevel.dataset.tone = level.tone;
+        miniLevel.textContent = level.label;
+        titleRow.append(title, miniLevel);
+
+        const meta = document.createElement("p");
+        meta.className = "event-meta";
+        meta.textContent = `${typeMeta(event.type).label} · ${sourceLabel(event.source)} · ${event.location} · ${event.id}`;
+        main.append(titleRow, meta);
+
+        const side = document.createElement("div");
+        side.className = "event-side";
+        const time = document.createElement("span");
+        time.className = "event-time";
+        time.textContent = formatDateTime(event.occurred_at);
+        const status = statusMeta(event.status);
+        const statusChip = document.createElement("span");
+        statusChip.className = "chip";
+        statusChip.dataset.tone = status.tone;
+        statusChip.textContent = status.label;
+        side.append(time, statusChip);
+
+        row.append(mark, main, side);
+        row.addEventListener("click", () => selectEvent(event.id));
+        return row;
+      }
+
+      function renderList() {
+        const events = filteredEvents();
+        setText(els.resultCount, `筛选结果 ${events.length} 条 · 共 ${state.events.length} 条演示样例`);
+        els.eventList.replaceChildren();
+
+        if (events.length === 0) {
+          els.emptyState.hidden = false;
+          els.eventList.hidden = true;
+          return;
+        }
+
+        els.emptyState.hidden = true;
+        els.eventList.hidden = false;
+        els.eventList.replaceChildren(...events.map(createEventRow));
+      }
+
+      function renderTimeline(event) {
+        els.timeline.replaceChildren();
+        const history = Array.isArray(event.history) ? [...event.history] : [];
+        history.sort((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime());
+
+        if (history.length === 0) {
+          const empty = document.createElement("li");
+          empty.className = "timeline-empty";
+          empty.textContent = "暂无处理记录";
+          els.timeline.append(empty);
+          return;
+        }
+
+        for (const item of history) {
+          const entry = document.createElement("li");
+          const dot = document.createElement("span");
+          dot.className = "timeline-dot";
+          dot.setAttribute("aria-hidden", "true");
+          const action = document.createElement("strong");
+          action.textContent = item.action || "记录";
+          const meta = document.createElement("span");
+          meta.textContent = `${formatDateTime(item.at)} · ${item.by || "演示系统"}`;
+          entry.append(dot, action, meta);
+          if (item.note) {
+            const note = document.createElement("p");
+            note.textContent = item.note;
+            entry.append(note);
+          }
+          els.timeline.append(entry);
+        }
+      }
+
+      function updateNoteCounter() {
+        setText(els.noteCount, `${els.noteInput.value.length} / 200`);
+      }
+
+      function renderDetail() {
+        const event = filteredEvents().find((item) => item.id === state.selectedId) || null;
+        if (!event) {
+          els.detailEmpty.hidden = false;
+          els.detailContent.hidden = true;
+          setChip(els.detailStatus, "idle", "未选择");
+          setText(els.detailHint, "选择左侧事件查看");
+          return;
+        }
+
+        const type = typeMeta(event.type);
+        const level = levelMeta(event.level);
+        const status = statusMeta(event.status);
+        els.detailEmpty.hidden = true;
+        els.detailContent.hidden = false;
+
+        setChip(els.detailStatus, status.tone, status.label);
+        setChip(els.detailLevel, level.tone, level.label);
+        setChip(els.detailTypeChip, "idle", type.label);
+        setText(els.detailType, event.summary);
+        setText(els.detailSummary, `${type.label} · ${sourceLabel(event.source)}`);
+        setText(els.detailHint, `编号 ${event.id}`);
+        setText(els.detailId, event.id);
+        setText(els.detailTime, formatDateTime(event.occurred_at));
+        setText(els.detailSource, sourceLabel(event.source));
+        setText(els.detailDevice, event.device_id || "未记录");
+        setText(els.detailLocation, event.location || "未记录");
+        setText(els.detailConfidence, Number.isFinite(event.confidence) ? `${Math.round(event.confidence * 100)}%` : "不适用");
+        setText(els.detailDescription, event.detail || "暂无补充描述。");
+
+        els.detailIcon.dataset.tone = level.tone;
+        els.detailIcon.innerHTML = ICONS[type.icon] || ICONS.info;
+
+        if (document.activeElement !== els.noteInput) {
+          els.noteInput.value = event.note || "";
+          updateNoteCounter();
+        }
+
+        els.resolveBtn.disabled = event.status === "resolved";
+        els.falseAlarmBtn.disabled = event.status === "false_alarm";
+        els.reopenBtn.disabled = event.status === "pending";
+        renderTimeline(event);
+      }
+
+      function renderAll() {
+        renderSummary();
+        renderList();
+        renderDetail();
+      }
+
+      function selectEvent(id) {
+        state.selectedId = id;
+        renderList();
+        renderDetail();
+        if (window.matchMedia("(max-width: 1180px)").matches) {
+          document.querySelector(".detail-card").scrollIntoView({ behavior: "smooth", block: "start" });
+        }
+      }
+
+      function readFilters() {
+        state.filters = {
+          q: els.searchInput.value,
+          status: els.statusFilter.value,
+          level: els.levelFilter.value,
+          source: els.sourceFilter.value,
+          date: els.dateFilter.value,
+          sort: els.sortFilter.value
+        };
+      }
+
+      function applyFilters() {
+        readFilters();
+        const events = filteredEvents();
+        if (!events.some((item) => item.id === state.selectedId)) {
+          state.selectedId = events[0]?.id || null;
+        }
+        renderAll();
+      }
+
+      function resetFilters() {
+        els.searchInput.value = "";
+        els.statusFilter.value = "";
+        els.levelFilter.value = "";
+        els.sourceFilter.value = "";
+        els.dateFilter.value = "today";
+        els.sortFilter.value = "newest";
+        applyFilters();
+      }
+
+      function showToast(message) {
+        clearTimeout(toastTimer);
+        setText(els.toast, message);
+        els.toast.hidden = false;
+        toastTimer = setTimeout(() => {
+          els.toast.hidden = true;
+        }, 3600);
+      }
+
+      function updateStatus(nextStatus) {
+        const event = currentEvent();
+        if (!event || event.status === nextStatus) return;
+        const labels = { resolved: "标记已处理", false_alarm: "标记误报", pending: "重新打开" };
+        const note = els.noteInput.value.trim().slice(0, 200);
+        if (note) event.note = note;
+        event.status = nextStatus;
+        event.handled_at = nextStatus === "pending" ? null : new Date().toISOString();
+        event.handled_by = nextStatus === "pending" ? null : "演示老师";
+        event.history.push({
+          at: new Date().toISOString(),
+          action: labels[nextStatus] || "更新状态",
+          by: "演示老师",
+          note: note || ""
+        });
+        renderAll();
+        showToast(`演示数据：已${labels[nextStatus] || "更新状态"}，不会写入服务器。`);
+      }
+
+      function saveNote() {
+        const event = currentEvent();
+        if (!event) return;
+        const note = els.noteInput.value.trim().slice(0, 200);
+        if (note === event.note) {
+          showToast("备注没有变化。");
+          return;
+        }
+        event.note = note;
+        event.history.push({
+          at: new Date().toISOString(),
+          action: note ? "保存处理备注" : "清空处理备注",
+          by: "演示老师",
+          note
+        });
+        renderAll();
+        showToast("演示数据：备注已更新，不会写入服务器。");
+      }
+
+      async function checkApi() {
+        if (els.checkApiBtn.disabled) return;
+        els.checkApiBtn.disabled = true;
+        els.checkApiBtn.classList.add("is-busy");
+        els.apiStatus.hidden = false;
+        els.apiStatus.dataset.tone = "";
+        setText(els.apiStatus, "正在检查 /api/events 接口…");
+
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 4000);
+        try {
+          const response = await fetch("/api/events", {
+            cache: "no-store",
+            signal: controller.signal,
+            headers: { Accept: "application/json" }
+          });
+          const text = (await response.text()).trim();
+          let data = null;
+          if (text) {
+            try { data = JSON.parse(text); } catch (error) { data = null; }
+          }
+          if (!response.ok) {
+            const detail = data && typeof data === "object"
+              ? [data.error, data.detail].filter((value) => typeof value === "string" && value.trim()).join("：")
+              : text.slice(0, 120);
+            throw new Error(detail ? `HTTP ${response.status} · ${detail}` : `HTTP ${response.status}`);
+          }
+          const count = Array.isArray(data?.events) ? data.events.length : 0;
+          els.apiStatus.dataset.tone = "ok";
+          setText(els.apiStatus, `接口 /api/events 已响应，返回 ${count} 条事件。当前页面仍使用演示数据，接线阶段再替换。`);
+        } catch (error) {
+          const reason = error && error.name === "AbortError" ? "请求超时" : (error?.message || "网络错误");
+          els.apiStatus.dataset.tone = "warn";
+          setText(els.apiStatus, `事件接口暂不可用：${reason}。当前继续展示演示数据。`);
+        } finally {
+          clearTimeout(timer);
+          els.checkApiBtn.disabled = false;
+          els.checkApiBtn.classList.remove("is-busy");
+        }
+      }
+
+      function resetDemo() {
+        state.events = buildDemoEvents();
+        state.selectedId = state.events[0]?.id || null;
+        resetFilters();
+        els.apiStatus.hidden = true;
+        setText(els.apiStatus, "");
+        renderAll();
+        showToast("已恢复初始演示数据。");
+      }
+
+      function tick() {
+        const now = new Date();
+        setText(els.liveClock, timeFormatter.format(now));
+        setText(els.pageDate, dateFormatter.format(now));
+      }
+
+      els.searchInput.addEventListener("input", applyFilters);
+      els.statusFilter.addEventListener("change", applyFilters);
+      els.levelFilter.addEventListener("change", applyFilters);
+      els.sourceFilter.addEventListener("change", applyFilters);
+      els.dateFilter.addEventListener("change", applyFilters);
+      els.sortFilter.addEventListener("change", applyFilters);
+      els.resetFilters.addEventListener("click", resetFilters);
+      els.emptyReset.addEventListener("click", resetFilters);
+      els.noteInput.addEventListener("input", updateNoteCounter);
+      els.saveNoteBtn.addEventListener("click", saveNote);
+      els.resolveBtn.addEventListener("click", () => updateStatus("resolved"));
+      els.falseAlarmBtn.addEventListener("click", () => updateStatus("false_alarm"));
+      els.reopenBtn.addEventListener("click", () => updateStatus("pending"));
+      els.checkApiBtn.addEventListener("click", checkApi);
+      els.resetDemoBtn.addEventListener("click", resetDemo);
+
+      state.events = buildDemoEvents();
+      state.selectedId = state.events[0]?.id || null;
+      tick();
+      renderAll();
+      setInterval(tick, 1000);
+    })();
+  </script>
+</body>
+</html>
