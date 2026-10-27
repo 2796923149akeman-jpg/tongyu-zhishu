@@ -33,6 +33,17 @@
 ### `GET /events`
 
 返回异常事件页面。当前页面使用带“演示数据”标识的样例，事件接口尚未实现；字段需求、验收示例和 Issue 草案见 `docs/MONITOR_EVENTS_UI.md`。
+### `GET /health.html`
+
+返回学生测温页面。页面本身只提供静态结构和交互逻辑，名单、测温记录与日报数据需要后续接口；接口未实现时页面使用带“演示数据”标识的固定样例，字段约定见 [学生测温与当日日报](HEALTH_REPORT_UI.md)。
+
+### `GET /reports.html`
+
+返回当日日报页面，按日期和班级汇总安全事件处置、关注对话与测温完成情况。当前同样使用带标识的演示数据。
+
+### `GET /health-report.css`、`GET /health-report.js`
+
+上面两个页面共用的样式与脚本资源，随页面一起由 Dashboard 服务返回。
 
 ### `GET /health`
 

@@ -53,6 +53,14 @@ CONVERSATION_SUMMARIES_FILE = Path(
 EMOTION_LEXICON_FILE = Path(
     os.environ.get("EMOTION_LEXICON_FILE", str(ROOT / "emotion_lexicon.json"))
 )
+# 学生测温与当日日报页面及其专用样式、脚本。页面只包含静态结构和演示数据，
+# 名单与测温数据需要后续接口提供；这些路由不读取任何本机业务数据。
+STATIC_PAGES = {
+    "/health.html": ("health.html", "text/html; charset=utf-8"),
+    "/reports.html": ("reports.html", "text/html; charset=utf-8"),
+    "/health-report.css": ("health-report.css", "text/css; charset=utf-8"),
+    "/health-report.js": ("health-report.js", "text/javascript; charset=utf-8"),
+}
 DEFAULT_DIALOGUE_CONFIG = {
     "title": "陪伴对话记录",
     "refresh_seconds": 2,
@@ -510,6 +518,10 @@ class Handler(BaseHTTPRequestHandler):
             return
         if path == "/health":
             self.send_json(200, {"ok": True, "rdk_base": RDK_BASE})
+            return
+        static_page = STATIC_PAGES.get(path)
+        if static_page:
+            self.send_bytes(200, static_page[1], (ROOT / static_page[0]).read_bytes())
             return
         self.send_json(404, {"ok": False, "error": "not found"})
 
