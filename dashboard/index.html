@@ -1396,13 +1396,14 @@
           <div class="banner-copy">
             <div class="banner-head">
               <span class="chip" id="bannerChip" data-tone="idle">等待</span>
+              <span class="chip" id="bannerWarning" data-tone="warn" hidden>传感器断开</span>
               <span class="banner-kicker">安全状态</span>
             </div>
             <h2 id="bannerTitle">等待数据</h2>
             <p id="bannerDesc">正在连接 Dashboard 服务，等待第一组设备数据。</p>
           </div>
           <div class="banner-meta">
-            <span class="meta-label">最后接收</span>
+            <span class="meta-label" id="bannerTimeLabel">最后接收</span>
             <strong id="bannerTime">--:--:--</strong>
             <span class="meta-sub" id="bannerAgo">尚未接收</span>
           </div>
@@ -1462,6 +1463,10 @@
                 <dd><span class="dot idle" id="sensorDot"></span><span id="sensorText">等待数据</span></dd>
               </div>
               <div class="device-row">
+                <dt>传感器采集</dt>
+                <dd><span class="dot idle" id="sensorTimeDot"></span><span id="sensorTimeText">等待数据</span></dd>
+              </div>
+              <div class="device-row">
                 <dt>行为识别</dt>
                 <dd><span class="dot idle" id="alertDot"></span><span id="alertText">等待数据</span></dd>
               </div>
@@ -1470,7 +1475,7 @@
                 <dd><span class="dot idle" id="videoDot"></span><span id="videoText">连接中</span></dd>
               </div>
               <div class="device-row">
-                <dt>最后接收</dt>
+                <dt>最后响应</dt>
                 <dd><span class="dot idle" id="receiveDot"></span><span id="receiveText">尚未接收</span></dd>
               </div>
               <div class="device-row">
@@ -1482,7 +1487,7 @@
             <div class="device-note">
               <strong>状态判定</strong>
               <ul>
-                <li>15 秒未更新：标记为数据过期</li>
+                <li>行为状态 15 秒、传感器采集时间 20 秒：标记过期</li>
                 <li>connected=false：保留最后数据并提示离线</li>
                 <li>alert_type=fall / fight：显示红色紧急状态</li>
               </ul>
@@ -1502,6 +1507,7 @@
             </div>
           </div>
           <p class="sensor-missing" id="sensorMissing" hidden></p>
+          <p class="sensor-missing" id="sensorTimeWarning" hidden></p>
           <div class="sensor-grid" id="sensorGrid" aria-live="off"></div>
         </section>
 
@@ -1559,8 +1565,10 @@
         refreshBtn: $("#refreshBtn"),
         banner: $("#safetyBanner"),
         bannerChip: $("#bannerChip"),
+        bannerWarning: $("#bannerWarning"),
         bannerTitle: $("#bannerTitle"),
         bannerDesc: $("#bannerDesc"),
+        bannerTimeLabel: $("#bannerTimeLabel"),
         bannerTime: $("#bannerTime"),
         bannerAgo: $("#bannerAgo"),
         bannerIcons: Array.from(document.querySelectorAll("[data-banner-icon]")),
@@ -1577,6 +1585,8 @@
         rdkBaseText: $("#rdkBaseText"),
         sensorDot: $("#sensorDot"),
         sensorText: $("#sensorText"),
+        sensorTimeDot: $("#sensorTimeDot"),
+        sensorTimeText: $("#sensorTimeText"),
         alertDot: $("#alertDot"),
         alertText: $("#alertText"),
         videoDot: $("#videoDot"),
@@ -1587,6 +1597,7 @@
         sensorUpdated: $("#sensorUpdated"),
         sensorChip: $("#sensorChip"),
         sensorMissing: $("#sensorMissing"),
+        sensorTimeWarning: $("#sensorTimeWarning"),
         sensorGrid: $("#sensorGrid"),
         sideDot: $("#sideDot"),
         sideStatus: $("#sideStatus"),
@@ -1704,6 +1715,9 @@
           values: emptySensorValues(),
           connected: null,
           at: null,
+          collectedAt: null,
+          timestampState: "unknown",
+          timestampKey: "",
           error: null,
           missing: []
         },
@@ -1766,6 +1780,92 @@
         if (value === null || value === undefined || value === "") return null;
         const number = Number(value);
         return Number.isFinite(number) ? number : null;
+      }
+
+      const SENSOR_TIME_KEYS = [
+        "timestamp", "ts", "time", "updated_at", "collected_at",
+        "sampled_at", "sample_time", "sensor_time", "observed_at",
+        "created_at"
+      ];
+
+      function normalizeTimestamp(value, now = Date.now()) {
+        let milliseconds = null;
+        if (typeof value === "number") {
+          milliseconds = value;
+        } else if (typeof value === "string") {
+          const text = value.trim();
+          if (!text) return null;
+          if (/^-?\d+(?:\.\d+)?$/.test(text)) {
+            milliseconds = Number(text);
+          } else {
+            let normalized = text.replace(" ", "T");
+            if (/^\d{4}-\d{2}-\d{2}$/.test(normalized)) normalized += "T00:00:00";
+            if (!/(?:Z|[+-]\d{2}:?\d{2})$/i.test(normalized)) normalized += "+08:00";
+            milliseconds = Date.parse(normalized);
+            if (!Number.isFinite(milliseconds)) return null;
+          }
+        } else {
+          return null;
+        }
+
+        if (!Number.isFinite(milliseconds) || milliseconds <= 0) return null;
+        if (milliseconds < 1e11) milliseconds *= 1000;
+        else if (milliseconds > 1e14) milliseconds /= 1000;
+        if (milliseconds > now + 5 * 60 * 1000) return null;
+        return milliseconds;
+      }
+
+      function readSensorTimestamp(data, properties, now = Date.now()) {
+        let invalidKey = "";
+        for (const key of SENSOR_TIME_KEYS) {
+          let raw;
+          if (data && Object.prototype.hasOwnProperty.call(data, key) && data[key] !== null && data[key] !== "") {
+            raw = data[key];
+          } else if (properties && Object.prototype.hasOwnProperty.call(properties, key)
+            && properties[key] !== null && properties[key] !== "") {
+            raw = properties[key];
+          }
+          if (raw === undefined) continue;
+          const value = normalizeTimestamp(raw, now);
+          if (value !== null) return { value, state: "known", key };
+          invalidKey = key;
+        }
+        return { value: null, state: invalidKey ? "invalid" : "missing", key: invalidKey };
+      }
+
+      function sensorFreshness() {
+        const sensors = state.sensors;
+        if (sensors.timestampState === "known" && sensors.collectedAt) {
+          return {
+            known: true,
+            fresh: isFresh(sensors.collectedAt, STALE_SENSORS_MS),
+            at: sensors.collectedAt
+          };
+        }
+        return { known: false, fresh: false, at: null };
+      }
+
+      function sensorIssueLabel() {
+        const sensors = state.sensors;
+        if (sensors.connected === false) return "传感器断开";
+        if (sensors.timestampState === "missing") return "采集时间未知";
+        if (sensors.timestampState === "invalid") return "采集时间异常";
+        if (sensors.collectedAt && !isFresh(sensors.collectedAt, STALE_SENSORS_MS)) return "数据已过期";
+        if (sensors.error) return "传感器接口异常";
+        return "";
+      }
+
+      function sensorUrgentSuffix() {
+        const sensors = state.sensors;
+        const issues = [];
+        if (sensors.connected === false) issues.push("传感器连接已断开");
+        if (sensors.timestampState === "missing") issues.push("传感器未提供采集时间");
+        else if (sensors.timestampState === "invalid") issues.push("传感器采集时间格式异常");
+        else if (sensors.collectedAt && !isFresh(sensors.collectedAt, STALE_SENSORS_MS)) {
+          issues.push(`传感器采集于${relativeTime(sensors.collectedAt)}`);
+        }
+        if (sensors.error) issues.push(`传感器接口错误：${sensors.error}`);
+        return issues.length ? ` 同时${issues.join("；")}，环境数据不能视为实时。` : "";
       }
 
       function formatValue(value, digits) {
@@ -1902,6 +2002,7 @@
         state.inFlight.sensors = true;
         try {
           const data = await fetchJson("/api/rdk/sensors");
+          const receivedAt = Date.now();
           const properties = data.properties && typeof data.properties === "object"
             ? data.properties
             : (data.sensor && typeof data.sensor === "object"
@@ -1920,11 +2021,15 @@
           const connected = typeof data.connected === "boolean"
             ? data.connected
             : (typeof data.sensor_connected === "boolean" ? data.sensor_connected : null);
+          const timestamp = readSensorTimestamp(data, properties, receivedAt);
 
           state.sensors.values = nextValues;
           state.sensors.connected = connected;
           state.sensors.missing = missing;
-          state.sensors.at = Date.now();
+          state.sensors.at = receivedAt;
+          state.sensors.collectedAt = timestamp.value;
+          state.sensors.timestampState = timestamp.state;
+          state.sensors.timestampKey = timestamp.key;
           state.sensors.error = null;
         } catch (error) {
           state.sensors.error = readableError(error);
@@ -1944,15 +2049,17 @@
         if (!lastReceivedAt) {
           return statusState.error || sensorState.error ? "offline" : "waiting";
         }
-        if (sensorState.connected === false) return "offline";
 
         const statusFresh = isFresh(statusState.at, STALE_STATUS_MS);
         if (statusFresh && (statusState.alert === "fall" || statusState.alert === "fight")) {
           return statusState.alert;
         }
 
-        const sensorsFresh = isFresh(sensorState.at, STALE_SENSORS_MS);
-        if (!statusFresh || !sensorsFresh) return "expired";
+        if (sensorState.connected === false) return "offline";
+        if (!statusFresh) return "expired";
+
+        const freshness = sensorFreshness();
+        if (!freshness.known || !freshness.fresh) return "expired";
         if (!statusState.alert || statusState.alert === "unknown") return "unknown";
         return "normal";
       }
@@ -1966,7 +2073,7 @@
             chipTone: "bad",
             chip: "紧急",
             title: "检测到摔倒",
-            desc: "行为识别返回 alert_type=fall，请立即查看画面并通知现场老师确认。"
+            desc: `行为识别返回 alert_type=fall，请立即查看画面并通知现场老师确认。${sensorUrgentSuffix()}`
           };
         }
         if (kind === "fight") {
@@ -1974,7 +2081,7 @@
             chipTone: "bad",
             chip: "紧急",
             title: "检测到斗殴",
-            desc: "行为识别返回 alert_type=fight，请立即查看画面并前往处理。"
+            desc: `行为识别返回 alert_type=fight，请立即查看画面并前往处理。${sensorUrgentSuffix()}`
           };
         }
         if (kind === "normal") {
@@ -1982,7 +2089,7 @@
             chipTone: "ok",
             chip: "正常",
             title: "监控正常",
-            desc: "行为识别未返回摔倒或斗殴告警，传感器数据持续更新，暂无需要立即处理的异常。"
+            desc: "行为识别未返回摔倒或斗殴告警，传感器采集时间持续更新，暂无需要立即处理的异常。"
           };
         }
         if (kind === "offline") {
@@ -2017,15 +2124,26 @@
             else if (statusState.at) reasons.push(`行为状态已 ${ageSeconds(statusState.at)} 秒未更新`);
             else reasons.push("尚未收到行为状态");
           }
-          if (!isFresh(sensorState.at, STALE_SENSORS_MS)) {
+          const sensorFresh = sensorFreshness();
+          if (!sensorFresh.known || !sensorFresh.fresh || sensorState.error) {
             if (sensorState.error) reasons.push(`传感器接口：${sensorState.error}`);
-            else if (sensorState.at) reasons.push(`传感器已 ${ageSeconds(sensorState.at)} 秒未更新`);
-            else reasons.push("尚未收到传感器数据");
+            if (sensorState.timestampState === "missing") {
+              reasons.push("传感器接口未提供采集时间，无法判断数据是否过期");
+            } else if (sensorState.timestampState === "invalid") {
+              reasons.push("传感器采集时间格式无法识别");
+            } else if (sensorState.collectedAt && !isFresh(sensorState.collectedAt, STALE_SENSORS_MS)) {
+              reasons.push(`传感器采集于 ${formatDateTime(sensorState.collectedAt)}（${relativeTime(sensorState.collectedAt)}），已超过 20 秒`);
+            } else if (!sensorState.at) {
+              reasons.push("尚未收到传感器数据");
+            }
           }
+          const unknownTime = sensorState.timestampState === "missing"
+            || sensorState.timestampState === "invalid"
+            || !sensorState.at;
           return {
             chipTone: "warn",
-            chip: "过期",
-            title: "数据已过期",
+            chip: unknownTime ? "需核对" : "过期",
+            title: unknownTime ? "数据时间未知" : "数据已过期",
             desc: `${reasons.join("；")}。页面保留最后一次数据并自动重试，不会整页清空。`
           };
         }
@@ -2046,8 +2164,23 @@
         setChip(els.bannerChip, copy.chipTone, copy.chip);
         setText(els.bannerTitle, copy.title);
         setText(els.bannerDesc, copy.desc);
-        setText(els.bannerTime, formatTime(lastReceivedAt));
-        setText(els.bannerAgo, relativeTime(lastReceivedAt));
+        if (state.sensors.timestampState === "known" && state.sensors.collectedAt) {
+          setText(els.bannerTimeLabel, "传感器采集");
+          setText(els.bannerTime, formatTime(state.sensors.collectedAt));
+          setText(els.bannerAgo, relativeTime(state.sensors.collectedAt));
+        } else {
+          setText(els.bannerTimeLabel, "最后响应");
+          setText(els.bannerTime, formatTime(lastReceivedAt));
+          setText(els.bannerAgo, relativeTime(lastReceivedAt));
+        }
+
+        const sensorWarning = kind === "fall" || kind === "fight" ? sensorIssueLabel() : "";
+        if (sensorWarning) {
+          setChip(els.bannerWarning, "warn", sensorWarning);
+          els.bannerWarning.hidden = false;
+        } else {
+          els.bannerWarning.hidden = true;
+        }
 
         for (const icon of els.bannerIcons) {
           icon.hidden = icon.dataset.bannerIcon !== kind;
@@ -2087,7 +2220,7 @@
 
       function renderDevicePanel() {
         const statusFresh = isFresh(state.status.at, STALE_STATUS_MS);
-        const sensorsFresh = isFresh(state.sensors.at, STALE_SENSORS_MS);
+        const sensorFresh = sensorFreshness();
         const healthFresh = isFresh(state.health.at, STALE_HEALTH_MS);
         const lastReceivedAt = Math.max(state.status.at || 0, state.sensors.at || 0);
 
@@ -2105,17 +2238,38 @@
         setText(els.rdkBaseText, state.health.rdkBase || "未配置");
 
         if (state.sensors.connected === true) {
-          setDot(els.sensorDot, sensorsFresh ? "ok" : "warn");
-          setText(els.sensorText, sensorsFresh ? "已连接" : "已连接 · 数据过期");
+          setDot(els.sensorDot, sensorFresh.known && sensorFresh.fresh ? "ok" : "warn");
+          if (!sensorFresh.known) {
+            setText(els.sensorText, state.sensors.timestampState === "invalid"
+              ? "已连接 · 采集时间异常"
+              : "已连接 · 采集时间未知");
+          } else {
+            setText(els.sensorText, sensorFresh.fresh ? "已连接" : "已连接 · 数据过期");
+          }
         } else if (state.sensors.connected === false) {
           setDot(els.sensorDot, "bad");
           setText(els.sensorText, "未连接");
         } else if (state.sensors.at) {
-          setDot(els.sensorDot, sensorsFresh ? "warn" : "warn");
+          setDot(els.sensorDot, "warn");
           setText(els.sensorText, "连接状态未知");
         } else {
           setDot(els.sensorDot, state.sensors.error ? "bad" : "idle");
           setText(els.sensorText, state.sensors.error ? "接口失败" : "等待数据");
+        }
+
+        if (!state.sensors.at) {
+          setDot(els.sensorTimeDot, "idle");
+          setText(els.sensorTimeText, "等待数据");
+        } else if (state.sensors.timestampState === "known" && state.sensors.collectedAt) {
+          setDot(els.sensorTimeDot, sensorFresh.fresh ? "ok" : "warn");
+          setText(els.sensorTimeText,
+            `${formatTime(state.sensors.collectedAt)} · ${relativeTime(state.sensors.collectedAt)}`);
+        } else if (state.sensors.timestampState === "invalid") {
+          setDot(els.sensorTimeDot, "warn");
+          setText(els.sensorTimeText, "采集时间格式错误");
+        } else {
+          setDot(els.sensorTimeDot, "warn");
+          setText(els.sensorTimeText, "未提供采集时间");
         }
 
         if (state.status.alert) {
@@ -2143,7 +2297,7 @@
           setDot(els.receiveDot, "idle");
           setText(els.receiveText, "尚未接收");
         } else {
-          const fresh = statusFresh || sensorsFresh;
+          const fresh = statusFresh || sensorFresh.fresh;
           setDot(els.receiveDot, fresh ? "ok" : "warn");
           setText(els.receiveText, `${formatTime(lastReceivedAt)} · ${relativeTime(lastReceivedAt)}`);
         }
@@ -2165,14 +2319,33 @@
         const online = state.health.ok === true
           && state.sensors.connected !== false
           && statusFresh
-          && sensorsFresh;
-        setChip(els.deviceChip, online ? "ok" : "idle", online ? "在线" : "检查中");
+          && sensorFresh.known
+          && sensorFresh.fresh;
+        const deviceLabel = online
+          ? "在线"
+          : (state.sensors.connected === false ? "离线" : (state.sensors.at ? "需核对" : "检查中"));
+        setChip(els.deviceChip, online ? "ok" : (state.sensors.connected === false ? "bad" : "idle"), deviceLabel);
       }
 
       function buildSensorCard(def) {
         const value = state.sensors.values[def.key];
         const hasValue = Number.isFinite(value);
-        const [tone, statusText] = hasValue ? def.evaluate(value) : ["idle", "暂无数据"];
+        const [qualityTone, qualityText] = hasValue ? def.evaluate(value) : ["idle", "暂无数据"];
+        const freshness = sensorFreshness();
+        let tone = qualityTone;
+        let statusText = qualityText;
+        if (hasValue) {
+          if (state.sensors.connected === false) {
+            tone = "bad";
+            statusText = "设备离线";
+          } else if (!freshness.known) {
+            tone = qualityTone === "bad" ? "bad" : "warn";
+            statusText = qualityTone === "ok" ? "时间未知" : `${qualityText} · 时间未知`;
+          } else if (!freshness.fresh) {
+            tone = qualityTone === "bad" ? "bad" : "warn";
+            statusText = qualityTone === "ok" ? "已过期" : `${qualityText} · 已过期`;
+          }
+        }
 
         const card = document.createElement("article");
         card.className = "sensor-card";
@@ -2239,11 +2412,16 @@
       }
 
       function renderSensors() {
+        const freshness = sensorFreshness();
         const key = JSON.stringify({
           values: state.sensors.values,
           connected: state.sensors.connected,
           at: state.sensors.at,
-          missing: state.sensors.missing
+          collectedAt: state.sensors.collectedAt,
+          timestampState: state.sensors.timestampState,
+          missing: state.sensors.missing,
+          fresh: freshness.fresh,
+          known: freshness.known
         });
 
         if (key !== lastSensorRenderKey) {
@@ -2252,14 +2430,17 @@
         }
 
         const summary = sensorSummary();
-        const fresh = isFresh(state.sensors.at, STALE_SENSORS_MS);
-        els.sensorGrid.dataset.stale = String(Boolean(state.sensors.at) && !fresh);
+        els.sensorGrid.dataset.stale = String(Boolean(state.sensors.at) && (!freshness.known || !freshness.fresh));
 
         if (!state.sensors.at) {
           setChip(els.sensorChip, "idle", "等待数据");
         } else if (state.sensors.connected === false) {
           setChip(els.sensorChip, "bad", "设备离线");
-        } else if (!fresh) {
+        } else if (state.sensors.timestampState === "missing") {
+          setChip(els.sensorChip, "warn", "采集时间未知");
+        } else if (state.sensors.timestampState === "invalid") {
+          setChip(els.sensorChip, "warn", "采集时间异常");
+        } else if (!freshness.fresh) {
           setChip(els.sensorChip, "warn", "数据过期");
         } else if (summary.invalid > 0) {
           setChip(els.sensorChip, "bad", `${summary.invalid} 项异常`);
@@ -2271,9 +2452,28 @@
           setChip(els.sensorChip, "warn", "字段缺失");
         }
 
-        setText(els.sensorUpdated, state.sensors.at
-          ? `最后接收 ${formatTime(state.sensors.at)} · ${relativeTime(state.sensors.at)}`
-          : "尚未接收数据");
+        if (state.sensors.timestampState === "known" && state.sensors.collectedAt) {
+          setText(els.sensorUpdated,
+            `采集于 ${formatTime(state.sensors.collectedAt)} · ${relativeTime(state.sensors.collectedAt)}`);
+        } else if (state.sensors.at) {
+          const label = state.sensors.timestampState === "invalid" ? "采集时间格式错误" : "采集时间未知";
+          setText(els.sensorUpdated, `${label} · 接收于 ${formatTime(state.sensors.at)}`);
+        } else {
+          setText(els.sensorUpdated, "尚未接收数据");
+        }
+
+        if (state.sensors.at && state.sensors.timestampState === "missing") {
+          setText(els.sensorTimeWarning,
+            "传感器接口未提供采集时间（timestamp），无法判断数据是否过期；请让 /api/iot_payload 返回带时区的 ISO 8601 时间。");
+          els.sensorTimeWarning.hidden = false;
+        } else if (state.sensors.at && state.sensors.timestampState === "invalid") {
+          setText(els.sensorTimeWarning,
+            "传感器采集时间无法解析，已按“无法确认新鲜度”处理；请检查 timestamp 格式。");
+          els.sensorTimeWarning.hidden = false;
+        } else {
+          setText(els.sensorTimeWarning, "");
+          els.sensorTimeWarning.hidden = true;
+        }
 
         if (state.sensors.missing.length) {
           setText(els.sensorMissing, `本次响应缺少字段：${state.sensors.missing.join("、")}`);
