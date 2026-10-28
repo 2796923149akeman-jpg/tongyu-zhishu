@@ -349,7 +349,7 @@
     if (mode === "demo") {
       setText(tag, "演示数据");
       setText(title, "当前显示演示数据，接口尚未接通");
-      setText(text, reason || "名单、测温与日报接口尚未实现。页面结构与交互可用，数据来自固定样例，不会写入服务器。");
+      setText(text, reason || "名单、测温或日报接口不可用。页面结构与交互可用，数据来自固定样例，不会写入服务器。");
       if (sideDot) sideDot.className = "dot warn";
       setText(sideStatus, "演示数据");
     } else if (mode === "error") {
@@ -378,7 +378,7 @@
     } catch (error) {
       if (error.kind === "http" && error.status === 404) {
         buildDemo(app.date);
-        setMode("demo", "GET /api/health/students 返回 404：名单接口尚未实现，当前使用演示数据。字段约定见 docs/HEALTH_REPORT_UI.md。");
+        setMode("demo", "GET /api/health/students 返回 404：名单接口当前不可用，使用演示数据。字段约定见 docs/HEALTH_REPORT_UI.md。");
       } else {
         buildDemo(app.date);
         setMode("error", describeError(error));
@@ -1508,7 +1508,10 @@
           const card = el("li", "attention-item");
           const top = el("div", "attention-top");
           const student = demo.students.find((entry) => entry.id === item.student_id);
-          top.append(el("strong", "attention-title", student ? `${student.name}（${student.id}）` : item.student_id));
+          const studentLabel = item.student_name
+            || (student ? `${student.name}（${student.id}）` : item.student_id)
+            || "未关联学生";
+          top.append(el("strong", "attention-title", studentLabel));
           const badge = el("span", "badge", ATTENTION_LABELS[item.attention] || item.attention);
           badge.dataset.tone = ATTENTION_TONES[item.attention] || "idle";
           top.append(badge);

@@ -13,8 +13,9 @@ import queue
 import re
 import tempfile
 import threading
+import uuid
 from collections import deque
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import urllib.error
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -41,7 +42,9 @@ from event_contract import (
     EventNotFound,
     EventValidationError,
     date_key,
+    event_for_report,
     make_event_id,
+    normalize_iso,
     normalize_event,
     now_iso,
     text_value,
@@ -69,7 +72,21 @@ EMOTION_LEXICON_FILE = Path(
     os.environ.get("EMOTION_LEXICON_FILE", str(ROOT / "emotion_lexicon.json"))
 )
 EVENTS_FILE = Path(os.environ.get("EVENTS_FILE", str(ROOT / "events.json")))
+HEALTH_STUDENTS_FILE = Path(os.environ.get("HEALTH_STUDENTS_FILE", str(ROOT / "health_students.json")))
+HEALTH_RECORDS_FILE = Path(os.environ.get("HEALTH_RECORDS_FILE", str(ROOT / "health_records.json")))
 EVENTS_LIMIT = 2000
+HEALTH_SOURCES = ("forehead", "infrared", "ear", "axillary")
+HEALTH_SOURCE_LABELS = {
+    "forehead": "额温枪",
+    "infrared": "红外测温",
+    "ear": "耳温枪",
+    "axillary": "腋下体温计",
+}
+DEFAULT_HEALTH_CLASSES = (
+    {"id": "C-02", "name": "小二班"},
+    {"id": "C-11", "name": "中一班"},
+    {"id": "C-21", "name": "大一班"},
+)
 # 学生测温与当日日报页面及其专用样式、脚本。页面只包含静态结构和演示数据，
 # 名单与测温数据需要后续接口提供；这些路由不读取任何本机业务数据。
 STATIC_PAGES = {
@@ -88,6 +105,9 @@ DEFAULT_DIALOGUE_CONFIG = {
 }
 MESSAGES_LOCK = threading.Lock()
 EVENTS_LOCK = threading.Lock()
+HEALTH_LOCK = threading.Lock()
+RDK_ALERT_LOCK = threading.Lock()
+CURRENT_RDK_ALERT = "normal"
 DIALOGUE_CONFIG_LOCK = threading.Lock()
 ANALYSIS_CONFIG_LOCK = threading.Lock()
 SUMMARIES_LOCK = threading.Lock()
@@ -333,6 +353,415 @@ def append_event_note(event_id: str, payload: dict) -> dict:
         return {"event": copy_event(event)}
 
 
+def record_rdk_alert(data: dict) -> None:
+    """把 RDK 行为告警从正常→告警的边沿写入事件库。"""
+    global CURRENT_RDK_ALERT
+    if not isinstance(data, dict):
+        return
+    alert = str(data.get("alert_type", "")).strip().lower()
+    if alert not in ("fall", "fight"):
+        with RDK_ALERT_LOCK:
+            CURRENT_RDK_ALERT = "normal"
+        return
+    with RDK_ALERT_LOCK:
+        if CURRENT_RDK_ALERT == alert:
+            return
+        confidence = data.get("confidence")
+        try:
+            confidence = float(confidence) if confidence not in (None, "") else None
+            if confidence is not None and not 0 <= confidence <= 1:
+                confidence = None
+        except (TypeError, ValueError):
+            confidence = None
+        title = "检测到疑似摔倒" if alert == "fall" else "检测到疑似斗殴"
+        try:
+            create_event({
+                "event_type": alert,
+                "level": "urgent",
+                "source": "rdk",
+                "status": "pending",
+                "occurred_at": now_iso(),
+                "summary": title,
+                "detail": f"RDK /alert_status 返回 alert_type={alert}，请查看监控画面并现场确认。",
+                "device_id": "rdk-x5",
+                "location": "RDK 监控区域",
+                "confidence": confidence,
+                "dedupe_key": f"rdk-{alert}-{uuid.uuid4().hex}",
+            })
+        except Exception as exc:  # 事件写入失败不阻断监控代理
+            print(f"[EVENT] unable to record RDK alert: {exc}")
+            return
+        CURRENT_RDK_ALERT = alert
+
+
+def local_today() -> str:
+    return datetime.now(timezone(timedelta(hours=8))).date().isoformat()
+
+
+def health_classes_from(students: list[dict]) -> list[dict]:
+    classes = {item["id"]: {"id": item["id"], "name": item["name"]} for item in DEFAULT_HEALTH_CLASSES}
+    for student in students:
+        class_id = student.get("class_id", "")
+        if not class_id:
+            continue
+        class_name = student.get("class_name") or class_id
+        if class_id not in classes:
+            classes[class_id] = {"id": class_id, "name": class_name}
+        elif classes[class_id].get("name") in ("", class_id):
+            classes[class_id]["name"] = class_name
+    return list(classes.values())
+
+
+def load_health_students() -> list[dict]:
+    data = read_json_file(HEALTH_STUDENTS_FILE, [])
+    if not isinstance(data, list):
+        return []
+    result = []
+    for raw in data:
+        if not isinstance(raw, dict):
+            continue
+        try:
+            student_id = text_value(raw.get("id"), "id", 20, required=True)
+            if not re.fullmatch(r"[A-Za-z0-9-]{3,20}", student_id):
+                continue
+            name = text_value(raw.get("name"), "name", 20, required=True)
+            class_id = text_value(raw.get("class_id"), "class_id", 64, required=True)
+            class_name = text_value(raw.get("class_name"), "class_name", 80, default="")
+            active = raw.get("active", True)
+            result.append({
+                "id": student_id,
+                "name": name,
+                "class_id": class_id,
+                "class_name": class_name or class_id,
+                "active": active if isinstance(active, bool) else True,
+            })
+        except (ValueError, TypeError):
+            continue
+    return result
+
+
+def load_health_records() -> list[dict]:
+    data = read_json_file(HEALTH_RECORDS_FILE, [])
+    if not isinstance(data, list):
+        return []
+    result = []
+    for raw in data:
+        if not isinstance(raw, dict):
+            continue
+        try:
+            record_id = text_value(raw.get("id"), "id", 80, required=True)
+            student_id = text_value(raw.get("student_id"), "student_id", 20, required=True)
+            measured_at = normalize_iso(raw.get("measured_at"), "measured_at")
+            temperature = float(raw.get("temperature_c"))
+            if not 35 <= temperature <= 42:
+                continue
+            source = text_value(raw.get("source"), "source", 20, required=True)
+            if source not in HEALTH_SOURCES:
+                continue
+            note = text_value(raw.get("note"), "note", 50, default="")
+            recheck_of = text_value(raw.get("recheck_of"), "recheck_of", 80, default="") or None
+            result.append({
+                "id": record_id,
+                "student_id": student_id,
+                "measured_at": measured_at,
+                "temperature_c": round(temperature, 1),
+                "source": source,
+                "note": note,
+                "recheck_of": recheck_of,
+            })
+        except (ValueError, TypeError):
+            continue
+    return result
+
+
+def save_health_students() -> None:
+    atomic_write_json(HEALTH_STUDENTS_FILE, HEALTH_STUDENTS)
+
+
+def save_health_records() -> None:
+    atomic_write_json(HEALTH_RECORDS_FILE, HEALTH_RECORDS)
+
+
+def reload_health() -> None:
+    students = load_health_students()
+    records = load_health_records()
+    with HEALTH_LOCK:
+        HEALTH_STUDENTS[:] = students
+        HEALTH_RECORDS[:] = records
+
+
+def health_student_snapshot() -> list[dict]:
+    with HEALTH_LOCK:
+        return [dict(item) for item in HEALTH_STUDENTS]
+
+
+def health_record_snapshot() -> list[dict]:
+    with HEALTH_LOCK:
+        return [dict(item) for item in HEALTH_RECORDS]
+
+
+def health_classes_payload() -> list[dict]:
+    return health_classes_from(health_student_snapshot())
+
+
+def health_students_payload() -> dict:
+    return {
+        "students": health_student_snapshot(),
+        "classes": health_classes_payload(),
+        "generated_at": now_iso(),
+    }
+
+
+def validate_date(value: str | None) -> str:
+    value = (value or "").strip() or local_today()
+    try:
+        datetime.strptime(value, "%Y-%m-%d")
+    except ValueError as exc:
+        raise ValueError("invalid date") from exc
+    return value
+
+
+def query_health_records(params: dict) -> dict:
+    date = validate_date((params.get("date") or [None])[-1])
+    class_id = ((params.get("class_id") or [""])[-1]).strip()
+    student_id = ((params.get("student_id") or [""])[-1]).strip()
+    students = {item["id"]: item for item in health_student_snapshot()}
+    records = []
+    for record in health_record_snapshot():
+        if date_key(record["measured_at"]) != date:
+            continue
+        student = students.get(record["student_id"])
+        if class_id and (not student or student.get("class_id") != class_id):
+            continue
+        if student_id and record["student_id"] != student_id:
+            continue
+        records.append(record)
+    records.sort(key=lambda item: item["measured_at"])
+    return {
+        "date": date,
+        "records": records,
+        "sources": [{"value": key, "label": HEALTH_SOURCE_LABELS[key]} for key in HEALTH_SOURCES],
+    }
+
+
+def create_health_record(payload: dict) -> dict:
+    if not isinstance(payload, dict):
+        raise ValueError("request must be an object")
+    student_id = text_value(payload.get("student_id"), "student_id", 20, required=True)
+    students = {item["id"]: item for item in health_student_snapshot()}
+    student = students.get(student_id)
+    if student is None:
+        raise LookupError("student not found")
+    try:
+        temperature = float(payload.get("temperature_c"))
+    except (TypeError, ValueError) as exc:
+        raise ValueError("invalid temperature") from exc
+    if not 35 <= temperature <= 42:
+        raise ValueError("temperature must be between 35.0 and 42.0")
+    source = text_value(payload.get("source"), "source", 20, required=True)
+    if source not in HEALTH_SOURCES:
+        raise ValueError("invalid source")
+    note = text_value(payload.get("note"), "note", 50, default="")
+    recheck_of = text_value(payload.get("recheck_of"), "recheck_of", 80, default="") or None
+    with HEALTH_LOCK:
+        if recheck_of:
+            original = next((item for item in HEALTH_RECORDS if item["id"] == recheck_of), None)
+            if original is None or original["student_id"] != student_id:
+                raise ValueError("invalid recheck relationship")
+        record = {
+            "id": f"R-{uuid.uuid4().hex[:10].upper()}",
+            "student_id": student_id,
+            "measured_at": now_iso(),
+            "temperature_c": round(temperature, 1),
+            "source": source,
+            "note": note,
+            "recheck_of": recheck_of,
+        }
+        HEALTH_RECORDS.append(record)
+        save_health_records()
+        return dict(record)
+
+
+def import_health_students(payload: dict) -> dict:
+    if not isinstance(payload, dict) or not isinstance(payload.get("students"), list):
+        raise ValueError("students must be a list")
+    incoming = payload["students"]
+    if len(incoming) > 500:
+        raise ValueError("too many students")
+    classes = health_classes_payload()
+    class_by_id = {item["id"]: item["name"] for item in classes}
+    class_by_name = {item["name"]: item["id"] for item in classes}
+    imported = 0
+    skipped = 0
+    errors = []
+    seen = set()
+    with HEALTH_LOCK:
+        existing = {item["id"] for item in HEALTH_STUDENTS}
+        for index, raw in enumerate(incoming):
+            line = raw.get("line") if isinstance(raw, dict) else index + 2
+            line = line if isinstance(line, int) and line > 0 else index + 2
+            original = raw.get("raw") if isinstance(raw, dict) else ""
+            try:
+                if not isinstance(raw, dict):
+                    raise ValueError("学生记录必须是对象")
+                student_id = text_value(raw.get("id"), "id", 20, required=True)
+                if not re.fullmatch(r"[A-Za-z0-9-]{3,20}", student_id):
+                    raise ValueError("学号格式错误")
+                if student_id in existing or student_id in seen:
+                    skipped += 1
+                    continue
+                name = text_value(raw.get("name"), "name", 20, required=True)
+                class_id = text_value(raw.get("class_id"), "class_id", 64, default="")
+                class_name = text_value(raw.get("class_name"), "class_name", 80, default="")
+                if class_id and class_id not in class_by_id and not class_name:
+                    raise ValueError("班级不存在")
+                if not class_id and class_name:
+                    class_id = class_by_name.get(class_name, "")
+                if not class_id:
+                    raise ValueError("班级不存在")
+                if class_id not in class_by_id:
+                    class_by_id[class_id] = class_name or class_id
+                seen.add(student_id)
+                HEALTH_STUDENTS.append({
+                    "id": student_id,
+                    "name": name,
+                    "class_id": class_id,
+                    "class_name": class_by_id[class_id],
+                    "active": True,
+                })
+                imported += 1
+            except (ValueError, TypeError) as exc:
+                errors.append({
+                    "line": line,
+                    "reason": str(exc),
+                    "raw": original if isinstance(original, str) else "",
+                })
+        if imported:
+            save_health_students()
+    return {"imported": imported, "skipped": skipped, "errors": errors}
+
+
+def dialogue_attention_items(date: str, class_id: str, students: dict[str, dict]) -> list[dict]:
+    with MESSAGES_LOCK:
+        messages = [dict(item) for item in MESSAGES]
+    grouped = {}
+    for message in messages:
+        if message.get("role") != "user":
+            continue
+        timestamp = message.get("created_at") or message.get("received_at")
+        try:
+            if date_key(timestamp) != date:
+                continue
+        except (ValueError, TypeError):
+            continue
+        attention = ((message.get("emotion") or {}).get("attention") or "none")
+        if attention not in ("watch", "urgent"):
+            continue
+        message_class = message.get("class_id") or ""
+        if class_id and message_class != class_id:
+            continue
+        session_id = message.get("session_id") or message.get("device_id") or message.get("id")
+        candidate = {
+            "id": message.get("id") or session_id,
+            "student_id": message.get("student_id") or "",
+            "student_name": "",
+            "class_id": message_class,
+            "attention": attention,
+            "reason": (message.get("emotion") or {}).get("attention_reason") or "文本关注线索",
+            "excerpt": str(message.get("text") or "")[:120],
+            "last_at": timestamp,
+        }
+        previous = grouped.get(session_id)
+        if previous is None or str(candidate["last_at"]) >= str(previous["last_at"]):
+            grouped[session_id] = candidate
+    result = []
+    for item in grouped.values():
+        student = students.get(item["student_id"])
+        if student:
+            item["student_name"] = student["name"]
+        result.append(item)
+    result.sort(key=lambda item: item.get("last_at", ""), reverse=True)
+    return result
+
+
+def build_daily_report(params: dict) -> dict:
+    date = validate_date((params.get("date") or [None])[-1])
+    class_id = ((params.get("class_id") or [""])[-1]).strip()
+    students = health_student_snapshot()
+    all_classes = health_classes_payload()
+    class_names = {item["id"]: item["name"] for item in all_classes}
+    active_students = [item for item in students if item.get("active", True)]
+    if class_id:
+        active_students = [item for item in active_students if item.get("class_id") == class_id]
+    records = {item["id"]: item for item in health_record_snapshot()}
+    records_by_student = {}
+    for record in records.values():
+        if date_key(record["measured_at"]) == date:
+            records_by_student.setdefault(record["student_id"], []).append(record)
+    for items in records_by_student.values():
+        items.sort(key=lambda item: item["measured_at"])
+
+    classes = []
+    total = measured = pending = recheck = 0
+    for klass in all_classes:
+        if class_id and klass["id"] != class_id:
+            continue
+        class_students = [item for item in active_students if item["class_id"] == klass["id"]]
+        details = []
+        class_counts = {"total": len(class_students), "measured": 0, "pending": 0, "recheck": 0}
+        for student in sorted(class_students, key=lambda item: (item["name"], item["id"])):
+            student_records = records_by_student.get(student["id"], [])
+            if not student_records:
+                status = "pending"
+            elif float(student_records[-1]["temperature_c"]) >= 37.3:
+                status = "recheck"
+            else:
+                status = "measured"
+            class_counts[status] += 1
+            details.append({"id": student["id"], "name": student["name"], "status": status})
+        classes.append({
+            "id": klass["id"],
+            "name": klass["name"],
+            "total": class_counts["total"],
+            "measured": class_counts["measured"],
+            "pending": class_counts["pending"],
+            "recheck": class_counts["recheck"],
+            "students": details,
+        })
+        total += class_counts["total"]
+        measured += class_counts["measured"]
+        pending += class_counts["pending"]
+        recheck += class_counts["recheck"]
+
+    events = []
+    for event in events_snapshot():
+        if date_key(event["occurred_at"]) != date:
+            continue
+        if class_id and event.get("class_id") != class_id:
+            continue
+        events.append(event_for_report(event))
+    events.sort(key=lambda item: item["occurred_at"], reverse=True)
+
+    student_map = {item["id"]: item for item in students}
+    dialogues = dialogue_attention_items(date, class_id, student_map)
+    return {
+        "report": {
+            "date": date,
+            "timezone": "Asia/Shanghai",
+            "generated_at": now_iso(),
+            "events": events,
+            "dialogues": dialogues,
+            "health": {
+                "total": total,
+                "measured": measured,
+                "pending": pending,
+                "recheck": recheck,
+                "classes": classes,
+            },
+        }
+    }
+
+
 def validate_dialogue_config(data: dict) -> dict:
     if not isinstance(data, dict):
         raise ValueError("Configuration must be an object")
@@ -389,6 +818,8 @@ ANALYSIS_CONFIG = load_analysis_config()
 CONVERSATION_SUMMARIES = load_summaries()
 EMOTION_LEXICON = load_lexicon(EMOTION_LEXICON_FILE)
 EVENTS = load_events()
+HEALTH_STUDENTS = load_health_students()
+HEALTH_RECORDS = load_health_records()
 
 
 def messages_for_session(session_id: str) -> list[dict]:
@@ -565,10 +996,14 @@ class Handler(BaseHTTPRequestHandler):
     def local_event_request(self) -> bool:
         return self.local_request('Open the event API on localhost')
 
+    def local_health_request(self) -> bool:
+        return self.local_request('Open the health API on localhost')
+
     def do_POST(self) -> None:
         path = urlparse(self.path).path
         event_match = re.fullmatch(r"/api/events/([^/]+)/(status|notes)", path)
         event_request = path == "/api/events" or event_match is not None
+        health_post = path in ("/api/health/records", "/api/health/import")
         dialogue_request = path in (
             '/api/dialogue/messages',
             '/api/dialogue/config',
@@ -576,7 +1011,7 @@ class Handler(BaseHTTPRequestHandler):
             '/api/analysis/config',
             '/api/analysis/rebuild',
         )
-        if not dialogue_request and not event_request:
+        if not dialogue_request and not event_request and not health_post:
             self.send_json(404, {'ok': False, 'error': 'not found'})
             return
         try:
@@ -592,6 +1027,9 @@ class Handler(BaseHTTPRequestHandler):
             body = self.rfile.read(length)
             if event_request:
                 if not self.local_event_request():
+                    return
+            elif health_post:
+                if not self.local_health_request():
                     return
             elif not self.local_dialogue_request():
                 return
@@ -625,6 +1063,23 @@ class Handler(BaseHTTPRequestHandler):
                     self.send_json(400, {'ok': False, 'error': 'invalid event request', 'detail': str(exc)})
                 except OSError:
                     self.send_json(500, {'ok': False, 'error': 'Unable to save event data'})
+                return
+
+            if health_post:
+                try:
+                    if path == "/api/health/records":
+                        record = create_health_record(item)
+                        self.send_json(201, {'ok': True, 'record': record})
+                    else:
+                        result = import_health_students(item)
+                        self.send_json(200, {'ok': True, **result})
+                    return
+                except LookupError:
+                    self.send_json(404, {'ok': False, 'error': 'student not found'})
+                except (ValueError, TypeError) as exc:
+                    self.send_json(400, {'ok': False, 'error': 'invalid health request', 'detail': str(exc)})
+                except OSError:
+                    self.send_json(500, {'ok': False, 'error': 'Unable to save health data'})
                 return
 
             if path == '/api/dialogue/config':
@@ -689,6 +1144,8 @@ class Handler(BaseHTTPRequestHandler):
         except (ValueError, UnicodeError, TimeoutError):
             if event_request:
                 error = 'Invalid event request'
+            elif health_post:
+                error = 'Invalid health request'
             elif path == '/api/dialogue/config':
                 error = 'Invalid dialogue config'
             elif path == '/api/dialogue/model':
@@ -703,12 +1160,17 @@ class Handler(BaseHTTPRequestHandler):
         except OSError:
             if event_request:
                 self.send_json(500, {'ok': False, 'error': 'Unable to save event data'})
+            elif health_post:
+                self.send_json(500, {'ok': False, 'error': 'Unable to save health data'})
             else:
                 self.send_json(500, {'ok': False, 'error': 'Unable to save dialogue data'})
 
     def proxy_json(self, upstream_path: str) -> None:
         try:
-            self.send_json(200, read_rdk_json(upstream_path))
+            data = read_rdk_json(upstream_path)
+            if upstream_path == "/alert_status":
+                record_rdk_alert(data)
+            self.send_json(200, data)
         except (urllib.error.URLError, TimeoutError, ValueError, OSError) as exc:
             self.send_json(
                 502,
@@ -797,6 +1259,27 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_json(200, {"ok": True, "event": event})
             except EventNotFound:
                 self.send_json(404, {"ok": False, "error": "event not found"})
+            return
+        if path == "/api/health/students":
+            if not self.local_health_request():
+                return
+            self.send_json(200, {"ok": True, **health_students_payload()})
+            return
+        if path == "/api/health/records":
+            if not self.local_health_request():
+                return
+            try:
+                self.send_json(200, {"ok": True, **query_health_records(parse_qs(urlparse(self.path).query))})
+            except ValueError as exc:
+                self.send_json(400, {"ok": False, "error": "invalid health query", "detail": str(exc)})
+            return
+        if path == "/api/reports/daily":
+            if not self.local_health_request():
+                return
+            try:
+                self.send_json(200, {"ok": True, **build_daily_report(parse_qs(urlparse(self.path).query))})
+            except ValueError as exc:
+                self.send_json(400, {"ok": False, "error": "invalid report query", "detail": str(exc)})
             return
         if path == "/api/config":
             self.send_json(200, {"rdk_base": RDK_BASE})

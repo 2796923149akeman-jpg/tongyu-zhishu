@@ -10,6 +10,7 @@ import urllib.request
 from urllib.parse import urlencode
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from unittest.mock import patch
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -34,6 +35,7 @@ class EventApiTests(unittest.TestCase):
         self.web.CONVERSATION_SUMMARIES_FILE = Path(self.temp.name) / "conversation_summaries.json"
         self.web.PROJECT_ROOT = Path(self.temp.name)
         self.web.EVENTS_FILE = Path(self.temp.name) / "events.json"
+        self.web.CURRENT_RDK_ALERT = "normal"
         (Path(self.temp.name) / "xiaozhi-server" / "data").mkdir(parents=True)
         self.web.reload_events()
         self.web.Handler.log_message = lambda *args: None
@@ -158,6 +160,31 @@ class EventApiTests(unittest.TestCase):
 
         status, body = self.request("/api/events/not-found", method="GET")
         self.assertEqual(status, 404)
+
+    def test_rdk_alert_edge_creates_one_deduplicated_event(self):
+        with patch.object(self.web, "read_rdk_json", return_value={"alert_type": "fall", "confidence": 0.8}):
+            for _ in range(2):
+                status, body = self.request("/api/rdk/status")
+                self.assertEqual(status, 200)
+                self.assertEqual(body["alert_type"], "fall")
+
+        status, listing = self.request("/api/events")
+        self.assertEqual(status, 200)
+        self.assertEqual(listing["total"], 1)
+        self.assertEqual(listing["events"][0]["event_type"], "fall")
+        self.assertEqual(listing["events"][0]["level"], "urgent")
+
+        with patch.object(self.web, "read_rdk_json", return_value={"alert_type": "normal"}):
+            status, _ = self.request("/api/rdk/status")
+            self.assertEqual(status, 200)
+        with patch.object(self.web, "read_rdk_json", return_value={"alert_type": "fight"}):
+            status, _ = self.request("/api/rdk/status")
+            self.assertEqual(status, 200)
+
+        status, listing = self.request("/api/events")
+        self.assertEqual(status, 200)
+        self.assertEqual(listing["total"], 2)
+        self.assertEqual({item["event_type"] for item in listing["events"]}, {"fall", "fight"})
 
 
 if __name__ == "__main__":

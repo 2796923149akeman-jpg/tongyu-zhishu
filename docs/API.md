@@ -18,7 +18,7 @@
 
 上述联调确认的是传输链路、接收过程和字段解析，不是传感器测量精度或行为识别准确率测试。本仓库当前隔离测试通过模拟上游响应验证 V1 的代理和消息接口；硬件端程序、算法和实际测量精度不在该自动化测试范围内。
 
-下文列出的路由均为 V1 当前已经实现的接口。异常事件查询、状态处置和备注接口已实现；学生名单、测温记录和日报接口仍需实现、测试并补充到本文档后才属于正式接口。
+下文列出的路由均为当前已经实现的接口。异常事件、学生名单、测温记录和日报接口均已实现；日报使用事件统一契约做映射。
 
 ## 网页与服务状态
 
@@ -35,11 +35,11 @@
 返回异常事件页面。页面启动时读取 `GET /api/events`；接口不可用或禁止本机访问时，页面明确切换到带“演示数据”标识的样例，并在恢复后重新读取真实事件。
 ### `GET /health.html`
 
-返回学生测温页面。页面本身只提供静态结构和交互逻辑，名单、测温记录与日报数据需要后续接口；接口未实现时页面使用带“演示数据”标识的固定样例，字段约定见 [学生测温与当日日报](HEALTH_REPORT_UI.md)。
+返回学生测温页面。页面优先读取本机健康接口；接口不可用时使用带“演示数据”标识的固定样例，字段约定见 [学生测温与当日日报](HEALTH_REPORT_UI.md)。
 
 ### `GET /reports.html`
 
-返回当日日报页面，按日期和班级汇总安全事件处置、关注对话与测温完成情况。当前同样使用带标识的演示数据。
+返回当日日报页面，按日期和班级汇总安全事件处置、关注对话与测温完成情况。页面优先读取 `/api/reports/daily`；接口不可用时使用带标识的演示数据。
 
 ### `GET /health-report.css`、`GET /health-report.js`
 
@@ -175,7 +175,7 @@ offset=0
 
 ### `POST /api/events`
 
-写入一条事件。设备采集程序或人工登记入口调用：
+写入一条事件。RDK `/alert_status` 的 fall/fight 会在监控代理轮询时自动入库；其他设备采集程序或人工登记入口调用：
 
 ```json
 {
@@ -228,6 +228,126 @@ offset=0
 ```
 
 参数错误返回 `400`，事件不存在返回 `404`，非法状态转换返回 `409`，持久化失败返回 `500`。
+
+## 学生名单、测温与日报接口
+
+这些接口只允许服务电脑本机访问。运行时数据写入被 Git 忽略的 `dashboard/health_students.json` 和 `dashboard/health_records.json`；默认提供 `C-02 小二班`、`C-11 中一班`、`C-21 大一班` 三个班级，学生需要导入或登记。
+
+### `GET /api/health/students`
+
+```json
+{
+  "ok": true,
+  "students": [
+    {"id": "S-0201", "name": "陈小满", "class_id": "C-02", "class_name": "小二班", "active": true}
+  ],
+  "classes": [
+    {"id": "C-02", "name": "小二班"},
+    {"id": "C-11", "name": "中一班"},
+    {"id": "C-21", "name": "大一班"}
+  ],
+  "generated_at": "2026-10-28T09:00:00+08:00"
+}
+```
+
+### `GET /api/health/records`
+
+查询参数：`date=YYYY-MM-DD`（默认今天）、`class_id`、`student_id`。
+
+```json
+{
+  "ok": true,
+  "date": "2026-10-28",
+  "records": [
+    {
+      "id": "R-ABC123",
+      "student_id": "S-0201",
+      "measured_at": "2026-10-28T09:12:31+08:00",
+      "temperature_c": 36.6,
+      "source": "forehead",
+      "note": "",
+      "recheck_of": null
+    }
+  ],
+  "sources": [
+    {"value": "forehead", "label": "额温枪"},
+    {"value": "infrared", "label": "红外测温"},
+    {"value": "ear", "label": "耳温枪"},
+    {"value": "axillary", "label": "腋下体温计"}
+  ]
+}
+```
+
+### `POST /api/health/records`
+
+```json
+{
+  "student_id": "S-0201",
+  "temperature_c": 36.6,
+  "source": "forehead",
+  "note": "",
+  "recheck_of": null
+}
+```
+
+成功返回 HTTP `201` 和 `{"ok": true, "record": {...}}`。体温范围为 `35.0–42.0`，备注最多 50 字，来源必须为四种枚举之一；复测记录必须指向同一学生的原记录。
+
+### `POST /api/health/import`
+
+```json
+{
+  "students": [
+    {"id": "S-0301", "name": "顾时安", "class_id": "C-02"}
+  ]
+}
+```
+
+返回 `{"ok": true, "imported": 1, "skipped": 0, "errors": []}`。已存在的学号计入 `skipped`；错误行包含 `line`、`reason` 和 `raw`。
+
+### `GET /api/reports/daily`
+
+查询参数：`date=YYYY-MM-DD`（默认今天）、`class_id`。
+
+返回结构：
+
+```json
+{
+  "ok": true,
+  "report": {
+    "date": "2026-10-28",
+    "timezone": "Asia/Shanghai",
+    "generated_at": "2026-10-28T20:00:00+08:00",
+    "events": [
+      {
+        "id": "EVT-20261028-ABC123",
+        "type": "fall",
+        "title": "检测到疑似摔倒",
+        "level": "high",
+        "class_id": "C-02",
+        "class_name": "小二班",
+        "location": "活动室 A",
+        "occurred_at": "2026-10-28T09:42:10+08:00",
+        "status": "handled",
+        "handler": "李老师",
+        "handled_at": "2026-10-28T09:50:00+08:00",
+        "note": "现场确认无受伤"
+      }
+    ],
+    "dialogues": [],
+    "health": {
+      "total": 14,
+      "measured": 9,
+      "pending": 4,
+      "recheck": 1,
+      "classes": []
+    }
+  }
+}
+```
+
+日报事件必须通过 `event_for_report()` 生成，不能直接复用事件库的 `resolved` 或 `urgent/watch/info` 枚举。日报健康状态使用 `measured/pending/recheck`；关注对话使用 `none/watch/urgent`。
+
+`dialogues[]` 可选返回 `student_name`。如果消息源没有学生/班级映射，`student_id` 和 `class_id` 为空，页面显示“未关联学生”；按 `class_id` 查询日报时，空班级对话不会计入该班级。
 
 ## 对话消息接口
 

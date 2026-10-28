@@ -32,10 +32,22 @@
 - 新增 `dashboard/event_contract.py`，统一事件字段、等级/状态枚举和 B/C 日报映射；`urgent/watch/info` 映射为日报的 `high/medium/low`，`resolved` 映射为 `handled`。
 - 新增 `GET /api/events`、`GET /api/events/{id}`、`POST /api/events`、状态处置和备注接口，事件运行数据写入被 Git 忽略的 `dashboard/events.json`。
 - 使用 `dedupe_key` 防止同一告警重复入库；默认最多保留 2000 条。
-- `tests/test_event_contract.py` 与 `tests/test_events.py` 共 7 项测试通过，覆盖映射、创建、去重、筛选、状态转换、备注、参数错误和持久化。
+- `tests/test_event_contract.py` 与 `tests/test_events.py` 共 8 项测试通过，覆盖映射、创建、去重、筛选、状态转换、备注、参数错误、持久化和 RDK 告警自动入库。
 - 事件页真实接口模式已通过本机 Dashboard 写入测试事件验证，页面显示绿色“接口数据”和真实事件；“接口不可用时回退到演示数据”的行为保留。
 
 ![事件接口真实模式](assets/monitor-events-live.png)
+
+## 健康与日报接口（2026-10-28）
+
+- 新增 `GET /api/health/students`、`GET /api/health/records`、`POST /api/health/records`、`POST /api/health/import` 和 `GET /api/reports/daily`；接口仅允许本机访问。
+- 学生和体温记录分别持久化到被 Git 忽略的 `dashboard/health_students.json`、`dashboard/health_records.json`，默认班级为小二班、中一班、大一班。
+- 日报通过 `event_for_report()` 将 `resolved` 映射为 `handled`，将 `urgent/watch/info` 映射为 `high/medium/low`；已处理事件不会进入待处理统计。
+- `tests/test_health_api.py` 覆盖导入、重复跳过、体温范围、复测关系、筛选、日报班级过滤、事件映射和持久化；`tests/test_health_report.py` 6 项测试通过。
+- 真实接口模式已通过导入 3 名学生、登记 3 条体温和写入 2 起事件的页面联调；学生测温页显示已测 2 / 未测 0 / 复测 1，日报显示 2 起事件、1 起已处置。
+
+![学生测温真实接口](assets/health-page-live.png)
+
+![日报真实接口](assets/reports-page-live.png)
 
 ## 先期设备联调记录
 

@@ -1,7 +1,7 @@
 """学生测温页与当日日报页的静态路由、页面结构与接口约定检查。
 
 这些测试不依赖浏览器：页面脚本的行为由 docs/HEALTH_REPORT_UI.md 中记录的
-浏览器检查覆盖，这里只锁定路由、公共导航、演示数据标识和待实现接口的字段约定。
+浏览器检查覆盖，这里只锁定路由、公共导航、演示数据标识和接口可用状态。
 """
 import importlib.util
 import json
@@ -58,8 +58,13 @@ class HealthReportPageTests(unittest.TestCase):
         self.web.DIALOGUE_CONFIG_FILE = Path(self.temp.name) / "dialogue_config.json"
         self.web.ANALYSIS_CONFIG_FILE = Path(self.temp.name) / "analysis_config.json"
         self.web.CONVERSATION_SUMMARIES_FILE = Path(self.temp.name) / "conversation_summaries.json"
+        self.web.EVENTS_FILE = Path(self.temp.name) / "events.json"
+        self.web.HEALTH_STUDENTS_FILE = Path(self.temp.name) / "health_students.json"
+        self.web.HEALTH_RECORDS_FILE = Path(self.temp.name) / "health_records.json"
         self.web.PROJECT_ROOT = Path(self.temp.name)
         (Path(self.temp.name) / "xiaozhi-server" / "data").mkdir(parents=True)
+        self.web.reload_events()
+        self.web.reload_health()
         self.web.Handler.log_message = lambda *args: None
         self.http = self.web.ThreadingHTTPServer(("127.0.0.1", 0), self.web.Handler)
         self.thread = threading.Thread(target=self.http.serve_forever, daemon=True)
@@ -154,16 +159,20 @@ class HealthReportPageTests(unittest.TestCase):
             self.assertIn(endpoint, script)
             self.assertIn(endpoint, document)
 
-    def test_unimplemented_data_api_returns_not_found(self):
-        # 名单、测温与日报接口尚未实现；页面据此切换到演示数据。
-        for path in (
-            "/api/health/students",
-            "/api/health/records?date=2026-10-27",
-            "/api/reports/daily?date=2026-10-27",
-        ):
-            with self.assertRaises(urllib.error.HTTPError) as caught:
-                self.request(path)
-            self.assertEqual(caught.exception.code, 404)
+    def test_health_data_endpoints_are_available(self):
+        status, content_type, students = self.request("/api/health/students")
+        self.assertEqual(status, 200)
+        self.assertIn("json", content_type)
+        self.assertEqual(students["students"], [])
+        self.assertEqual(len(students["classes"]), 3)
+
+        status, _, records = self.request("/api/health/records?date=2026-10-27")
+        self.assertEqual(status, 200)
+        self.assertEqual(records["records"], [])
+
+        status, _, report = self.request("/api/reports/daily?date=2026-10-27")
+        self.assertEqual(status, 200)
+        self.assertEqual(report["report"]["health"]["total"], 0)
 
 
 if __name__ == "__main__":
