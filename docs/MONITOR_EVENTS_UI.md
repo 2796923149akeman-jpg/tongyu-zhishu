@@ -206,6 +206,8 @@ handled_by → handler
 ### 去重、存储和访问
 
 - 事件写入时使用 `dedupe_key` 去重，避免行为识别每 3 秒轮询重复建事件。
+- RDK `/alert_status` 从正常进入 `fall/fight` 时会自动写入事件；同一告警持续期间不会重复创建，恢复为正常后再次触发才会生成新事件。
+- 传感器过期、环境异常、设备离线和对话关注等其他来源可通过 `POST /api/events` 由采集程序写入。
 - 运行数据保存在 `dashboard/events.json`，已被 `.gitignore` 忽略，最多保留 2000 条。
 - 事件接口只允许服务电脑本机访问；事件页在局域网访问时无法取得真实数据，会明确回退到演示模式。
 - 所有时间使用带时区的 ISO 8601，业务日期按 Asia/Shanghai。
@@ -265,7 +267,7 @@ handled_by → handler
 | 动态文字安全 | 事件摘要、描述、备注和处理记录均通过 `textContent` 写入 |
 | 键盘与焦点 | 事件行可用 Tab 聚焦，按钮有可见焦点样式 |
 
-说明：`tests/test_event_contract.py` 和 `tests/test_events.py` 共 7 项测试通过，覆盖 B/C 映射、创建、去重、筛选、状态转换、备注、错误参数和持久化；事件页真实接口模式已用本机服务器和测试事件验证。
+说明：`tests/test_event_contract.py` 和 `tests/test_events.py` 共 8 项测试通过，覆盖 B/C 映射、创建、去重、筛选、状态转换、备注、错误参数、持久化和 RDK 告警自动入库；事件页真实接口模式已用本机服务器和测试事件验证。
 
 页面同时实现了 `<= 560 px` 和 `<= 380 px` 的窄屏断点；建议在真实手机或浏览器设备模式下再复查一次 390 px 宽度。
 
@@ -282,6 +284,6 @@ handled_by → handler
 ## 当前限制
 
 - 事件接口只允许本机访问；局域网打开页面时会回退到演示数据。
-- 事件采集程序仍需在 RDK/设备侧调用 `POST /api/events` 并提供稳定的 `dedupe_key`。
-- C 的 `/api/reports/daily` 尚未实现；实现时必须调用 `event_for_report()` 统一映射。
+- RDK 的 fall/fight 告警已自动入库；传感器、环境和对话等其他来源仍需采集程序调用 `POST /api/events` 并提供稳定的 `dedupe_key`。
+- C 的 `/api/reports/daily` 已实现，并使用 `event_for_report()` 做统一映射；后续修改必须保持该映射。
 - 当前事件存储是单机 JSON 文件，未实现多用户并发编辑和完整审计权限。

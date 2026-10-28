@@ -25,7 +25,9 @@ python server.py
 
 本机对话页为 <http://127.0.0.1:8088/chat>。小智服务启动后，对 ESP32 说话即可查看识别文字、回复、情绪标签与需留意的会话；最近 200 条记录会保存在本机。
 
-异常事件页为 <http://127.0.0.1:8088/events>。页面优先读取 `/api/events`，事件存储在本机运行时文件 `dashboard/events.json`（已被 Git 忽略，最多保留 2000 条）；状态处置和备注会写入服务器。设备或人工登记入口通过 `POST /api/events` 写入事件，重复告警应提供稳定的 `dedupe_key`。接口不可用时页面明确回退到“演示数据”，不会把演示内容冒充真实记录。
+异常事件页为 <http://127.0.0.1:8088/events>。页面优先读取 `/api/events`，事件存储在本机运行时文件 `dashboard/events.json`（已被 Git 忽略，最多保留 2000 条）；状态处置和备注会写入服务器。RDK `/alert_status` 的 fall/fight 告警会自动写入事件，其他设备或人工登记可调用 `POST /api/events`，重复告警应提供稳定的 `dedupe_key`。接口不可用时页面明确回退到“演示数据”，不会把演示内容冒充真实记录。
+
+学生测温页 <http://127.0.0.1:8088/health.html> 和日报页 <http://127.0.0.1:8088/reports.html> 已接入本机接口 `/api/health/*` 和 `/api/reports/daily`。学生与体温数据保存在被 Git 忽略的 `dashboard/health_students.json`、`dashboard/health_records.json`；日报事件通过 `event_for_report()` 使用统一等级/状态映射。默认班级为小二班、中一班、大一班，运行数据需要在本机导入或登记。
 
 更新代码后需要重启 `python server.py`；运行中的旧进程不会自动加载新增的 `/events` 路由。传感器数据需要提供采集时间 `timestamp`（带时区的 ISO 8601），页面才会按采集时间判断 20 秒过期；未提供时会显示“采集时间未知”，不会显示“数据正常”。
 
