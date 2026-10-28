@@ -81,6 +81,10 @@ class DialogueTests(unittest.TestCase):
         chat = self.request('/chat')[1]
         self.assertIn('对话模型与情绪设置', chat)
         self.assertNotIn('<h3>对话总结</h3>', chat)
+        self.assertIn('href="health-report.css"', chat)
+        self.assertIn('aria-label="主导航"', chat)
+        self.assertIn('href="chat.html" aria-current="page"', chat)
+        self.assertNotIn('id="role"', chat)
         self.assertEqual(self.request()[1]['messages'], [])
         with patch.object(self.web, 'read_rdk_json', return_value={'temperature': 24.5}) as upstream:
             self.assertEqual(self.request('/api/rdk/sensors')[1], {'temperature': 24.5})
