@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import os
 import queue
+import re
 import tempfile
 import threading
 from collections import deque
@@ -18,7 +19,7 @@ import urllib.error
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, unquote, urlparse
 
 
 ROOT = Path(__file__).resolve().parent
@@ -31,6 +32,20 @@ from analysis import (
     load_lexicon, load_xiaozhi_model, local_conversation_summary,
     public_analysis_config, public_xiaozhi_model, summarize_conversation,
     update_xiaozhi_model, validate_analysis_config,
+)
+from event_contract import (
+    EVENT_LEVELS,
+    EVENT_SOURCES,
+    EVENT_STATUSES,
+    EventConflict,
+    EventNotFound,
+    EventValidationError,
+    date_key,
+    make_event_id,
+    normalize_event,
+    now_iso,
+    text_value,
+    validate_status_transition,
 )
 
 HOST = os.environ.get("DASHBOARD_HOST", "0.0.0.0")
@@ -53,6 +68,8 @@ CONVERSATION_SUMMARIES_FILE = Path(
 EMOTION_LEXICON_FILE = Path(
     os.environ.get("EMOTION_LEXICON_FILE", str(ROOT / "emotion_lexicon.json"))
 )
+EVENTS_FILE = Path(os.environ.get("EVENTS_FILE", str(ROOT / "events.json")))
+EVENTS_LIMIT = 2000
 # 学生测温与当日日报页面及其专用样式、脚本。页面只包含静态结构和演示数据，
 # 名单与测温数据需要后续接口提供；这些路由不读取任何本机业务数据。
 STATIC_PAGES = {
@@ -70,6 +87,7 @@ DEFAULT_DIALOGUE_CONFIG = {
     "auto_scroll": True,
 }
 MESSAGES_LOCK = threading.Lock()
+EVENTS_LOCK = threading.Lock()
 DIALOGUE_CONFIG_LOCK = threading.Lock()
 ANALYSIS_CONFIG_LOCK = threading.Lock()
 SUMMARIES_LOCK = threading.Lock()
@@ -110,6 +128,209 @@ def load_messages() -> deque:
 
 def save_messages() -> None:
     atomic_write_json(DIALOGUE_DATA_FILE, list(MESSAGES))
+
+
+def copy_event(event: dict) -> dict:
+    return json.loads(json.dumps(event, ensure_ascii=False))
+
+
+def load_events() -> list[dict]:
+    data = read_json_file(EVENTS_FILE, [])
+    if not isinstance(data, list):
+        return []
+    loaded = []
+    for raw in data[-EVENTS_LIMIT:]:
+        try:
+            event = normalize_event(raw)
+        except EventValidationError:
+            continue
+        if not event["id"]:
+            event["id"] = make_event_id(event["occurred_at"])
+        loaded.append(event)
+    return loaded
+
+
+def save_events() -> None:
+    atomic_write_json(EVENTS_FILE, EVENTS)
+
+
+def reload_events() -> list[dict]:
+    loaded = load_events()
+    with EVENTS_LOCK:
+        EVENTS[:] = loaded
+    return [copy_event(item) for item in loaded]
+
+
+def events_snapshot() -> list[dict]:
+    with EVENTS_LOCK:
+        return [copy_event(item) for item in EVENTS]
+
+
+def get_event(event_id: str) -> dict:
+    with EVENTS_LOCK:
+        event = next((item for item in EVENTS if item.get("id") == event_id), None)
+        if event is None:
+            raise EventNotFound("event not found")
+        return copy_event(event)
+
+
+def query_events(params: dict) -> dict:
+    def one(name: str, default: str = "") -> str:
+        values = params.get(name)
+        return values[-1] if values else default
+
+    status = one("status").strip().lower()
+    level = one("level").strip().lower()
+    source = one("source").strip().lower()
+    class_id = one("class_id").strip()
+    keyword = one("q").strip().casefold()
+    date_from = one("date_from").strip()
+    date_to = one("date_to").strip()
+    sort = one("sort", "newest").strip().lower()
+    if status and status not in EVENT_STATUSES:
+        raise EventValidationError("invalid status")
+    if level and level not in EVENT_LEVELS:
+        raise EventValidationError("invalid level")
+    if source and source not in EVENT_SOURCES:
+        raise EventValidationError("invalid source")
+    if sort not in ("newest", "oldest"):
+        raise EventValidationError("invalid sort")
+    for label, value in (("date_from", date_from), ("date_to", date_to)):
+        if value:
+            try:
+                datetime.strptime(value, "%Y-%m-%d")
+            except ValueError as exc:
+                raise EventValidationError(f"invalid {label}") from exc
+    try:
+        limit = int(one("limit", "50"))
+        offset = int(one("offset", "0"))
+    except ValueError as exc:
+        raise EventValidationError("invalid pagination") from exc
+    if not 1 <= limit <= 200 or offset < 0:
+        raise EventValidationError("invalid pagination")
+
+    filtered = []
+    for event in events_snapshot():
+        if status and event["status"] != status:
+            continue
+        if level and event["level"] != level:
+            continue
+        if source and event["source"] != source:
+            continue
+        if class_id and event.get("class_id") != class_id:
+            continue
+        event_day = date_key(event["occurred_at"])
+        if date_from and event_day < date_from:
+            continue
+        if date_to and event_day > date_to:
+            continue
+        if keyword:
+            haystack = " ".join([
+                event.get("id", ""),
+                event.get("summary", ""),
+                event.get("detail", ""),
+                event.get("location", ""),
+                event.get("device_id", ""),
+                event.get("class_id", ""),
+                event.get("class_name", ""),
+            ]).casefold()
+            if keyword not in haystack:
+                continue
+        filtered.append(event)
+
+    filtered.sort(key=lambda item: item["occurred_at"], reverse=sort != "oldest")
+    page = filtered[offset:offset + limit]
+    updated_at = max((item.get("updated_at", "") for item in filtered), default=now_iso())
+    return {
+        "events": page,
+        "total": len(filtered),
+        "limit": limit,
+        "offset": offset,
+        "updated_at": updated_at or now_iso(),
+    }
+
+
+def create_event(payload: dict) -> tuple[dict, int]:
+    if not isinstance(payload, dict):
+        raise EventValidationError("event must be an object")
+    event = normalize_event(payload)
+    if not event["id"]:
+        event["id"] = make_event_id(event["occurred_at"])
+    event["updated_at"] = now_iso()
+    with EVENTS_LOCK:
+        dedupe_key = event.get("dedupe_key", "")
+        if dedupe_key:
+            duplicate = next((item for item in EVENTS if item.get("dedupe_key") == dedupe_key), None)
+            if duplicate is not None:
+                return {"event": copy_event(duplicate), "duplicate": True}, 200
+        if any(item.get("id") == event["id"] for item in EVENTS):
+            raise EventConflict("event id already exists")
+        EVENTS.append(event)
+        if len(EVENTS) > EVENTS_LIMIT:
+            del EVENTS[:len(EVENTS) - EVENTS_LIMIT]
+        save_events()
+    return {"event": copy_event(event), "duplicate": False}, 201
+
+
+def change_event_status(event_id: str, payload: dict) -> dict:
+    if not isinstance(payload, dict):
+        raise EventValidationError("request must be an object")
+    target = str(payload.get("status", "")).strip().lower()
+    if target not in EVENT_STATUSES:
+        raise EventValidationError("invalid status")
+    note = text_value(payload.get("note"), "note", 200, default="")
+    handled_by = text_value(payload.get("handled_by"), "handled_by", 80, default="")
+    with EVENTS_LOCK:
+        event = next((item for item in EVENTS if item.get("id") == event_id), None)
+        if event is None:
+            raise EventNotFound("event not found")
+        validate_status_transition(event["status"], target)
+        if event["status"] == target:
+            return {"event": copy_event(event), "changed": False}
+        now = now_iso()
+        action = {
+            "resolved": "标记已处理",
+            "false_alarm": "标记误报",
+            "pending": "重新打开",
+        }[target]
+        if note:
+            event["note"] = note
+        event["status"] = target
+        event["handled_at"] = None if target == "pending" else now
+        event["handled_by"] = "" if target == "pending" else (handled_by or "值班老师")
+        event["history"].append({
+            "at": now,
+            "action": action,
+            "by": handled_by or "值班老师",
+            "note": note,
+        })
+        event["history"] = event["history"][-100:]
+        event["updated_at"] = now
+        save_events()
+        return {"event": copy_event(event), "changed": True}
+
+
+def append_event_note(event_id: str, payload: dict) -> dict:
+    if not isinstance(payload, dict):
+        raise EventValidationError("request must be an object")
+    note = text_value(payload.get("note"), "note", 200, default="")
+    author = text_value(payload.get("author"), "author", 80, default="值班老师")
+    with EVENTS_LOCK:
+        event = next((item for item in EVENTS if item.get("id") == event_id), None)
+        if event is None:
+            raise EventNotFound("event not found")
+        now = now_iso()
+        event["note"] = note
+        event["updated_at"] = now
+        event["history"].append({
+            "at": now,
+            "action": "保存处理备注" if note else "清空处理备注",
+            "by": author,
+            "note": note,
+        })
+        event["history"] = event["history"][-100:]
+        save_events()
+        return {"event": copy_event(event)}
 
 
 def validate_dialogue_config(data: dict) -> dict:
@@ -167,6 +388,7 @@ DIALOGUE_CONFIG = load_dialogue_config()
 ANALYSIS_CONFIG = load_analysis_config()
 CONVERSATION_SUMMARIES = load_summaries()
 EMOTION_LEXICON = load_lexicon(EMOTION_LEXICON_FILE)
+EVENTS = load_events()
 
 
 def messages_for_session(session_id: str) -> list[dict]:
@@ -324,22 +546,37 @@ class Handler(BaseHTTPRequestHandler):
             (ROOT / "index.html").read_bytes(),
         )
 
-    def local_dialogue_request(self) -> bool:
-        # The conversation test page is for the server PC; the monitoring page
-        # remains available to other devices on the LAN.
+    def local_request(self, error: str) -> bool:
         host = urlparse('http://' + self.headers.get('Host', '')).hostname
         origin = self.headers.get('Origin')
         if (self.client_address[0] not in ('127.0.0.1', '::1')
                 or host not in ('localhost', '127.0.0.1', '::1')
                 or (origin and origin != 'http://' + self.headers.get('Host', ''))
                 or self.headers.get('Sec-Fetch-Site') == 'cross-site'):
-            self.send_json(403, {'ok': False, 'error': 'Open the conversation page on localhost'})
+            self.send_json(403, {'ok': False, 'error': error})
             return False
         return True
 
+    def local_dialogue_request(self) -> bool:
+        # The conversation test page is for the server PC; the monitoring page
+        # remains available to other devices on the LAN.
+        return self.local_request('Open the conversation page on localhost')
+
+    def local_event_request(self) -> bool:
+        return self.local_request('Open the event API on localhost')
+
     def do_POST(self) -> None:
         path = urlparse(self.path).path
-        if path not in ('/api/dialogue/messages', '/api/dialogue/config', '/api/dialogue/model', '/api/analysis/config', '/api/analysis/rebuild'):
+        event_match = re.fullmatch(r"/api/events/([^/]+)/(status|notes)", path)
+        event_request = path == "/api/events" or event_match is not None
+        dialogue_request = path in (
+            '/api/dialogue/messages',
+            '/api/dialogue/config',
+            '/api/dialogue/model',
+            '/api/analysis/config',
+            '/api/analysis/rebuild',
+        )
+        if not dialogue_request and not event_request:
             self.send_json(404, {'ok': False, 'error': 'not found'})
             return
         try:
@@ -353,9 +590,42 @@ class Handler(BaseHTTPRequestHandler):
             # otherwise Windows can reset the socket before the 403 is read.
             self.connection.settimeout(5)
             body = self.rfile.read(length)
-            if not self.local_dialogue_request():
+            if event_request:
+                if not self.local_event_request():
+                    return
+            elif not self.local_dialogue_request():
                 return
-            item = json.loads(body)
+            try:
+                item = json.loads(body)
+            except (ValueError, UnicodeError):
+                if event_request:
+                    self.send_json(400, {'ok': False, 'error': 'Invalid event JSON'})
+                    return
+                raise
+
+            if event_request:
+                try:
+                    if path == "/api/events":
+                        result, status = create_event(item)
+                        self.send_json(status, {'ok': True, **result})
+                        return
+                    event_id = unquote(event_match.group(1))
+                    action = event_match.group(2)
+                    if action == "status":
+                        result = change_event_status(event_id, item)
+                    else:
+                        result = append_event_note(event_id, item)
+                    self.send_json(200, {'ok': True, **result})
+                    return
+                except EventNotFound as exc:
+                    self.send_json(404, {'ok': False, 'error': 'event not found', 'detail': str(exc)})
+                except EventConflict as exc:
+                    self.send_json(409, {'ok': False, 'error': 'invalid status transition', 'detail': str(exc)})
+                except (EventValidationError, ValueError, TypeError) as exc:
+                    self.send_json(400, {'ok': False, 'error': 'invalid event request', 'detail': str(exc)})
+                except OSError:
+                    self.send_json(500, {'ok': False, 'error': 'Unable to save event data'})
+                return
 
             if path == '/api/dialogue/config':
                 config = validate_dialogue_config(item)
@@ -417,7 +687,9 @@ class Handler(BaseHTTPRequestHandler):
                 schedule_summary(record['session_id'])
             self.send_json(200, {'ok': True})
         except (ValueError, UnicodeError, TimeoutError):
-            if path == '/api/dialogue/config':
+            if event_request:
+                error = 'Invalid event request'
+            elif path == '/api/dialogue/config':
                 error = 'Invalid dialogue config'
             elif path == '/api/dialogue/model':
                 error = 'Invalid dialogue model config'
@@ -429,7 +701,10 @@ class Handler(BaseHTTPRequestHandler):
                 error = 'Invalid dialogue message'
             self.send_json(400, {'ok': False, 'error': error})
         except OSError:
-            self.send_json(500, {'ok': False, 'error': 'Unable to save dialogue data'})
+            if event_request:
+                self.send_json(500, {'ok': False, 'error': 'Unable to save event data'})
+            else:
+                self.send_json(500, {'ok': False, 'error': 'Unable to save dialogue data'})
 
     def proxy_json(self, upstream_path: str) -> None:
         try:
@@ -503,6 +778,25 @@ class Handler(BaseHTTPRequestHandler):
             return
         if path in ("/events", "/events.html"):
             self.send_bytes(200, "text/html; charset=utf-8", (ROOT / "events.html").read_bytes())
+            return
+        if path == "/api/events":
+            if not self.local_event_request():
+                return
+            try:
+                result = query_events(parse_qs(urlparse(self.path).query))
+                self.send_json(200, {"ok": True, **result})
+            except (EventValidationError, ValueError) as exc:
+                self.send_json(400, {"ok": False, "error": "invalid event query", "detail": str(exc)})
+            return
+        event_get = re.fullmatch(r"/api/events/([^/]+)", path)
+        if event_get:
+            if not self.local_event_request():
+                return
+            try:
+                event = get_event(unquote(event_get.group(1)))
+                self.send_json(200, {"ok": True, "event": event})
+            except EventNotFound:
+                self.send_json(404, {"ok": False, "error": "event not found"})
             return
         if path == "/api/config":
             self.send_json(200, {"rdk_base": RDK_BASE})

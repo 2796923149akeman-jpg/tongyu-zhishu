@@ -1,6 +1,6 @@
 # 验证记录
 
-最近更新：2026-10-27。
+最近更新：2026-10-28。
 
 - 7 项隔离自动化测试通过：监控/对话页面及 RDK JSON 代理路由、界面配置保存与校验、消息持久化、访问限制、重复消息和 200 条上限、生产 STT/TTS 入口到 HTTP 接收的顺序、转发故障不阻塞及恢复。
 - 实际浏览器检查对话文字与用户/机器人标识，设备筛选生效，HTML 字样作为普通文本呈现；基础监控页的页面结构和接口错误展示符合预期。
@@ -26,6 +26,16 @@
 - [传感器接口未提供采集时间](assets/monitor-sensor-time-unknown.png)
 
 检查覆盖 1440 px 桌面布局，并确认事件页在最新代码中可通过 `/events` 打开。真实硬件采集时间字段仍需在实际 `/api/iot_payload` 返回中确认。
+
+## 异常事件接口（2026-10-28）
+
+- 新增 `dashboard/event_contract.py`，统一事件字段、等级/状态枚举和 B/C 日报映射；`urgent/watch/info` 映射为日报的 `high/medium/low`，`resolved` 映射为 `handled`。
+- 新增 `GET /api/events`、`GET /api/events/{id}`、`POST /api/events`、状态处置和备注接口，事件运行数据写入被 Git 忽略的 `dashboard/events.json`。
+- 使用 `dedupe_key` 防止同一告警重复入库；默认最多保留 2000 条。
+- `tests/test_event_contract.py` 与 `tests/test_events.py` 共 7 项测试通过，覆盖映射、创建、去重、筛选、状态转换、备注、参数错误和持久化。
+- 事件页真实接口模式已通过本机 Dashboard 写入测试事件验证，页面显示绿色“接口数据”和真实事件；“接口不可用时回退到演示数据”的行为保留。
+
+![事件接口真实模式](assets/monitor-events-live.png)
 
 ## 先期设备联调记录
 

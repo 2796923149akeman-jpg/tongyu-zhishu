@@ -18,7 +18,7 @@
 
 上述联调确认的是传输链路、接收过程和字段解析，不是传感器测量精度或行为识别准确率测试。本仓库当前隔离测试通过模拟上游响应验证 V1 的代理和消息接口；硬件端程序、算法和实际测量精度不在该自动化测试范围内。
 
-下文列出的路由均为 V1 当前已经实现的接口。异常事件、学生名单、测温记录和日报等后续接口，只有在实现、测试并补充到本文档后才属于正式接口。
+下文列出的路由均为 V1 当前已经实现的接口。异常事件查询、状态处置和备注接口已实现；学生名单、测温记录和日报接口仍需实现、测试并补充到本文档后才属于正式接口。
 
 ## 网页与服务状态
 
@@ -32,7 +32,7 @@
 
 ### `GET /events`
 
-返回异常事件页面。当前页面使用带“演示数据”标识的样例，事件接口尚未实现；字段需求、验收示例和 Issue 草案见 `docs/MONITOR_EVENTS_UI.md`。
+返回异常事件页面。页面启动时读取 `GET /api/events`；接口不可用或禁止本机访问时，页面明确切换到带“演示数据”标识的样例，并在恢复后重新读取真实事件。
 ### `GET /health.html`
 
 返回学生测温页面。页面本身只提供静态结构和交互逻辑，名单、测温记录与日报数据需要后续接口；接口未实现时页面使用带“演示数据”标识的固定样例，字段约定见 [学生测温与当日日报](HEALTH_REPORT_UI.md)。
@@ -105,6 +105,129 @@
   "rdk_base": "http://192.168.43.54:5000"
 }
 ```
+
+## 异常事件接口
+
+事件接口只允许服务电脑本机访问。统一字段和枚举定义在 `dashboard/event_contract.py`；事件页、日报和后续接口不得各自定义不同格式。
+
+### `GET /api/events`
+
+查询参数：
+
+```text
+status=pending|resolved|false_alarm
+level=urgent|watch|info
+source=rdk|sensor|dialogue|device|manual
+class_id=C-02
+date_from=2026-10-28
+date_to=2026-10-28
+q=关键词
+sort=newest|oldest
+limit=50
+offset=0
+```
+
+响应：
+
+```json
+{
+  "ok": true,
+  "events": [
+    {
+      "id": "EVT-20261028-ABC123",
+      "event_type": "fall",
+      "level": "urgent",
+      "source": "rdk",
+      "status": "pending",
+      "occurred_at": "2026-10-28T09:42:10+08:00",
+      "summary": "检测到疑似摔倒",
+      "detail": "行为识别连续 3 帧返回 fall。",
+      "device_id": "rdk-x5-01",
+      "class_id": "C-02",
+      "class_name": "小二班",
+      "location": "活动室 A",
+      "confidence": 0.86,
+      "handled_at": null,
+      "handled_by": null,
+      "note": "",
+      "dedupe_key": "rdk-fall-20261028-094210",
+      "history": [
+        {
+          "at": "2026-10-28T09:42:10+08:00",
+          "action": "系统检测",
+          "by": "rdk",
+          "note": "检测到疑似摔倒"
+        }
+      ],
+      "updated_at": "2026-10-28T09:42:11+08:00"
+    }
+  ],
+  "total": 1,
+  "limit": 50,
+  "offset": 0,
+  "updated_at": "2026-10-28T09:42:11+08:00"
+}
+```
+
+### `GET /api/events/{id}`
+
+返回单个事件，响应为 `{"ok": true, "event": {...}}`。
+
+### `POST /api/events`
+
+写入一条事件。设备采集程序或人工登记入口调用：
+
+```json
+{
+  "event_type": "fall",
+  "level": "urgent",
+  "source": "rdk",
+  "occurred_at": "2026-10-28T09:42:10+08:00",
+  "summary": "检测到疑似摔倒",
+  "detail": "行为识别连续 3 帧返回 fall。",
+  "device_id": "rdk-x5-01",
+  "class_id": "C-02",
+  "class_name": "小二班",
+  "location": "活动室 A",
+  "confidence": 0.86,
+  "dedupe_key": "rdk-fall-20261028-094210"
+}
+```
+
+成功返回 HTTP `201`。相同 `dedupe_key` 再次写入不会产生第二条事件，返回 HTTP `200` 和原事件，`duplicate` 为 `true`。
+
+### `POST /api/events/{id}/status`
+
+```json
+{"status": "resolved", "note": "现场确认无受伤", "handled_by": "李老师"}
+```
+
+允许 `pending` → `resolved` / `false_alarm`，以及 `resolved` / `false_alarm` → `pending`（重新打开）。状态变更会追加 `history`。
+
+### `POST /api/events/{id}/notes`
+
+```json
+{"note": "已通知现场老师", "author": "李老师"}
+```
+
+备注最多 200 字，会追加到 `history`。
+
+### 统一枚举和日报映射
+
+- `level`: `urgent` / `watch` / `info`
+- `status`: `pending` / `resolved` / `false_alarm`
+- 日报展示映射：`urgent→high`、`watch→medium`、`info→low`、`resolved→handled`
+- 字段映射：`event_type→type`、`summary→title`、`handled_by→handler`
+
+事件运行数据保存在被 Git 忽略的 `dashboard/events.json`，最多保留 2000 条。所有时间按 Asia/Shanghai 处理。
+
+错误响应：
+
+```json
+{"ok": false, "error": "invalid event request", "detail": "invalid event_type"}
+```
+
+参数错误返回 `400`，事件不存在返回 `404`，非法状态转换返回 `409`，持久化失败返回 `500`。
 
 ## 对话消息接口
 
