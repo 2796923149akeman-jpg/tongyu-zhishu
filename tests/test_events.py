@@ -1,0 +1,164 @@
+"""异常事件 API 的隔离测试。"""
+
+import importlib.util
+import json
+import tempfile
+import threading
+import unittest
+import urllib.error
+import urllib.request
+from urllib.parse import urlencode
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def load_server():
+    spec = importlib.util.spec_from_file_location(
+        "test_dashboard_events", ROOT / "dashboard" / "server.py"
+    )
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+class EventApiTests(unittest.TestCase):
+    def setUp(self):
+        self.web = load_server()
+        self.temp = tempfile.TemporaryDirectory()
+        self.web.DIALOGUE_DATA_FILE = Path(self.temp.name) / "dialogue_messages.json"
+        self.web.DIALOGUE_CONFIG_FILE = Path(self.temp.name) / "dialogue_config.json"
+        self.web.ANALYSIS_CONFIG_FILE = Path(self.temp.name) / "analysis_config.json"
+        self.web.CONVERSATION_SUMMARIES_FILE = Path(self.temp.name) / "conversation_summaries.json"
+        self.web.PROJECT_ROOT = Path(self.temp.name)
+        self.web.EVENTS_FILE = Path(self.temp.name) / "events.json"
+        (Path(self.temp.name) / "xiaozhi-server" / "data").mkdir(parents=True)
+        self.web.reload_events()
+        self.web.Handler.log_message = lambda *args: None
+        self.http = self.web.ThreadingHTTPServer(("127.0.0.1", 0), self.web.Handler)
+        self.thread = threading.Thread(target=self.http.serve_forever, daemon=True)
+        self.thread.start()
+        self.base = f"http://127.0.0.1:{self.http.server_port}"
+
+    def tearDown(self):
+        self.http.shutdown()
+        self.http.server_close()
+        self.thread.join()
+        self.temp.cleanup()
+
+    def request(self, path, payload=None, method="GET"):
+        data = json.dumps(payload).encode("utf-8") if payload is not None else None
+        headers = {"Content-Type": "application/json"} if data else {}
+        request = urllib.request.Request(self.base + path, data=data, headers=headers, method=method)
+        try:
+            with urllib.request.urlopen(request, timeout=5) as response:
+                body = response.read()
+                return response.status, json.loads(body) if body else {}
+        except urllib.error.HTTPError as exc:
+            body = exc.read()
+            return exc.code, json.loads(body) if body else {}
+
+    def event_payload(self):
+        now = datetime.now(timezone(timedelta(hours=8))).isoformat(timespec="seconds")
+        return {
+            "event_type": "fall",
+            "level": "urgent",
+            "source": "rdk",
+            "occurred_at": now,
+            "summary": "测试摔倒事件",
+            "detail": "行为识别测试",
+            "class_id": "C-02",
+            "class_name": "小二班",
+            "device_id": "rdk-test",
+            "dedupe_key": "test-fall-1",
+        }
+
+    def test_create_dedupe_query_status_notes_and_persistence(self):
+        status, created = self.request("/api/events", self.event_payload(), "POST")
+        self.assertEqual(status, 201)
+        self.assertFalse(created["duplicate"])
+        event_id = created["event"]["id"]
+        self.assertTrue(event_id.startswith("EVT-"))
+        self.assertEqual(created["event"]["class_name"], "小二班")
+        self.assertTrue(created["event"]["history"])
+
+        status, duplicate = self.request("/api/events", self.event_payload(), "POST")
+        self.assertEqual(status, 200)
+        self.assertTrue(duplicate["duplicate"])
+        self.assertEqual(duplicate["event"]["id"], event_id)
+
+        status, listing = self.request("/api/events?status=pending&class_id=C-02&limit=20")
+        self.assertEqual(status, 200)
+        self.assertEqual(listing["total"], 1)
+        self.assertEqual(listing["events"][0]["id"], event_id)
+
+        status, one = self.request(f"/api/events/{event_id}")
+        self.assertEqual(status, 200)
+        self.assertEqual(one["event"]["summary"], "测试摔倒事件")
+
+        status, resolved = self.request(
+            f"/api/events/{event_id}/status",
+            {"status": "resolved", "note": "现场确认安全", "handled_by": "测试老师"},
+            "POST",
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(resolved["event"]["status"], "resolved")
+        self.assertTrue(resolved["event"]["handled_at"])
+        self.assertEqual(resolved["event"]["handled_by"], "测试老师")
+
+        status, conflict = self.request(
+            f"/api/events/{event_id}/status",
+            {"status": "false_alarm"},
+            "POST",
+        )
+        self.assertEqual(status, 409)
+
+        status, note = self.request(
+            f"/api/events/{event_id}/notes",
+            {"note": "交接班复核", "author": "测试老师"},
+            "POST",
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(note["event"]["note"], "交接班复核")
+
+        saved = json.loads(self.web.EVENTS_FILE.read_text(encoding="utf-8"))
+        self.assertEqual(saved[0]["id"], event_id)
+        self.web.reload_events()
+        self.assertEqual(self.web.get_event(event_id)["status"], "resolved")
+
+    def test_filters_and_invalid_requests(self):
+        payload = self.event_payload()
+        payload["level"] = "watch"
+        payload["class_id"] = "C-11"
+        payload["class_name"] = "中一班"
+        status, created = self.request("/api/events", payload, "POST")
+        self.assertEqual(status, 201)
+
+        status, listing = self.request("/api/events?" + urlencode({
+            "level": "watch",
+            "class_id": "C-11",
+            "q": "测试",
+        }))
+        self.assertEqual(status, 200)
+        self.assertEqual(listing["total"], 1)
+        status, empty = self.request("/api/events?level=urgent")
+        self.assertEqual(status, 200)
+        self.assertEqual(empty["total"], 0)
+
+        bad = self.event_payload()
+        bad["event_type"] = "unknown"
+        status, body = self.request("/api/events", bad, "POST")
+        self.assertEqual(status, 400)
+        self.assertFalse(body["ok"])
+
+        status, body = self.request(f"/api/events/{created['event']['id']}/notes", {"note": "x" * 201}, "POST")
+        self.assertEqual(status, 400)
+
+        status, body = self.request("/api/events/not-found", method="GET")
+        self.assertEqual(status, 404)
+
+
+if __name__ == "__main__":
+    unittest.main()
