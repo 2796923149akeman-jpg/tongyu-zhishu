@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>登录 · 童域智枢</title></head>
+<body class="access-screen" data-access-page="login">
+  <main class="access-layout">
+    <section class="access-brand" aria-label="童域智枢">
+      <div><div class="access-logo">童域智枢</div><div class="access-kicker">TONGYU · CONNECTED CARE</div></div>
+      <div><span class="access-kicker">手机演示入口</span><h1>看见状态，<br>连接每一份关心。</h1><p>登录后查看管理员开放的监控数据与演示模块。</p></div>
+      <small class="access-brand-foot">童域智枢 · 多模态陪护看板</small>
+    </section>
+    <section class="access-form-wrap"><div class="access-card">
+      <div class="access-kicker">WELCOME</div><h2 id="accessTitle">欢迎登录</h2><p class="access-note" id="accessSubtitle">首次使用？先注册一个演示账号。</p>
+      <div class="access-tabs" role="tablist" aria-label="登录或注册"><button id="loginTab" role="tab" aria-selected="true" aria-controls="accountForm">登录</button><button id="registerTab" role="tab" aria-selected="false" aria-controls="accountForm">注册</button></div>
+      <form id="accountForm" method="post" action="/api/auth/login">
+        <label class="access-field">用户名<input id="accountUsername" autocomplete="username" minlength="3" maxlength="32" required placeholder="请输入用户名"></label>
+        <label class="access-field">密码<input id="accountPassword" type="password" autocomplete="current-password" minlength="6" maxlength="128" required placeholder="至少 6 位"></label>
+        <label class="access-field" id="confirmField" hidden>确认密码<input id="accountConfirm" type="password" autocomplete="new-password" minlength="6" maxlength="128" placeholder="再次输入密码"></label>
+        <p class="access-feedback" id="accountFeedback" role="status" aria-live="polite"></p>
+        <button class="access-primary access-submit" id="accountSubmit" type="submit" disabled>正在连接…</button>
+      </form>
+      <p class="access-note">注册账号仅拥有演示查看权限，展示内容由管理员统一设置。</p>
+      <noscript><p>请启用 JavaScript 后登录。</p></noscript>
+    </div></section>
+  </main>
+</body></html>

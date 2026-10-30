@@ -62,6 +62,9 @@ class HealthReportPageTests(unittest.TestCase):
         self.web.HEALTH_STUDENTS_FILE = Path(self.temp.name) / "health_students.json"
         self.web.HEALTH_RECORDS_FILE = Path(self.temp.name) / "health_records.json"
         self.web.PROJECT_ROOT = Path(self.temp.name)
+        self.web.AUTH = self.web.AccessStore(Path(self.temp.name) / 'auth_config.json', secure=False)
+        self.web.AUTH.create_user('testadmin', 'fixture-password', role='admin')
+        self.auth_token, _ = self.web.AUTH.new_session('testadmin')
         (Path(self.temp.name) / "xiaozhi-server" / "data").mkdir(parents=True)
         self.web.reload_events()
         self.web.reload_health()
@@ -78,7 +81,8 @@ class HealthReportPageTests(unittest.TestCase):
         self.temp.cleanup()
 
     def request(self, path):
-        with urllib.request.urlopen(self.base + path, timeout=5) as response:
+        request = urllib.request.Request(self.base + path, headers={'Cookie': 'tongyu_session=' + self.auth_token})
+        with urllib.request.urlopen(request, timeout=5) as response:
             body = response.read()
             content_type = response.headers.get("Content-Type", "")
             if "json" in content_type:
@@ -111,7 +115,7 @@ class HealthReportPageTests(unittest.TestCase):
         status, content_type, health = self.request("/health")
         self.assertEqual(status, 200)
         self.assertTrue(health["ok"])
-        self.assertIn("rdk_base", health)
+        self.assertNotIn("rdk_base", health)
 
     def test_navigation_is_shared_with_monitor_page(self):
         expected = ["index.html", "events.html", "chat.html", "health.html", "reports.html"]
@@ -146,6 +150,9 @@ class HealthReportPageTests(unittest.TestCase):
         reports = (ROOT / "dashboard" / "reports.html").read_text(encoding="utf-8")
         for marker in ("日报日期", "班级范围", "打印日报", "未测温与需复测名单", "处置率"):
             self.assertIn(marker, reports)
+
+        script = (ROOT / "dashboard" / "health-report.js").read_text(encoding="utf-8")
+        self.assertIn("dashboard-day-change", script)
 
     def test_documented_endpoints_match_page_script(self):
         script = (ROOT / "dashboard" / "health-report.js").read_text(encoding="utf-8")

@@ -1,0 +1,43 @@
+[hidden] { display: none !important; }
+.access-screen { margin: 0; min-height: 100dvh; background: #f2f6f5; color: #233b38; font: 15px/1.7 "Segoe UI", "Microsoft YaHei", sans-serif; }
+.access-screen * { box-sizing: border-box; }
+.access-layout { min-height: 100dvh; display: grid; grid-template-columns: minmax(260px, .85fr) minmax(0, 1.15fr); }
+.access-brand { background: #142e2d; color: #eef8f4; padding: clamp(28px, 6vw, 88px); display: flex; flex-direction: column; justify-content: space-between; gap: 60px; }
+.access-logo { font-size: 22px; font-weight: 700; letter-spacing: .12em; }
+.access-brand h1 { font-size: clamp(29px, 3.2vw, 46px); line-height: 1.45; margin: 24px 0; font-weight: 600; }
+.access-brand p { color: #b2ccc5; max-width: 350px; }
+.access-kicker { color: #77c5b6; font-size: 12px; letter-spacing: .2em; }
+.access-form-wrap { padding: 40px 24px; display: flex; align-items: center; justify-content: center; }
+.access-card { width: min(100%, 410px); }
+.access-card h2 { font-size: 29px; margin: 12px 0 6px; }
+.access-note { color: #687d77; font-size: 13px; }
+.access-tabs { display: flex; border-bottom: 1px solid #d3dfda; margin: 28px 0 24px; gap: 28px; }
+.access-tabs button { border: 0; border-bottom: 3px solid transparent; background: transparent; padding: 10px 1px; color: #637972; font: inherit; cursor: pointer; }
+.access-tabs button[aria-selected="true"] { border-bottom-color: #176b67; color: #176b67; font-weight: 700; }
+.access-field { display: block; margin: 0 0 18px; font-size: 14px; }
+.access-field input { display: block; width: 100%; min-height: 48px; margin-top: 7px; padding: 10px 13px; border: 1px solid #cbd9d3; border-radius: 9px; color: #233b38; background: #fff; font: inherit; }
+.access-screen input:focus-visible, .access-screen button:focus-visible, .account-bar a:focus-visible { outline: 3px solid #85caba; outline-offset: 3px; }
+.access-primary, .access-secondary { display: inline-flex; justify-content: center; align-items: center; min-height: 44px; border: 1px solid #176b67; border-radius: 9px; background: #176b67; color: white; padding: 10px 20px; font: inherit; text-decoration: none; cursor: pointer; }
+.access-primary:disabled { opacity: .6; cursor: wait; }
+.access-submit { width: 100%; margin-top: 4px; }
+.access-secondary { color: #176b67; background: #fff; }
+.access-feedback { min-height: 26px; color: #ac3c32; font-size: 13px; overflow-wrap: anywhere; }
+.access-feedback[data-success="true"] { color: #176b67; }
+.access-panel { max-width: 940px; margin: 0 auto; padding: clamp(20px, 5vw, 56px) 24px; }
+.access-panel h1 { margin: 20px 0 8px; font-size: 30px; }
+.access-panel-head { display: flex; justify-content: space-between; gap: 16px; align-items: center; flex-wrap: wrap; }
+.access-box { margin: 24px 0; padding: 24px; background: white; border: 1px solid #dae4df; border-radius: 14px; }
+.access-box h2 { margin: 0 0 6px; font-size: 18px; }
+.access-switch { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 16px 0; border-bottom: 1px solid #eef2f0; cursor: pointer; }
+.access-switch small { display: block; color: #6a7e77; font-size: 12px; }
+.access-switch input { flex: 0 0 auto; width: 23px; height: 23px; accent-color: #176b67; cursor: pointer; }
+.access-actions { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+.access-modules { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin-top: 28px; }
+.access-module { display: block; background: white; border: 1px solid #dae4df; padding: 24px; border-radius: 12px; color: #176b67; font-size: 18px; font-weight: 600; text-decoration: none; }
+.access-module span { display: block; font-size: 12px; font-weight: 400; color: #6a7e77; margin-top: 10px; }
+.account-bar { display: flex; gap: 12px; align-items: center; justify-content: flex-end; flex-wrap: wrap; margin: 0 0 18px; font: 12px/1.5 "Segoe UI", "Microsoft YaHei", sans-serif; color: #637972; }
+.account-bar span { max-width: 100%; overflow-wrap: anywhere; }
+.account-bar button, .account-bar a { display: inline-flex; min-height: 34px; padding: 6px 10px; border: 1px solid #ccdcd4; border-radius: 7px; background: #fff; color: #176b67; cursor: pointer; text-decoration: none; font: inherit; }
+.access-privacy-note { color: #687d77; padding: 8px 0; font-size: 12px; }
+@media (max-width: 700px) { .access-layout { grid-template-columns: minmax(0, 1fr); } .access-brand { gap: 12px; padding: 24px; } .access-brand h1 { font-size: 26px; margin: 14px 0 8px; } .access-brand .access-brand-foot, .access-brand p { display: none; } .access-form-wrap { padding: 26px 24px 40px; align-items: flex-start; } .access-card h2 { font-size: 25px; } .access-tabs { margin-top: 20px; } .access-panel { padding: 24px 16px; } .access-box { padding: 18px; } .access-modules { grid-template-columns: minmax(0, 1fr); } .account-bar { justify-content: flex-start; gap: 8px; } }
+@media print { .account-bar { display: none; } }

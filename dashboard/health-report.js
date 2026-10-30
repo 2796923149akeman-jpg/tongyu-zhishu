@@ -291,6 +291,7 @@
     mode: "loading",
     reason: "",
     date: todayISO(),
+    day: todayISO(),
     toastTimer: null,
     clockTimer: null,
     refreshTimer: null
@@ -372,6 +373,12 @@
       return;
     }
     try {
+      if (document.body.dataset.page === 'reports') {
+        const payload = await requestJSON(`${API.daily}?date=${encodeURIComponent(app.date)}`);
+        demo.classes = (payload.report?.health?.classes || []).map(item => ({id: item.id, name: item.name}));
+        setMode('live');
+        return;
+      }
       const payload = await requestJSON(API.students);
       applyStudentsPayload(payload);
       setMode("live");
@@ -430,15 +437,28 @@
   function startClock() {
     const clock = $("#liveClock");
     const pageDate = $("#pageDate");
+    const notifyDayChange = () => {
+      const current = todayISO();
+      if (current === app.day) return;
+      const previous = app.day;
+      app.day = current;
+      window.dispatchEvent(new CustomEvent("dashboard-day-change", {
+        detail: { previous, today: current }
+      }));
+    };
     const tick = () => {
       const now = new Date();
       if (clock) setText(clock, timeFmt.format(now));
       if (pageDate) {
         setText(pageDate, `${dateFmt.format(now)} · 数据按 Asia/Shanghai 统计`);
       }
+      notifyDayChange();
     };
     tick();
     app.clockTimer = setInterval(tick, 1000);
+    document.addEventListener("visibilitychange", () => {
+      if (!document.hidden) notifyDayChange();
+    });
   }
 
   function downloadCSV(filename, rows) {
@@ -1371,6 +1391,15 @@
       }
     }
 
+    window.addEventListener("dashboard-day-change", (event) => {
+      if (state.date !== event.detail.previous) return;
+      state.date = event.detail.today;
+      if (els.recordDate) els.recordDate.value = state.date;
+      if (app.mode === "demo") buildDemo(state.date);
+      reload();
+      toast(`日期已切换到 ${state.date}`, "ok");
+    });
+
     startClock();
     fillSources();
     bindEvents();
@@ -1518,8 +1547,10 @@
           card.append(top);
 
           card.append(el("p", "attention-meta", `${classLabel(report, item.class_id)} · 最近消息 ${fmtShort(item.last_at)}`));
-          if (item.excerpt) card.append(el("p", "attention-excerpt", `“${item.excerpt}”`));
-          if (item.reason) card.append(el("p", "event-meta", `留意原因：${item.reason}`));
+          if (window.TongyuBootstrap.permissions.dialogue_raw) {
+            if (item.excerpt) card.append(el("p", "attention-excerpt", `“${item.excerpt}”`));
+            if (item.reason) card.append(el("p", "event-meta", `留意原因：${item.reason}`));
+          } else card.append(el("p", "event-meta", "对话原文与留意原因未开放"));
           els.attentionList.append(card);
         });
 
@@ -1822,6 +1853,14 @@
       fillClasses();
       await loadReport();
     }
+
+    window.addEventListener("dashboard-day-change", (event) => {
+      if (state.date !== event.detail.previous) return;
+      state.date = event.detail.today;
+      if (els.date) els.date.value = state.date;
+      if (app.mode === "demo") buildDemo(state.date);
+      loadReport();
+    });
 
     startClock();
     bindEvents();

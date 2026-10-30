@@ -1,0 +1,71 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "启动小智服务",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/xiaozhi-server/app.py",
+      "cwd": "${workspaceFolder}/xiaozhi-server",
+      "console": "integratedTerminal",
+      "env": {},
+      "justMyCode": false
+    },
+    {
+      "name": "启动网页服务",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/scripts/run_dashboard.py",
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "env": {
+        "RDK_BASE": "${input:rdkBase}",
+        "PYTHONUNBUFFERED": "1"
+      },
+      "justMyCode": false,
+      "args": []
+    },
+    {
+      "name": "启动网页服务（手机分享）",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/scripts/run_dashboard.py",
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "env": {
+        "RDK_BASE": "${input:rdkBase}",
+        "PYTHONUNBUFFERED": "1"
+      },
+      "justMyCode": false,
+      "args": [
+        "--share"
+      ]
+    }
+  ],
+  "compounds": [
+    {
+      "name": "同时启动全部服务",
+      "configurations": [
+        "启动小智服务",
+        "启动网页服务"
+      ],
+      "stopAll": true
+    },
+    {
+      "name": "同时启动全部服务（手机分享）",
+      "configurations": [
+        "启动小智服务",
+        "启动网页服务（手机分享）"
+      ],
+      "stopAll": true
+    }
+  ],
+  "inputs": [
+    {
+      "id": "rdkBase",
+      "type": "promptString",
+      "description": "RDK 服务地址（按实际设备修改）",
+      "default": "http://192.168.43.54:5000"
+    }
+  ]
+}

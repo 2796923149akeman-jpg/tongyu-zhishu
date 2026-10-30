@@ -1,0 +1,14 @@
+{
+  "users": {},
+  "policy": {
+    "modules": {
+      "monitor": true,
+      "events": true,
+      "chat": true,
+      "health": true,
+      "reports": true
+    },
+    "video": false,
+    "dialogue_raw": false
+  }
+}

@@ -12,18 +12,20 @@
 
 ## 运行
 
+手机演示、注册登录与管理员展示开关见 [手机演示指南](../docs/MOBILE_DEMO.md)。推荐在 VS Code 选择“启动网页服务”或“同时启动全部服务”，按 F5 自动打开统一登录页；首次创建一次管理员，以后复用账号和展示设置。需要手机外网链接时选择带“手机分享”的同名启动项。终端脚本 `scripts/start_mobile_demo.ps1` 仍可使用。当前默认只监听本机，所有业务页面和读取 API 均需登录。
+
 配置上游数据接口地址后，在 Windows 终端运行：
 
 ```bat
-cd /d D:\ESP32\tongyu-zhishu-v1\dashboard
+cd /d D:\ESP32\tongyu-zhishu-v1
 conda activate xiaozhi-esp32-server
 set RDK_BASE=http://192.168.43.54:5000
-python server.py
+python scripts/run_dashboard.py
 ```
 
 浏览器打开 <http://127.0.0.1:8088>。
 
-本机对话页为 <http://127.0.0.1:8088/chat>。小智服务启动后，对 ESP32 说话即可查看识别文字、回复、情绪标签与需留意的会话；最近 200 条记录会保存在本机。
+对话页为 <http://127.0.0.1:8088/chat>。登录后按权限查看；小智服务启动后，对 ESP32 说话即可查看识别文字、回复、情绪标签与需留意的会话；演示账号是否可读原文由管理员设置，最近 200 条记录保存在本机。
 
 异常事件页为 <http://127.0.0.1:8088/events>。页面优先读取 `/api/events`，事件存储在本机运行时文件 `dashboard/events.json`（已被 Git 忽略，最多保留 2000 条）；状态处置和备注会写入服务器。RDK `/alert_status` 的 fall/fight 告警会自动写入事件，其他设备或人工登记可调用 `POST /api/events`，重复告警应提供稳定的 `dedupe_key`。接口不可用时页面明确回退到“演示数据”，不会把演示内容冒充真实记录。
 
@@ -32,6 +34,7 @@ python server.py
 课堂演示的疑似成人/儿童估算由 `scripts/person_type_demo.py` 生成，使用 YOLOv8 Pose 和头身比例规则，结果写入被 Git 忽略的 `dashboard/person_types.json`；监控页通过 `/api/rdk/person-types` 显示估算人数。详见 `docs/PERSON_TYPE_DEMO.md`。
 
 更新代码后需要重启 `python server.py`；运行中的旧进程不会自动加载新增的 `/events` 路由。传感器数据需要提供采集时间 `timestamp`（带时区的 ISO 8601），页面才会按采集时间判断 20 秒过期；未提供时会显示“采集时间未知”，不会显示“数据正常”。
+更新代码后需要重启 `python scripts/run_dashboard.py`；运行中的旧进程不会自动加载新增的 `/events` 路由。传感器数据需要提供采集时间 `timestamp`（带时区的 ISO 8601），页面才会按采集时间判断 20 秒过期；未提供时会显示“采集时间未知”，不会显示“数据正常”。
 
 “模型与情绪设置”可控制：
 

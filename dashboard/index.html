@@ -1988,6 +1988,8 @@
         state.inFlight.health = true;
         try {
           const data = await fetchHealthCheck();
+          const config = await fetchJson('/api/config');
+          if (typeof config.rdk_base === 'string') state.health.rdkBase = config.rdk_base;
           if (typeof data.rdk_base === "string") state.health.rdkBase = data.rdk_base;
           if (data.ok === false) throw new Error("服务报告异常");
           state.health.ok = true;
@@ -2513,6 +2515,19 @@
       }
 
       function setVideoState(nextState, message) {
+        if (!window.TongyuBootstrap.permissions.video) {
+          state.video.state = "disabled";
+          state.video.error = null;
+          els.videoLoading.hidden = true;
+          els.videoError.hidden = false;
+          setText(els.videoErrorText, "管理员暂未开放摄像头画面，传感器数据仍可查看。");
+          const title = els.videoError.querySelector("strong");
+          if (title) title.textContent = "摄像头画面未开放";
+          els.retryVideoBtn.hidden = true;
+          setText(els.videoBadge, "未开放");
+          els.videoFeed.removeAttribute("src");
+          return;
+        }
         state.video.state = nextState;
         state.video.error = nextState === "error" ? (message || "视频流不可用") : null;
 
@@ -2543,6 +2558,7 @@
       }
 
       function connectVideo() {
+        if (!window.TongyuBootstrap.permissions.video) { setVideoState("disabled"); return; }
         setVideoState("loading");
         armVideoTimeout();
         els.videoFeed.src = `/api/rdk/video_feed?t=${Date.now()}`;
