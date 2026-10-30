@@ -49,6 +49,14 @@
 
 ![日报真实接口](assets/reports-page-live.png)
 
+## 疑似成人/儿童演示（2026-10-30）
+
+- 新增 `dashboard/person_type.py`，用 YOLOv8 Pose 的头身比例和多帧投票输出 `adult/child/unknown`，只作为课堂演示估算。
+- 新增 `scripts/person_type_demo.py`，支持电脑摄像头和 RDK `/video_feed`，结果写入被 Git 忽略的 `dashboard/person_types.json`。
+- 监控页通过 `/api/rdk/person-types` 显示估算人数，并标注“估算”；文件不存在或过期时隐藏或提示过期。
+- `tests/test_person_type.py` 3 项通过：比例规则、多帧投票/人数统计、缓存接口。
+- 当前环境未连接实际摄像头，YOLOv8 Pose 推理和现场阈值仍需在实际 RDK 画面上校准。
+
 ## 先期设备联调记录
 
 团队此前使用实际设备完成过接口联调，并确认以下数据能够传到服务端且按约定字段接收：

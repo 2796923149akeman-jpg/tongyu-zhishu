@@ -13,6 +13,7 @@ import queue
 import re
 import tempfile
 import threading
+import time
 import uuid
 from collections import deque
 from datetime import datetime, timedelta, timezone
@@ -74,6 +75,7 @@ EMOTION_LEXICON_FILE = Path(
 EVENTS_FILE = Path(os.environ.get("EVENTS_FILE", str(ROOT / "events.json")))
 HEALTH_STUDENTS_FILE = Path(os.environ.get("HEALTH_STUDENTS_FILE", str(ROOT / "health_students.json")))
 HEALTH_RECORDS_FILE = Path(os.environ.get("HEALTH_RECORDS_FILE", str(ROOT / "health_records.json")))
+PERSON_TYPES_FILE = Path(os.environ.get("PERSON_TYPES_FILE", str(ROOT / "person_types.json")))
 EVENTS_LIMIT = 2000
 HEALTH_SOURCES = ("forehead", "infrared", "ear", "axillary")
 HEALTH_SOURCE_LABELS = {
@@ -509,6 +511,22 @@ def health_students_payload() -> dict:
         "students": health_student_snapshot(),
         "classes": health_classes_payload(),
         "generated_at": now_iso(),
+    }
+
+
+def person_types_payload() -> dict:
+    data = read_json_file(PERSON_TYPES_FILE, None)
+    if not isinstance(data, dict):
+        raise FileNotFoundError("person type data not available")
+    try:
+        age_seconds = max(0, int(time.time() - PERSON_TYPES_FILE.stat().st_mtime))
+    except OSError:
+        age_seconds = None
+    return {
+        **data,
+        "ok": True,
+        "age_seconds": age_seconds,
+        "stale": age_seconds is not None and age_seconds > 15,
     }
 
 
@@ -1280,6 +1298,12 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_json(200, {"ok": True, **build_daily_report(parse_qs(urlparse(self.path).query))})
             except ValueError as exc:
                 self.send_json(400, {"ok": False, "error": "invalid report query", "detail": str(exc)})
+            return
+        if path == "/api/rdk/person-types":
+            try:
+                self.send_json(200, person_types_payload())
+            except (FileNotFoundError, OSError):
+                self.send_json(404, {"ok": False, "error": "person type data unavailable"})
             return
         if path == "/api/config":
             self.send_json(200, {"rdk_base": RDK_BASE})

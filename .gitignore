@@ -24,6 +24,7 @@ htmlcov/
 /dashboard/dialogue_messages.json
 /dashboard/health_students.json
 /dashboard/health_records.json
+/dashboard/person_types.json
 /dashboard/.model-config-*
 /dashboard/.dialogue_config.json-*
 /dashboard/.dialogue_messages.json-*

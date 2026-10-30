@@ -718,6 +718,26 @@
       font-size: 11px;
     }
 
+    .person-type-strip {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 8px;
+      padding: 8px 10px;
+      color: var(--ink-2);
+      font-size: 11px;
+      line-height: 1.55;
+      background: var(--surface-soft);
+      border: 1px solid var(--line);
+      border-radius: 9px;
+    }
+
+    .person-type-strip[data-stale="true"] {
+      color: #8a5600;
+      background: var(--warn-soft);
+      border-color: #f0d8a9;
+    }
+
     .device-card {
       display: flex;
       flex-direction: column;
@@ -1439,6 +1459,10 @@
               <span class="video-badge" id="videoBadge" data-state="loading">连接中</span>
             </div>
             <p class="video-note">画面中断不会清空页面；传感器与行为状态会继续独立刷新并标注过期。</p>
+            <div class="person-type-strip" id="personTypeStrip" data-stale="false" hidden>
+              <span class="chip" id="personTypeChip" data-tone="warn">估算</span>
+              <span id="personTypeText">画面人物估算：暂无数据</span>
+            </div>
           </section>
 
           <aside class="card device-card" aria-labelledby="deviceTitle">
@@ -1528,6 +1552,7 @@
       const POLL_STATUS_MS = 3000;
       const POLL_SENSORS_MS = 5000;
       const POLL_HEALTH_MS = 10000;
+      const POLL_PERSON_TYPES_MS = 3000;
       const STALE_STATUS_MS = 15000;
       const STALE_SENSORS_MS = 20000;
       const STALE_HEALTH_MS = 30000;
@@ -1579,6 +1604,9 @@
         videoErrorText: $("#videoErrorText"),
         videoBadge: $("#videoBadge"),
         retryVideoBtn: $("#retryVideoBtn"),
+        personTypeStrip: $("#personTypeStrip"),
+        personTypeChip: $("#personTypeChip"),
+        personTypeText: $("#personTypeText"),
         deviceChip: $("#deviceChip"),
         healthDot: $("#healthDot"),
         healthText: $("#healthText"),
@@ -2549,11 +2577,33 @@
         setText(els.pageDate, dateFormatter.format(now));
       }
 
+      async function refreshPersonTypes() {
+        try {
+          const data = await fetchJson("/api/rdk/person-types", 2500);
+          const counts = data.counts || {};
+          const child = Number(counts.child || 0);
+          const adult = Number(counts.adult || 0);
+          const unknown = Number(counts.unknown || 0);
+          const stale = Boolean(data.stale);
+          setChip(els.personTypeChip, "warn", stale ? "估算 · 过期" : "估算");
+          setText(
+            els.personTypeText,
+            `画面人物估算：疑似儿童 ${child} · 疑似成人 ${adult} · 未确定 ${unknown}${stale ? "（数据已过期）" : ""}`
+          );
+          els.personTypeStrip.dataset.stale = String(stale);
+          els.personTypeStrip.title = data.disclaimer || "疑似成人/儿童为课堂演示估算，不是年龄或身份识别。";
+          els.personTypeStrip.hidden = false;
+        } catch (error) {
+          els.personTypeStrip.hidden = true;
+        }
+      }
+
       async function refreshAll() {
         await Promise.allSettled([
           refreshHealth(),
           refreshStatus(),
-          refreshSensors()
+          refreshSensors(),
+          refreshPersonTypes()
         ]);
       }
 
@@ -2583,6 +2633,7 @@
         clearInterval(timers.status);
         clearInterval(timers.sensors);
         clearInterval(timers.health);
+        clearInterval(timers.personTypes);
         timers.status = setInterval(() => {
           if (!document.hidden) refreshStatus();
         }, POLL_STATUS_MS);
@@ -2592,6 +2643,9 @@
         timers.health = setInterval(() => {
           if (!document.hidden) refreshHealth();
         }, POLL_HEALTH_MS);
+        timers.personTypes = setInterval(() => {
+          if (!document.hidden) refreshPersonTypes();
+        }, POLL_PERSON_TYPES_MS);
       }
 
       document.addEventListener("visibilitychange", () => {

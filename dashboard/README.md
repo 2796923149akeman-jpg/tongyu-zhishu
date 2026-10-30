@@ -29,6 +29,8 @@ python server.py
 
 学生测温页 <http://127.0.0.1:8088/health.html> 和日报页 <http://127.0.0.1:8088/reports.html> 已接入本机接口 `/api/health/*` 和 `/api/reports/daily`。学生与体温数据保存在被 Git 忽略的 `dashboard/health_students.json`、`dashboard/health_records.json`；日报事件通过 `event_for_report()` 使用统一等级/状态映射。默认班级为小二班、中一班、大一班，运行数据需要在本机导入或登记。
 
+课堂演示的疑似成人/儿童估算由 `scripts/person_type_demo.py` 生成，使用 YOLOv8 Pose 和头身比例规则，结果写入被 Git 忽略的 `dashboard/person_types.json`；监控页通过 `/api/rdk/person-types` 显示估算人数。详见 `docs/PERSON_TYPE_DEMO.md`。
+
 更新代码后需要重启 `python server.py`；运行中的旧进程不会自动加载新增的 `/events` 路由。传感器数据需要提供采集时间 `timestamp`（带时区的 ISO 8601），页面才会按采集时间判断 20 秒过期；未提供时会显示“采集时间未知”，不会显示“数据正常”。
 
 “模型与情绪设置”可控制：

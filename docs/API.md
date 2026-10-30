@@ -106,6 +106,24 @@
 }
 ```
 
+### `GET /api/rdk/person-types`
+
+返回课堂演示脚本最近一次写入的疑似人物估算结果；文件不存在时返回 `404`。页面对 `person_type` 只使用“疑似”语义，不作为年龄或身份结论。
+
+```json
+{
+  "ok": true,
+  "estimate": true,
+  "generated_at": "2026-10-30T15:55:00+08:00",
+  "counts": {"adult": 1, "child": 2, "unknown": 0, "total": 3},
+  "persons": [],
+  "age_seconds": 2,
+  "stale": false
+}
+```
+
+数据来源为被 Git 忽略的 `dashboard/person_types.json`，由 `scripts/person_type_demo.py` 生成。
+
 ## 异常事件接口
 
 事件接口只允许服务电脑本机访问。统一字段和枚举定义在 `dashboard/event_contract.py`；事件页、日报和后续接口不得各自定义不同格式。
