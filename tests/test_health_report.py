@@ -151,6 +151,9 @@ class HealthReportPageTests(unittest.TestCase):
         for marker in ("日报日期", "班级范围", "打印日报", "未测温与需复测名单", "处置率"):
             self.assertIn(marker, reports)
 
+        script = (ROOT / "dashboard" / "health-report.js").read_text(encoding="utf-8")
+        self.assertIn("dashboard-day-change", script)
+
     def test_documented_endpoints_match_page_script(self):
         script = (ROOT / "dashboard" / "health-report.js").read_text(encoding="utf-8")
         document = (ROOT / "docs" / "HEALTH_REPORT_UI.md").read_text(encoding="utf-8")
