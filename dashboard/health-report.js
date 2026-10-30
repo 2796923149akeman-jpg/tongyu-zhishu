@@ -373,6 +373,12 @@
       return;
     }
     try {
+      if (document.body.dataset.page === 'reports') {
+        const payload = await requestJSON(`${API.daily}?date=${encodeURIComponent(app.date)}`);
+        demo.classes = (payload.report?.health?.classes || []).map(item => ({id: item.id, name: item.name}));
+        setMode('live');
+        return;
+      }
       const payload = await requestJSON(API.students);
       applyStudentsPayload(payload);
       setMode("live");
@@ -1541,8 +1547,10 @@
           card.append(top);
 
           card.append(el("p", "attention-meta", `${classLabel(report, item.class_id)} · 最近消息 ${fmtShort(item.last_at)}`));
-          if (item.excerpt) card.append(el("p", "attention-excerpt", `“${item.excerpt}”`));
-          if (item.reason) card.append(el("p", "event-meta", `留意原因：${item.reason}`));
+          if (window.TongyuBootstrap.permissions.dialogue_raw) {
+            if (item.excerpt) card.append(el("p", "attention-excerpt", `“${item.excerpt}”`));
+            if (item.reason) card.append(el("p", "event-meta", `留意原因：${item.reason}`));
+          } else card.append(el("p", "event-meta", "对话原文与留意原因未开放"));
           els.attentionList.append(card);
         });
 

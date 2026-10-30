@@ -1,0 +1,2 @@
+# Optional for basic pages/login; required for reading and editing model YAML.
+PyYAML==6.0.3

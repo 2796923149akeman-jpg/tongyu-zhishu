@@ -11,6 +11,7 @@ venv/
 *.log
 *.tmp
 .pytest_cache/
+.playwright-cli/
 .coverage
 htmlcov/
 
@@ -24,6 +25,8 @@ htmlcov/
 /dashboard/dialogue_messages.json
 /dashboard/health_students.json
 /dashboard/health_records.json
+/dashboard/auth_config.json
+/dashboard/.auth_config-*
 /dashboard/.model-config-*
 /dashboard/.dialogue_config.json-*
 /dashboard/.dialogue_messages.json-*
