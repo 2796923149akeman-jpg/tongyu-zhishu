@@ -27,7 +27,7 @@ def verify(root=ROOT):
     candidates = sorted(set(filter(None, raw.decode("utf-8").split("\0"))))
     errors = []
     total = 0
-    sensitive = {"model_config.json", "messages.json", "events.json", "conversation_summaries.json", ".config.yaml"}
+    sensitive = {"auth_config.json", "health_students.json", "health_records.json", "dialogue_messages.json", "dialogue_config.json", "analysis_config.json", "model_config.json", "messages.json", "events.json", "conversation_summaries.json", ".config.yaml"}
     for rel in candidates:
         path = root / rel
         if not path.is_file():

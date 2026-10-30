@@ -27,11 +27,19 @@ class DialogueTests(unittest.TestCase):
     def setUp(self):
         self.web = load('test_dashboard', 'dashboard/server.py')
         self.temp = tempfile.TemporaryDirectory()
+        self.web.EVENTS_FILE = Path(self.temp.name) / "events.json"
+        self.web.HEALTH_STUDENTS_FILE = Path(self.temp.name) / "health_students.json"
+        self.web.HEALTH_RECORDS_FILE = Path(self.temp.name) / "health_records.json"
+        self.web.reload_events()
+        self.web.reload_health()
         self.web.DIALOGUE_DATA_FILE = Path(self.temp.name) / 'dialogue_messages.json'
         self.web.DIALOGUE_CONFIG_FILE = Path(self.temp.name) / 'dialogue_config.json'
         self.web.ANALYSIS_CONFIG_FILE = Path(self.temp.name) / 'analysis_config.json'
         self.web.CONVERSATION_SUMMARIES_FILE = Path(self.temp.name) / 'conversation_summaries.json'
         self.web.PROJECT_ROOT = Path(self.temp.name)
+        self.web.AUTH = self.web.AccessStore(Path(self.temp.name) / 'auth_config.json', secure=False)
+        self.web.AUTH.create_user('testadmin', 'fixture-password', role='admin')
+        self.auth_token, self.auth_session = self.web.AUTH.new_session('testadmin')
         private_config = self.web.PROJECT_ROOT / 'xiaozhi-server/data/.config.yaml'
         private_config.parent.mkdir(parents=True)
         private_config.write_text(
@@ -60,7 +68,8 @@ class DialogueTests(unittest.TestCase):
         self.temp.cleanup()
 
     def request(self, path='/api/dialogue/messages', data=None, headers=None):
-        hdr = {'Content-Type': 'application/json'}
+        hdr = {'Content-Type': 'application/json', 'Cookie': 'tongyu_session=' + self.auth_token,
+               'X-CSRF-Token': self.auth_session['csrf']}
         hdr.update(headers or {})
         req = urllib.request.Request(self.base + path, data=json.dumps(data).encode() if data is not None else None, headers=hdr)
         try:
@@ -174,8 +183,9 @@ class DialogueTests(unittest.TestCase):
 
     def test_local_access_restrictions(self):
         for headers in [{'Host': 'attacker.example'}, {'Origin': 'https://attacker.example'}, {'Sec-Fetch-Site': 'cross-site'}]:
-            self.assertEqual(self.request(headers=headers)[0], 403)
             self.assertEqual(self.request(data=self.message(), headers=headers)[0], 403)
+        for headers in [{'Origin': 'https://attacker.example'}, {'Sec-Fetch-Site': 'cross-site'}]:
+            self.assertEqual(self.request(headers=headers)[0], 403)
             self.assertEqual(self.request('/api/analysis/config', headers=headers)[0], 403)
             self.assertEqual(self.request('/api/dialogue/model', headers=headers)[0], 403)
 

@@ -77,11 +77,13 @@ Dashboard 将上游接口转换为同源网页接口；浏览器只访问 Dashbo
 
 ## 6. 快速部署
 
+当前电脑已配置 VS Code 一键启动：在“运行和调试”选择“同时启动全部服务”，按 F5 后自动打开登录页。首次按提示创建一次管理员；以后复用已保存的账号与展示设置。管理员和普通用户使用同一登录入口，按账号权限进入界面。手机外网演示选择“同时启动全部服务（手机分享）”。详见 [手机演示指南](docs/MOBILE_DEMO.md)。
+
 使用 Windows CMD 或 Anaconda Prompt。Python 依赖环境为 `xiaozhi-esp32-server`。
 
 ### 6.1 本地配置
 
-网页服务本身只使用 Python 标准库。完整语音交互服务使用 Python 3.10、根目录 `requirements.txt` 中的依赖和 FFmpeg。首次克隆后执行：
+登录和基础网页使用 Python 标准库；模型配置读写需 `dashboard/requirements.txt` 中的 PyYAML。仅部署网页的安装步骤见 [手机演示指南](docs/MOBILE_DEMO.md#新电脑首次安装)。完整语音交互服务使用 Python 3.10、根目录 `requirements.txt` 中的依赖和 FFmpeg。首次克隆后执行：
 
 ```bat
 cd /d D:\ESP32\tongyu-zhishu-v1
@@ -103,17 +105,17 @@ python app.py
 ### 6.3 启动网页服务
 
 ```bat
-cd /d D:\ESP32\tongyu-zhishu-v1\dashboard
+cd /d D:\ESP32\tongyu-zhishu-v1
 conda activate xiaozhi-esp32-server
 set RDK_BASE=http://192.168.43.54:5000
-python server.py
+python scripts/run_dashboard.py
 ```
 
 `RDK_BASE` 是网页服务使用的数据接口地址，地址变化时只修改启动参数。PowerShell 对应写法为：
 
 ```powershell
 $env:RDK_BASE="http://192.168.43.54:5000"
-python server.py
+python scripts/run_dashboard.py
 ```
 
 ## 7. API 文档

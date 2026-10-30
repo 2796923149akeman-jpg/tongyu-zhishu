@@ -31,6 +31,10 @@ class HealthApiTests(unittest.TestCase):
     def setUp(self):
         self.web = load_server()
         self.temp = tempfile.TemporaryDirectory()
+        self.web.AUTH = self.web.AccessStore(Path(self.temp.name) / "auth_config.json", secure=False)
+        self.web.AUTH.create_user("owner", "test-owner-password", role="admin")
+        token, session = self.web.AUTH.new_session("owner")
+        self.auth_headers = {"Cookie": "tongyu_session=" + token, "X-CSRF-Token": session["csrf"]}
         temp = Path(self.temp.name)
         self.web.DIALOGUE_DATA_FILE = temp / "dialogue_messages.json"
         self.web.DIALOGUE_CONFIG_FILE = temp / "dialogue_config.json"
@@ -59,6 +63,7 @@ class HealthApiTests(unittest.TestCase):
     def request(self, path, payload=None, method="GET"):
         data = json.dumps(payload).encode("utf-8") if payload is not None else None
         headers = {"Content-Type": "application/json"} if data else {}
+        headers.update(self.auth_headers)
         request = urllib.request.Request(self.base + path, data=data, headers=headers, method=method)
         try:
             with urllib.request.urlopen(request, timeout=5) as response:

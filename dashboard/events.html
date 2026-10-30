@@ -1877,6 +1877,7 @@
           if (text) {
             try { data = JSON.parse(text); } catch (error) { data = null; }
           }
+          if (response.status === 401 || response.status === 403) { location.reload(); return; }
           if (!response.ok) {
             const detail = data && typeof data === "object"
               ? [data.error, data.detail].filter((value) => typeof value === "string" && value.trim()).join("：")
@@ -1917,6 +1918,7 @@
           if (text) {
             try { data = JSON.parse(text); } catch (error) { data = null; }
           }
+          if (response.status === 401 || response.status === 403) { location.reload(); return; }
           if (!response.ok) {
             const detail = data && typeof data === "object"
               ? [data.error, data.detail].filter((value) => typeof value === "string" && value.trim()).join("：")

@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>演示展示设置 · 童域智枢</title></head>
+<body class="access-screen" data-access-page="admin"><main class="access-panel">
+  <div class="access-panel-head"><strong class="access-logo">童域智枢</strong><a class="access-secondary" href="/welcome">返回模块入口</a></div>
+  <h1>演示展示设置</h1><p class="access-note">设置适用于全部注册演示账号。管理员仍可查看全部内容；更改会在查看者页面自动生效。</p>
+  <form id="policyForm">
+    <section class="access-box"><h2>开放哪些模块</h2><p class="access-note">关闭后，演示用户的导航和模块入口将隐藏，该模块的数据接口也会关闭。</p>
+      <label class="access-switch"><span>实时监控<small>温度、空气质量、设备与行为状态</small></span><input id="allow-monitor" type="checkbox"></label>
+      <label class="access-switch"><span>异常事件<small>当前保留明确标注的演示样例</small></span><input id="allow-events" type="checkbox"></label>
+      <label class="access-switch"><span>对话与情绪<small>会话列表及情绪结果；原文另行控制</small></span><input id="allow-chat" type="checkbox"></label>
+      <label class="access-switch"><span>学生测温<small>现有名单、登记与记录演示</small></span><input id="allow-health" type="checkbox"></label>
+      <label class="access-switch"><span>当日日报<small>现有日报演示</small></span><input id="allow-reports" type="checkbox"></label>
+    </section>
+    <section class="access-box"><h2>视频与对话原文</h2>
+      <label class="access-switch"><span>摄像头画面<small>实时监控页面里的视频；关闭后仍能看传感器数据</small></span><input id="allow-video" type="checkbox"></label>
+      <label class="access-switch"><span>对话原文<small>关闭后只展示情绪结果，不显示原话、原话生成的标题或分析理由</small></span><input id="allow-dialogue_raw" type="checkbox"></label>
+    </section>
+    <div class="access-actions"><button class="access-primary" id="policySave" type="submit">保存展示设置</button><p class="access-feedback" id="policyFeedback" role="status" aria-live="polite"></p></div>
+  </form>
+</main></body></html>

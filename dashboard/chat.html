@@ -30,6 +30,8 @@
     .field input, .field select { width: 100%; height: 39px; padding: 0 11px; border: 1px solid var(--line); border-radius: 9px; background: #fff; color: var(--ink); outline: none; }
     .field input:focus, .field select:focus { border-color: var(--brand); box-shadow: 0 0 0 3px var(--brand-soft); }
     .conversation-list { flex: 1; min-height: 0; overflow: auto; padding: 10px; }
+    .conversation-day { margin: 12px 8px 8px; color: var(--muted); font-size: 12px; font-weight: 600; }
+    .conversation-empty { margin: 16px 8px; color: var(--muted); font-size: 12px; }
     .conversation-card { display: block; width: 100%; margin: 0 0 8px; padding: 12px; border: 1px solid transparent; border-radius: 12px; background: transparent; color: inherit; text-align: left; }
     .conversation-card:hover { background: #f0f6f4; }
     .conversation-card.active { border-color: #b9d9d4; background: var(--brand-soft); box-shadow: inset 3px 0 var(--brand); }
@@ -51,16 +53,17 @@
     .message-list { flex: 1; min-height: 0; overflow: auto; padding: 24px clamp(18px, 3vw, 40px); background: var(--surface-soft); }
     .day { margin: 8px 0 22px; text-align: center; color: var(--muted); font-size: 12px; }
     .message { display: flex; gap: 11px; margin: 0 0 22px; }
-    .message.assistant { flex-direction: row-reverse; }
+    .message.user { flex-direction: row-reverse; }
     .avatar { display: grid; flex: 0 0 37px; width: 37px; height: 37px; place-items: center; border-radius: 11px; background: var(--brand-soft); color: var(--brand); font-weight: 700; font-size: 11px; }
     .assistant .avatar { background: var(--assistant); color: #5366aa; }
     .message-body { max-width: min(78%, 720px); }
     .message-head { display: flex; gap: 8px; margin: 0 3px 6px; color: var(--muted); font-size: 11px; }
-    .assistant .message-head { justify-content: flex-end; }
+    .user .message-head { justify-content: flex-end; }
     .bubble { padding: 12px 15px; border: 1px solid var(--line); border-radius: 5px 15px 15px 15px; background: #fff; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.72; box-shadow: 0 4px 13px rgba(33, 60, 58, .04); }
-    .assistant .bubble { border-color: #dce2fa; border-radius: 15px 5px 15px 15px; background: var(--assistant); }
+    .assistant .bubble { border-color: #dce2fa; background: var(--assistant); }
+    .user .bubble { border-radius: 15px 5px 15px 15px; }
     .emotion-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 7px 3px 0; }
-    .assistant .emotion-row { justify-content: flex-end; }
+    .user .emotion-row { justify-content: flex-end; }
     .chip { display: inline-flex; align-items: center; min-height: 23px; padding: 2px 8px; border-radius: 20px; background: #eef3f2; color: #52615f; font-size: 10px; line-height: 1.3; }
     .chip.emotion-happy { background: #e8f7ed; color: #176b42; }
     .chip.emotion-sad, .chip.emotion-anxious, .chip.emotion-scared { background: #eef1ff; color: #4e5f9e; }
@@ -69,7 +72,7 @@
     .chip.attention-watch { background: #fff0d9; color: #8a5200; font-weight: 700; }
     .chip.attention-urgent { background: #fee4e2; color: var(--danger); font-weight: 700; }
     .session { margin: 6px 3px 0; color: #87919d; font-size: 10px; overflow-wrap: anywhere; }
-    .assistant .session { text-align: right; }
+    .user .session { text-align: right; }
     .empty { display: grid; min-height: 360px; height: 100%; place-items: center; text-align: center; color: var(--muted); }
     .empty strong { display: block; margin-bottom: 7px; color: var(--ink); font-size: 17px; }
     .main-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 52px; padding: 8px 20px; border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; }
@@ -99,8 +102,8 @@
     }
     @media (max-width: 820px) {
       .workspace { grid-template-columns: minmax(0, 1fr); height: auto; min-height: 760px; max-height: none; }
-      .conversation-sidebar { height: 350px; border-right: 0; border-bottom: 1px solid var(--line); }
-      .conversation-list { min-height: 130px; }
+      .conversation-sidebar { height: 400px; border-right: 0; border-bottom: 1px solid var(--line); }
+      .conversation-list { min-height: 0; }
       .sidebar-foot { display: none; }
       .conversation-main { height: 650px; }
       .message-list { padding: 20px 14px; }
@@ -186,7 +189,7 @@
       </aside>
       <section class="conversation-main" aria-label="当前对话">
         <div class="main-head">
-          <div class="current-summary"><strong id="currentTitle">全部消息</strong><div class="subtitle" id="resultSummary">正在读取记录</div></div>
+          <div class="current-summary"><strong id="currentTitle">对话记录</strong><div class="subtitle" id="resultSummary">正在读取记录</div></div>
           <div class="connection" id="connection" role="status"><span class="dot"></span><span>正在连接</span></div>
         </div>
         <section class="message-list" id="messageList" aria-live="polite" aria-label="对话消息">
@@ -195,7 +198,7 @@
         <footer class="main-foot"><span id="lastUpdated">尚未更新</span><span id="messageStats">最多保留 200 条记录</span></footer>
       </section>
     </section>
-    <footer class="page-foot"><span>情绪标签用于辅助回顾，请结合现场情况核实。</span><span>对话与模型设置仅限服务电脑访问</span></footer>
+    <footer class="page-foot"><span>情绪标签用于辅助回顾，请结合现场情况核实。</span><span>展示内容由管理员设置；模型设置仅限管理员</span></footer>
     </div>
     </main>
   </div>
@@ -260,13 +263,55 @@
     function formatTime(value, withDate = false) {
       const time = new Date(value);
       if (Number.isNaN(time.getTime())) return '时间未知';
-      return new Intl.DateTimeFormat('zh-CN', withDate
+      return new Intl.DateTimeFormat('zh-CN', {timeZone: 'Asia/Shanghai', ...(withDate
         ? {month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false}
-        : {hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false}).format(time);
+        : {hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false})}).format(time);
     }
     function dateKey(value) {
       const time = new Date(value);
-      return Number.isNaN(time.getTime()) ? '时间未知' : new Intl.DateTimeFormat('zh-CN', {year: 'numeric', month: 'long', day: 'numeric'}).format(time);
+      return Number.isNaN(time.getTime()) ? '时间未知' : new Intl.DateTimeFormat('zh-CN', {timeZone: 'Asia/Shanghai', year: 'numeric', month: 'long', day: 'numeric'}).format(time);
+    }
+    // Group by the time the conversation happened, regardless of the display-time setting.
+    function messageTime(item) {
+      return [item.created_at, item.received_at].find(value => value && Number.isFinite(Date.parse(value))) || '';
+    }
+    function buildConversations(summaries, rawVisible) {
+      const grouped = new Map(), sessionGroups = new Map();
+      for (const item of records) {
+        const day = dateKey(messageTime(item));
+        const key = JSON.stringify([day, item.device_id || '', item.session_id || '']);
+        if (!grouped.has(key)) {
+          grouped.set(key, {key, day, session_id: item.session_id, device_id: item.device_id, messages: []});
+          sessionGroups.set(item.session_id, (sessionGroups.get(item.session_id) || 0) + 1);
+        }
+        grouped.get(key).messages.push(item);
+      }
+      const summaryBySession = new Map(summaries.map(item => [item.session_id, item]));
+      const attentionOrder = {none: 0, watch: 1, urgent: 2};
+      conversations = [...grouped.values()].map(group => {
+        group.messages.sort((a, b) => (Date.parse(messageTime(a)) || 0) - (Date.parse(messageTime(b)) || 0));
+        const users = group.messages.filter(item => item.role === 'user');
+        const emotions = users.map(item => item.emotion || {});
+        const counts = new Map();
+        for (const emotion of emotions) if (emotion.label) counts.set(emotion.label, (counts.get(emotion.label) || 0) + 1);
+        const attention = emotions.reduce((best, item) => (attentionOrder[item.attention] || 0) > (attentionOrder[best.attention] || 0) ? item : best, {attention: 'none'});
+        // A summary spanning multiple days/devices must not label a single day's messages.
+        const summary = sessionGroups.get(group.session_id) === 1 ? summaryBySession.get(group.session_id) : null;
+        const first = (users[0]?.text || '').trim();
+        const last = messageTime(group.messages[group.messages.length - 1]);
+        return {...group,
+          title: rawVisible ? (summary?.title || (first ? first.slice(0, 18) + (first.length > 18 ? '…' : '') : '陪伴对话')) : '陪伴对话',
+          dominant_emotion: summary?.dominant_emotion || [...counts].sort((a, b) => b[1] - a[1])[0]?.[0] || 'neutral',
+          attention: summary?.attention || attention.attention,
+          attention_reason: rawVisible ? (summary?.attention_reason || attention.attention_reason || '') : '',
+          last_message_at: last,
+        };
+      }).sort((a, b) => (Date.parse(b.last_message_at) || 0) - (Date.parse(a.last_message_at) || 0));
+    }
+    function matchesFilters(item) {
+      const keyword = elements.search.value.trim().toLocaleLowerCase('zh-CN');
+      return (!elements.device.value || item.device_id === elements.device.value) &&
+        (!keyword || (item.text || '').toLocaleLowerCase('zh-CN').includes(keyword));
     }
     function replaceOptions(select, label, values) {
       const selected = select.value; select.replaceChildren(new Option(label, ''));
@@ -274,12 +319,8 @@
       select.value = [...select.options].some(option => option.value === selected) ? selected : '';
     }
     function visibleRecords() {
-      const keyword = elements.search.value.trim().toLocaleLowerCase('zh-CN');
-      return records.filter(item =>
-        (!elements.device.value || item.device_id === elements.device.value) &&
-        (!selectedSession || item.session_id === selectedSession) &&
-        (!keyword || item.text.toLocaleLowerCase('zh-CN').includes(keyword))
-      ).slice(-config.page_size);
+      const current = conversations.find(item => item.key === selectedSession);
+      return (current?.messages || []).filter(matchesFilters).slice(-config.page_size);
     }
     function attentionChip(level) {
       if (level === 'urgent') return ['优先查看', 'attention-urgent'];
@@ -291,38 +332,48 @@
     }
     function renderConversations() {
       const fragment = document.createDocumentFragment();
-      const total = document.createElement('button'); total.type = 'button'; total.className = `conversation-card ${selectedSession ? '' : 'active'}`;
-      total.innerHTML = '<div class="conversation-top"><span class="conversation-title">全部对话</span></div>';
-      total.addEventListener('click', () => { selectedSession = ''; render(true); renderConversations(); }); fragment.append(total);
-      for (const item of conversations) {
-        const card = document.createElement('button'); card.type = 'button'; card.className = `conversation-card ${item.attention || ''} ${selectedSession === item.session_id ? 'active' : ''}`;
+      const filtered = conversations.filter(item => item.messages.some(matchesFilters));
+      if (!filtered.some(item => item.key === selectedSession)) selectedSession = filtered[0]?.key || '';
+      let currentDay = '';
+      for (const item of filtered) {
+        if (item.day !== currentDay) {
+          const heading = document.createElement('h3'); heading.className = 'conversation-day'; heading.textContent = item.day;
+          fragment.append(heading); currentDay = item.day;
+        }
+        const card = document.createElement('button'); card.type = 'button'; card.className = `conversation-card ${item.attention || ''} ${selectedSession === item.key ? 'active' : ''}`;
+        card.setAttribute('aria-pressed', String(selectedSession === item.key));
         const top = document.createElement('div'); top.className = 'conversation-top';
         const title = document.createElement('span'); title.className = 'conversation-title'; title.textContent = item.title || '未命名会话'; top.append(title);
         const [attentionText, attentionClass] = attentionChip(item.attention); if (attentionText) top.append(createChip(attentionText, attentionClass));
         const meta = document.createElement('div'); meta.className = 'conversation-meta';
         const emotion = document.createElement('span'); emotion.textContent = `情绪 ${item.dominant_emotion_text || emotionNames[item.dominant_emotion] || '平静'}`;
-        const time = document.createElement('span'); time.textContent = formatTime(item.last_message_at, true); meta.append(emotion, time);
-        card.append(top, meta); card.title = item.attention_reason || '';
-        card.addEventListener('click', () => { selectedSession = item.session_id; render(true); renderConversations(); }); fragment.append(card);
+        const time = document.createElement('span'); time.textContent = formatTime(item.last_message_at); meta.append(emotion, time);
+        const detail = document.createElement('div'); detail.className = 'conversation-meta'; detail.textContent = `${item.device_id || '未知设备'} · ${item.messages.length} 条消息`;
+        card.append(top, meta, detail); card.title = item.attention_reason || '';
+        card.addEventListener('click', () => { selectedSession = item.key; renderConversations(); render(true); }); fragment.append(card);
+      }
+      if (!filtered.length) {
+        const empty = document.createElement('p'); empty.className = 'conversation-empty'; empty.textContent = records.length ? '没有符合筛选条件的对话' : '暂无对话记录'; fragment.append(empty);
       }
       elements.conversations.replaceChildren(fragment);
-      const attentionCount = conversations.filter(item => item.attention === 'watch' || item.attention === 'urgent').length;
+      const attentionCount = filtered.filter(item => item.attention === 'watch' || item.attention === 'urgent').length;
       elements.attentionTotal.textContent = `${attentionCount} 条需留意`;
     }
     function render(force = false) {
       const shown = visibleRecords();
-      const signature = JSON.stringify([shown, config, selectedSession, elements.device.value, elements.search.value]);
+      const current = conversations.find(item => item.key === selectedSession);
+      const signature = JSON.stringify([shown, current?.title, records.length, conversations.length, config, selectedSession, elements.device.value, elements.search.value]);
       if (!force && signature === renderedSignature) return;
       renderedSignature = signature;
       const fragment = document.createDocumentFragment(); let currentDay = '';
       for (const item of shown) {
-        const day = dateKey(item.received_at);
+        const day = dateKey(messageTime(item));
         if (day !== currentDay) { const divider = document.createElement('div'); divider.className = 'day'; divider.textContent = day; fragment.append(divider); currentDay = day; }
         const row = document.createElement('article'); row.className = `message ${item.role}`;
-        const avatar = document.createElement('div'); avatar.className = 'avatar'; avatar.textContent = item.role === 'user' ? '用户' : '助手';
+        const avatar = document.createElement('div'); avatar.className = 'avatar'; avatar.textContent = item.role === 'user' ? '用户' : '机器人';
         const body = document.createElement('div'); body.className = 'message-body';
         const head = document.createElement('div'); head.className = 'message-head';
-        const role = document.createElement('span'); role.textContent = item.role === 'user' ? '用户' : '语音助手';
+        const role = document.createElement('span'); role.textContent = item.role === 'user' ? '用户' : '机器人';
         const device = document.createElement('span'); device.textContent = item.device_id || '未知设备';
         const time = document.createElement('time'); time.textContent = formatTime(config.show_created_at ? item.created_at : item.received_at); head.append(role, device, time);
         const bubble = document.createElement('div'); bubble.className = 'bubble'; bubble.textContent = item.text;
@@ -341,9 +392,10 @@
         row.append(avatar, body); fragment.append(row);
       }
       elements.list.replaceChildren(fragment); elements.empty.hidden = shown.length > 0; if (!shown.length) elements.list.append(elements.empty);
-      const current = conversations.find(item => item.session_id === selectedSession);
-      elements.currentTitle.textContent = current ? current.title : '全部消息';
-      elements.summary.textContent = current ? `当前会话显示 ${shown.length} 条消息` : `筛选结果 ${shown.length} 条，共收到 ${records.length} 条`;
+      elements.currentTitle.textContent = current ? current.title : '暂无匹配对话';
+      elements.summary.textContent = current ? `${current.day} · 当前会话显示 ${shown.length} 条消息` : '请在左侧调整筛选条件';
+      elements.empty.querySelector('strong').textContent = records.length ? '没有符合筛选条件的对话' : '暂无对话记录';
+      elements.empty.querySelector('span').textContent = records.length ? '请调整搜索关键词或设备。' : '设备产生语音对话后，记录会显示在这里。';
       $('messageStats').textContent = `${records.length} 条记录 · ${conversations.length} 个会话`;
       if (config.auto_scroll && shown.length) elements.list.scrollTop = elements.list.scrollHeight;
     }
@@ -372,13 +424,14 @@
       clearTimeout(pollTimer);
       try {
         const [messageData, conversationData] = await Promise.all([requestJson('/api/dialogue/messages'), requestJson('/api/dialogue/conversations')]);
-        records = Array.isArray(messageData.messages) ? messageData.messages : []; conversations = Array.isArray(conversationData.conversations) ? conversationData.conversations : [];
+        records = Array.isArray(messageData.messages) ? messageData.messages : [];
+        buildConversations(Array.isArray(conversationData.conversations) ? conversationData.conversations : [], messageData.raw_visible !== false);
         replaceOptions(elements.device, '全部设备', [...new Set(records.map(item => item.device_id))]); renderConversations(); render();
         elements.connection.className = 'connection ok'; elements.connection.lastElementChild.textContent = '分析服务已连接'; elements.updated.textContent = `更新于 ${formatTime(new Date().toISOString())}`;
       } catch (_) { elements.connection.className = 'connection error'; elements.connection.lastElementChild.textContent = '记录读取失败'; }
       finally { pollTimer = setTimeout(poll, config.refresh_seconds * 1000); }
     }
-    for (const element of [elements.search, elements.device]) element.addEventListener(element === elements.search ? 'input' : 'change', () => render(true));
+    for (const element of [elements.search, elements.device]) element.addEventListener(element === elements.search ? 'input' : 'change', () => { renderConversations(); render(true); });
     $('settingsButton').addEventListener('click', () => { $('saveState').textContent = ''; elements.settingsDialog.showModal(); });
     for (const id of ['closeSettings', 'cancelSettings']) $(id).addEventListener('click', () => elements.settingsDialog.close());
     $('settingsForm').addEventListener('submit', async event => {
@@ -403,7 +456,9 @@
       try { await requestJson('/api/analysis/rebuild', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: '{}'}); $('analysisSaveState').style.color = '#176b67'; $('analysisSaveState').textContent = '已加入后台分析队列。'; }
       catch (error) { $('analysisSaveState').textContent = `启动失败：${error.message}`; }
     });
-    Promise.allSettled([loadConfig(), loadDialogueModel(), loadAnalysisConfig()]).finally(poll);
+    const initialRequests = [loadConfig()];
+    if (window.TongyuBootstrap.user.role === 'admin') initialRequests.push(loadDialogueModel(), loadAnalysisConfig());
+    Promise.allSettled(initialRequests).finally(poll);
   </script>
 </body>
 </html>

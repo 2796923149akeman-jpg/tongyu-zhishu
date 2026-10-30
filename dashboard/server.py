@@ -8,6 +8,7 @@ STM32 传感器数据转发到同一个简易网页，并提供 ESP32 对话回�
 from __future__ import annotations
 
 import json
+import hmac
 import os
 import queue
 import re
@@ -19,8 +20,9 @@ from datetime import datetime, timedelta, timezone
 import urllib.error
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from http.cookies import SimpleCookie, CookieError
 from pathlib import Path
-from urllib.parse import parse_qs, unquote, urlparse
+from urllib.parse import parse_qs, unquote, urlparse, quote
 
 
 ROOT = Path(__file__).resolve().parent
@@ -50,9 +52,14 @@ from event_contract import (
     text_value,
     validate_status_transition,
 )
+from access_control import AccessStore, COOKIE_NAME, MODULES
 
-HOST = os.environ.get("DASHBOARD_HOST", "0.0.0.0")
+HOST = os.environ.get("DASHBOARD_HOST", "127.0.0.1")
 PORT = int(os.environ.get("DASHBOARD_PORT", "8088"))
+AUTH = AccessStore(
+    os.environ.get("DASHBOARD_AUTH_FILE", str(ROOT / "auth_config.json")),
+    secure=os.environ.get("DASHBOARD_COOKIE_SECURE", "1") != "0",
+)
 RDK_BASE = os.environ.get("RDK_BASE", "http://192.168.43.54:5000").rstrip("/")
 PROJECT_ROOT = Path(os.environ.get("PROJECT_ROOT", str(ROOT.parent)))
 DIALOGUE_LIMIT = 200
@@ -95,6 +102,47 @@ STATIC_PAGES = {
     "/health-report.css": ("health-report.css", "text/css; charset=utf-8"),
     "/health-report.js": ("health-report.js", "text/javascript; charset=utf-8"),
 }
+PAGE_ROUTES = {
+    "/": ("index.html", "monitor"), "/index.html": ("index.html", "monitor"),
+    "/events": ("events.html", "events"), "/events.html": ("events.html", "events"),
+    "/chat": ("chat.html", "chat"), "/chat.html": ("chat.html", "chat"),
+    "/health.html": ("health.html", "health"), "/reports.html": ("reports.html", "reports"),
+    "/admin": ("admin.html", "admin"), "/admin.html": ("admin.html", "admin"),
+    "/welcome": ("welcome.html", None),
+}
+
+
+def route_module(path):
+    if path in PAGE_ROUTES:
+        return PAGE_ROUTES[path][1]
+    for prefix, module in (("/api/rdk/", "monitor"), ("/api/dialogue/", "chat"),
+                           ("/api/analysis/", "chat"), ("/api/events", "events"),
+                           ("/api/health/", "health"), ("/api/reports/", "reports")):
+        if path.startswith(prefix):
+            return module
+    if path == "/api/config":
+        return "monitor"
+    return None
+
+
+def public_messages(items, raw):
+    if raw:
+        return items
+    result = []
+    for item in items:
+        clean = {k: item[k] for k in ("id", "role", "device_id", "session_id", "created_at", "received_at") if k in item}
+        clean["text"] = "对话原文未开放"
+        emotion = item.get("emotion") or {}
+        clean["emotion"] = {k: emotion[k] for k in ("label", "label_text", "confidence", "source", "attention") if k in emotion}
+        result.append(clean)
+    return result
+
+
+def public_conversations(items, raw):
+    # Summary, title and reasons can quote speech just as the message text can.
+    keys = ("session_id", "dominant_emotion", "dominant_emotion_text", "attention", "message_count", "last_message_at")
+    return [({k: item[k] for k in keys if k in item} | {"title": f"会话 {i + 1}"})
+            for i, item in enumerate(items)] if not raw else items
 DEFAULT_DIALOGUE_CONFIG = {
     "title": "陪伴对话记录",
     "refresh_seconds": 2,
@@ -956,13 +1004,25 @@ class Handler(BaseHTTPRequestHandler):
     server_version = "TongyuDashboard/1.0"
 
     def log_message(self, fmt: str, *args) -> None:
-        print("[HTTP] " + (fmt % args))
+        # Do not log query strings, bodies, cookies or authorization headers.
+        print(f"[HTTP] {self.command} {urlparse(self.path).path} {args[1] if len(args) > 1 else ''}")
+
+    def security_headers(self):
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("Referrer-Policy", "same-origin")
+        self.send_header("X-Frame-Options", "DENY")
+        self.send_header("Content-Security-Policy", "frame-ancestors 'none'; base-uri 'self'; form-action 'self'")
+        cookie = getattr(self, "response_cookie", None)
+        if cookie:
+            self.send_header("Set-Cookie", cookie)
+            self.response_cookie = None
 
     def send_bytes(self, status: int, content_type: str, body: bytes) -> None:
         self.send_response(status)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(body)))
-        self.send_header("Cache-Control", "no-store")
+        self.security_headers()
         self.end_headers()
         self.wfile.write(body)
 
@@ -971,49 +1031,144 @@ class Handler(BaseHTTPRequestHandler):
         self.send_bytes(status, "application/json; charset=utf-8", body)
 
     def serve_index(self) -> None:
-        self.send_bytes(
-            200,
-            "text/html; charset=utf-8",
-            (ROOT / "index.html").read_bytes(),
-        )
+        self.serve_html("index.html")
 
-    def local_request(self, error: str) -> bool:
+    def token(self):
+        try:
+            cookie = SimpleCookie()
+            cookie.load(self.headers.get("Cookie", ""))
+            return cookie[COOKIE_NAME].value if COOKIE_NAME in cookie else ""
+        except CookieError:
+            return ""
+
+    def current_session(self, *, touch=True):
+        return AUTH.session(self.token(), touch=touch)
+
+    def same_origin(self):
+        host = self.headers.get("Host", "")
+        origin = self.headers.get("Origin")
+        if self.headers.get("Sec-Fetch-Site") == "cross-site":
+            return False
+        if not origin:
+            return True
+        try:
+            parsed = urlparse(origin)
+            return (parsed.netloc == host and parsed.path in ("", "/")
+                    and (parsed.scheme == "https" or (parsed.scheme == "http"
+                         and (not AUTH.secure or parsed.hostname in ("localhost", "127.0.0.1", "::1")))))
+        except ValueError:
+            return False
+
+    def serve_html(self, filename, status=200):
+        session = self.current_session()
+        user = AUTH.public_user(session)
+        policy = AUTH.get_policy() if user else None
+        permissions = ({"modules": dict.fromkeys(MODULES, True), "video": True, "dialogue_raw": True}
+                       if user and user["role"] == "admin" else policy)
+        bootstrap = json.dumps({"user": user, "policy": policy, "permissions": permissions,
+                                "csrf": session["csrf"] if session else None}, ensure_ascii=True).replace("<", "\\u003c")
+        source = (ROOT / filename).read_text(encoding="utf-8")
+        source = source.replace("</head>", '<link rel="stylesheet" href="/access.css">'
+                                '<script>window.TongyuBootstrap=' + bootstrap + ';</script>'
+                                '<script src="/access.js"></script></head>', 1)
+        if filename == "index.html" and not AUTH.permitted(session, "video"):
+            source = source.replace('src="/api/rdk/video_feed"', '')
+        self.send_bytes(status, "text/html; charset=utf-8", source.encode("utf-8"))
+
+    def redirect(self, location):
+        self.send_response(303)
+        self.send_header("Location", location)
+        self.send_header("Content-Length", "0")
+        self.security_headers()
+        self.end_headers()
+
+    def deny(self, path, status, error):
+        if path in PAGE_ROUTES:
+            if status == 401:
+                self.redirect("/login?next=" + quote(path, safe=""))
+            else:
+                self.serve_html("unavailable.html", status)
+        else:
+            self.send_json(status, {"ok": False, "error": error})
+        return False
+
+    def require_session(self, path, *, admin=False, write=False):
+        session = self.current_session()
+        user = AUTH.public_user(session)
+        if not user:
+            return self.deny(path, 401, "请先登录")
+        if not self.same_origin():
+            return self.deny(path, 403, "请求来源不匹配")
+        if admin and user["role"] != "admin":
+            return self.deny(path, 403, "此操作仅限管理员")
+        module = route_module(path)
+        if module and module != "admin" and not AUTH.permitted(session, module):
+            return self.deny(path, 403, "管理员尚未开放此模块")
+        if write and not self.valid_csrf(session):
+            return self.deny(path, 403, "页面验证已失效，请刷新后重试")
+        return True
+
+    def valid_csrf(self, session):
+        supplied = self.headers.get("X-CSRF-Token", "")
+        return bool(session and hmac.compare_digest(supplied.encode(), session["csrf"].encode()))
+
+    def require_local_ingest(self) -> bool:
+        # A tunnel's socket is also loopback: reject forwarded requests and public
+        # Host values rather than treating every loopback connection as trusted.
         host = urlparse('http://' + self.headers.get('Host', '')).hostname
         origin = self.headers.get('Origin')
         if (self.client_address[0] not in ('127.0.0.1', '::1')
                 or host not in ('localhost', '127.0.0.1', '::1')
                 or (origin and origin != 'http://' + self.headers.get('Host', ''))
+                or any(self.headers.get(h) is not None for h in ('Forwarded', 'X-Forwarded-For', 'X-Forwarded-Host', 'X-Forwarded-Proto', 'CF-Connecting-IP'))
                 or self.headers.get('Sec-Fetch-Site') == 'cross-site'):
-            self.send_json(403, {'ok': False, 'error': error})
+            self.send_json(403, {'ok': False, 'error': '仅允许本机设备消息写入'})
             return False
         return True
 
-    def local_dialogue_request(self) -> bool:
-        # The conversation test page is for the server PC; the monitoring page
-        # remains available to other devices on the LAN.
-        return self.local_request('Open the conversation page on localhost')
-
-    def local_event_request(self) -> bool:
-        return self.local_request('Open the event API on localhost')
-
-    def local_health_request(self) -> bool:
-        return self.local_request('Open the health API on localhost')
+    def auth_post(self, path, item):
+        session = self.current_session()
+        if not self.same_origin() or not self.valid_csrf(session):
+            self.send_json(403, {"ok": False, "error": "页面验证已失效，请刷新后重试"})
+            return
+        if path == "/api/auth/logout":
+            AUTH.revoke(self.token())
+            self.response_cookie = AUTH.cookie("", clear=True)
+            self.send_json(200, {"ok": True})
+            return
+        if not AUTH.initialized:
+            self.send_json(503, {"ok": False, "error": "请先在电脑上创建管理员账号"})
+            return
+        username, password = item.get("username"), item.get("password")
+        if path == "/api/auth/register":
+            if AUTH.rate_limited("register:" + self.client_address[0], 20, record=True):
+                self.send_json(429, {"ok": False, "error": "注册过于频繁，请稍后再试"})
+                return
+            try:
+                AUTH.create_user(username, password)  # Browser input cannot select a role.
+            except ValueError as exc:
+                self.send_json(400, {"ok": False, "error": str(exc)})
+                return
+            self.send_json(201, {"ok": True})
+            return
+        try:
+            status, username = AUTH.authenticate(username, password, self.client_address[0])
+        except ValueError:
+            status, username = "invalid", None
+        if status != "ok":
+            self.send_json(429 if status == "limited" else 401,
+                           {"ok": False, "error": "尝试次数过多，请 10 分钟后再试" if status == "limited" else "用户名或密码不正确"})
+            return
+        AUTH.revoke(self.token())
+        token, session = AUTH.new_session(username)
+        self.response_cookie = AUTH.cookie(token)
+        self.send_json(200, {"ok": True, "user": AUTH.public_user(session)})
 
     def do_POST(self) -> None:
         path = urlparse(self.path).path
         event_match = re.fullmatch(r"/api/events/([^/]+)/(status|notes)", path)
         event_request = path == "/api/events" or event_match is not None
         health_post = path in ("/api/health/records", "/api/health/import")
-        dialogue_request = path in (
-            '/api/dialogue/messages',
-            '/api/dialogue/config',
-            '/api/dialogue/model',
-            '/api/analysis/config',
-            '/api/analysis/rebuild',
-        )
-        if not dialogue_request and not event_request and not health_post:
-            self.send_json(404, {'ok': False, 'error': 'not found'})
-            return
         try:
             length = int(self.headers.get('Content-Length', '0'))
             limit = 8192 if path in ('/api/dialogue/config', '/api/dialogue/model', '/api/analysis/config', '/api/analysis/rebuild') else 65536
@@ -1025,22 +1180,20 @@ class Handler(BaseHTTPRequestHandler):
             # otherwise Windows can reset the socket before the 403 is read.
             self.connection.settimeout(5)
             body = self.rfile.read(length)
-            if event_request:
-                if not self.local_event_request():
-                    return
-            elif health_post:
-                if not self.local_health_request():
-                    return
-            elif not self.local_dialogue_request():
+            item = json.loads(body)
+            if not isinstance(item, dict):
+                raise ValueError('Object required')
+            if path in ('/api/auth/register', '/api/auth/login', '/api/auth/logout'):
+                self.auth_post(path, item)
                 return
-            try:
-                item = json.loads(body)
-            except (ValueError, UnicodeError):
-                if event_request:
-                    self.send_json(400, {'ok': False, 'error': 'Invalid event JSON'})
+            if path == '/api/dialogue/messages':
+                if not self.require_local_ingest():
                     return
-                raise
-
+            elif not self.require_session(path, admin=True, write=True):
+                return
+            if path == '/api/admin/policy':
+                self.send_json(200, {'ok': True, 'policy': AUTH.set_policy(item)})
+                return
             if event_request:
                 try:
                     if path == "/api/events":
@@ -1080,6 +1233,9 @@ class Handler(BaseHTTPRequestHandler):
                     self.send_json(400, {'ok': False, 'error': 'invalid health request', 'detail': str(exc)})
                 except OSError:
                     self.send_json(500, {'ok': False, 'error': 'Unable to save health data'})
+                return
+            if not event_request and not health_post and path not in ('/api/dialogue/messages', '/api/dialogue/config', '/api/dialogue/model', '/api/analysis/config', '/api/analysis/rebuild'):
+                self.send_json(404, {'ok': False, 'error': 'not found'})
                 return
 
             if path == '/api/dialogue/config':
@@ -1187,6 +1343,7 @@ class Handler(BaseHTTPRequestHandler):
             RDK_BASE + "/video_feed",
             headers={"Accept": "multipart/x-mixed-replace", "User-Agent": "TongyuDashboard/1.0"},
         )
+        started = False
         try:
             with urllib.request.urlopen(request, timeout=10) as response:
                 self.send_response(response.status)
@@ -1194,18 +1351,26 @@ class Handler(BaseHTTPRequestHandler):
                     "Content-Type",
                     response.headers.get("Content-Type", "multipart/x-mixed-replace; boundary=frame"),
                 )
-                self.send_header("Cache-Control", "no-store")
+                self.security_headers()
                 self.end_headers()
+                started = True
                 while True:
-                    chunk = response.read(16 * 1024)
+                    # Stop an existing stream after logout, expiry or revocation.
+                    session = self.current_session(touch=False)
+                    if not AUTH.permitted(session, "monitor") or not AUTH.permitted(session, "video"):
+                        break
+                    chunk = response.read1(16 * 1024)
                     if not chunk:
+                        break
+                    session = self.current_session(touch=False)
+                    if not AUTH.permitted(session, "monitor") or not AUTH.permitted(session, "video"):
                         break
                     self.wfile.write(chunk)
                     self.wfile.flush()
         except (BrokenPipeError, ConnectionResetError):
             return
         except (urllib.error.URLError, TimeoutError, OSError) as exc:
-            if not self.wfile.closed:
+            if not started and not self.wfile.closed:
                 try:
                     self.send_json(502, {"ok": False, "error": str(exc)})
                 except (BrokenPipeError, ConnectionResetError):
@@ -1213,19 +1378,52 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:
         path = urlparse(self.path).path
-        if path in ('/chat', '/chat.html', '/api/dialogue/messages', '/api/dialogue/config', '/api/dialogue/model', '/api/dialogue/conversations', '/api/analysis/config'):
-            if not self.local_dialogue_request():
+        if path == '/health':
+            self.send_json(200, {'ok': True})
+            return
+        if path == '/favicon.ico':
+            self.send_bytes(204, 'image/x-icon', b'')
+            return
+        if path in ('/login', '/login.html'):
+            self.serve_html('login.html')
+            return
+        if path in ('/access.js', '/access.css'):
+            kind = 'text/javascript' if path.endswith('.js') else 'text/css'
+            self.send_bytes(200, kind + '; charset=utf-8', (ROOT / path[1:]).read_bytes())
+            return
+        if path == '/api/auth/session':
+            if not self.same_origin():
+                self.send_json(403, {'ok': False, 'error': '请求来源不匹配'})
                 return
+            session = self.current_session()
+            if not session:
+                token, session = AUTH.new_session()
+                self.response_cookie = AUTH.cookie(token)
+            self.send_json(200, {'user': AUTH.public_user(session), 'csrf': session['csrf'],
+                                 'initialized': AUTH.initialized,
+                                 'policy': AUTH.get_policy() if AUTH.public_user(session) else None})
+            return
+        admin = path in ('/admin', '/admin.html', '/api/admin/policy', '/api/dialogue/model', '/api/analysis/config')
+        if not self.require_session(path, admin=admin):
+            return
+        if path == '/api/admin/policy':
+            self.send_json(200, {'policy': AUTH.get_policy()})
+            return
+        if path in PAGE_ROUTES:
+            self.serve_html(PAGE_ROUTES[path][0])
+            return
+        if path in ('/chat', '/chat.html', '/api/dialogue/messages', '/api/dialogue/config', '/api/dialogue/model', '/api/dialogue/conversations', '/api/analysis/config'):
+            raw = AUTH.permitted(self.current_session(), 'dialogue_raw')
             if path == '/api/dialogue/messages':
                 with MESSAGES_LOCK:
                     items = list(MESSAGES)
-                self.send_json(200, {'messages': items, 'limit': DIALOGUE_LIMIT})
+                self.send_json(200, {'messages': public_messages(items, raw), 'limit': DIALOGUE_LIMIT, 'raw_visible': raw})
             elif path == '/api/dialogue/config':
                 with DIALOGUE_CONFIG_LOCK:
                     config = DIALOGUE_CONFIG.copy()
                 self.send_json(200, {'config': config})
             elif path == '/api/dialogue/conversations':
-                self.send_json(200, {'conversations': conversation_items()})
+                self.send_json(200, {'conversations': public_conversations(conversation_items(), raw)})
             elif path == '/api/dialogue/model':
                 self.send_json(200, {'model': public_xiaozhi_model(PROJECT_ROOT)})
             elif path == '/api/analysis/config':
@@ -1235,15 +1433,7 @@ class Handler(BaseHTTPRequestHandler):
             else:
                 self.send_bytes(200, 'text/html; charset=utf-8', (ROOT / 'chat.html').read_bytes())
             return
-        if path in ("/", "/index.html"):
-            self.serve_index()
-            return
-        if path in ("/events", "/events.html"):
-            self.send_bytes(200, "text/html; charset=utf-8", (ROOT / "events.html").read_bytes())
-            return
         if path == "/api/events":
-            if not self.local_event_request():
-                return
             try:
                 result = query_events(parse_qs(urlparse(self.path).query))
                 self.send_json(200, {"ok": True, **result})
@@ -1252,8 +1442,6 @@ class Handler(BaseHTTPRequestHandler):
             return
         event_get = re.fullmatch(r"/api/events/([^/]+)", path)
         if event_get:
-            if not self.local_event_request():
-                return
             try:
                 event = get_event(unquote(event_get.group(1)))
                 self.send_json(200, {"ok": True, "event": event})
@@ -1261,23 +1449,28 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_json(404, {"ok": False, "error": "event not found"})
             return
         if path == "/api/health/students":
-            if not self.local_health_request():
-                return
             self.send_json(200, {"ok": True, **health_students_payload()})
             return
         if path == "/api/health/records":
-            if not self.local_health_request():
-                return
             try:
                 self.send_json(200, {"ok": True, **query_health_records(parse_qs(urlparse(self.path).query))})
             except ValueError as exc:
                 self.send_json(400, {"ok": False, "error": "invalid health query", "detail": str(exc)})
             return
         if path == "/api/reports/daily":
-            if not self.local_health_request():
-                return
             try:
-                self.send_json(200, {"ok": True, **build_daily_report(parse_qs(urlparse(self.path).query))})
+                payload = build_daily_report(parse_qs(urlparse(self.path).query))
+                report = payload["report"]
+                session = self.current_session()
+                if not AUTH.permitted(session, "dialogue_raw"):
+                    report["dialogues"] = [{k: v for k, v in item.items() if k not in ("excerpt", "reason", "summary", "title", "text", "attention_reason")} for item in report.get("dialogues", [])]
+                if not AUTH.permitted(session, "chat"):
+                    report["dialogues"] = []
+                if not AUTH.permitted(session, "events"):
+                    report["events"] = []
+                if not AUTH.permitted(session, "health"):
+                    report["health"] = {}
+                self.send_json(200, {"ok": True, **payload})
             except ValueError as exc:
                 self.send_json(400, {"ok": False, "error": "invalid report query", "detail": str(exc)})
             return
@@ -1291,10 +1484,10 @@ class Handler(BaseHTTPRequestHandler):
             self.proxy_json("/api/iot_payload")
             return
         if path == "/api/rdk/video_feed":
+            if not AUTH.permitted(self.current_session(), 'video'):
+                self.send_json(403, {'ok': False, 'error': '管理员尚未开放摄像头画面'})
+                return
             self.proxy_video()
-            return
-        if path == "/health":
-            self.send_json(200, {"ok": True, "rdk_base": RDK_BASE})
             return
         static_page = STATIC_PAGES.get(path)
         if static_page:
