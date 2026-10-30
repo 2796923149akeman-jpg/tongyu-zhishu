@@ -44,6 +44,7 @@
 - 日报通过 `event_for_report()` 将 `resolved` 映射为 `handled`，将 `urgent/watch/info` 映射为 `high/medium/low`；已处理事件不会进入待处理统计。
 - `tests/test_health_api.py` 覆盖导入、重复跳过、体温范围、复测关系、筛选、日报班级过滤、事件映射和持久化；`tests/test_health_report.py` 6 项测试通过。
 - 真实接口模式已通过导入 3 名学生、登记 3 条体温和写入 2 起事件的页面联调；学生测温页显示已测 2 / 未测 0 / 复测 1，日报显示 2 起事件、1 起已处置。
+- 学生测温页和日报页增加跨天日期滚动：页面保持打开跨过午夜或从后台回到前台时，未手动选择历史日期的页面会自动切换到 Asia/Shanghai 的今天。
 
 ![学生测温真实接口](assets/health-page-live.png)
 
