@@ -11,6 +11,7 @@ import json
 import os
 import sys
 import time
+import threading
 import urllib.request
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -39,6 +40,7 @@ def parse_args():
     parser.add_argument("--snapshot", action="store_true", help="低频读取 RDK /snapshot，避免新增视频连接")
     parser.add_argument("--fps", type=float, default=3, help="最大估算帧率")
     parser.add_argument("--run-id", default="manual", help="由网页分配的运行编号")
+    parser.add_argument("--watch-parent", action="store_true", help="网页服务退出时自动停止")
     return parser.parse_args()
 
 
@@ -52,6 +54,16 @@ def vote_for_track(histories, track_id, estimate, now, min_samples=3):
     history = (previous + [estimate])[-15:]
     histories[track_id] = (now, history)
     return majority_vote(history, min_samples=min_samples)
+
+
+def start_parent_watchdog():
+    def watch_parent():
+        # EOF also covers a forced debugger stop, without parent atexit.
+        # Read the raw fd: BufferedReader.read() holds a lock that libraries
+        # querying stdin.isatty() during import also need on Windows.
+        os.read(sys.stdin.fileno(), 1)
+        os._exit(0)
+    threading.Thread(target=watch_parent, daemon=True).start()
 
 
 def atomic_write_json(path: Path, payload: dict):
@@ -87,6 +99,10 @@ def main():
     if not Path(args.model).is_file():
         raise SystemExit("模型文件不存在，请先准备本地 pose 模型；不会自动下载。")
     model = YOLO(args.model)
+    # Initialize native NumPy/torch DLLs before starting a blocking stdin
+    # watcher; early pipe reads can stall DLL initialization on Windows.
+    if args.watch_parent:
+        start_parent_watchdog()
     capture = None if args.snapshot else cv2.VideoCapture(source)
     if capture is not None and not capture.isOpened():
         raise SystemExit(f"无法打开视频源：{args.source}")

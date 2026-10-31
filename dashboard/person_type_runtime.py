@@ -29,6 +29,8 @@ class PersonTypeRuntime:
             return {'ok': True, 'enabled': False, 'state': 'error' if self.error else 'disabled', 'error': self.error}
         if self.process.poll() is not None:
             self.error = '人物估算进程已退出，请查看电脑端 output/person-type-runtime 日志后重试。'
+            if self.process.stdin:
+                self.process.stdin.close()
             self.process = None
             if self.log:
                 self.log.close()
@@ -100,13 +102,15 @@ class PersonTypeRuntime:
             self.result_file = folder / 'result.json'
             self.log = (folder / 'worker.log').open('wb')
             command = [python, '-u', str(self.root / 'scripts/person_type_demo.py'),
-                       '--source', self.source, '--snapshot', '--no-show', '--model', str(model.resolve()),
+                       '--source', self.source, '--snapshot', '--no-show', '--watch-parent', '--model', str(model.resolve()),
                        '--output', str(self.result_file), '--run-id', self.run_id, '--fps', '3']
             try:
                 environment = os.environ.copy()
                 environment['YOLO_CONFIG_DIR'] = str(runtime / 'config')
                 environment['YOLO_AUTOINSTALL'] = 'false'
-                self.process = subprocess.Popen(command, cwd=self.root, stdin=subprocess.DEVNULL,
+                environment['YOLO_OFFLINE'] = 'true'
+                environment['MPLCONFIGDIR'] = str(runtime / 'matplotlib')
+                self.process = subprocess.Popen(command, cwd=self.root, stdin=subprocess.PIPE,
                                                 stdout=self.log, stderr=subprocess.STDOUT,
                                                 env=environment,
                                                 creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0)
@@ -127,6 +131,8 @@ class PersonTypeRuntime:
                     except subprocess.TimeoutExpired:
                         self.process.kill()
                         self.process.wait(timeout=2)
+                if self.process.stdin:
+                    self.process.stdin.close()
                 self.process = None
             if self.log:
                 self.log.close()

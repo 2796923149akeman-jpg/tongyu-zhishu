@@ -127,6 +127,35 @@ class PersonTypeApiTests(unittest.TestCase):
 
 
 class PersonTypeRuntimeTests(unittest.TestCase):
+    def test_watchdog_does_not_block_terminal_checks_during_import(self):
+        import subprocess
+        code = ('import sys,time,threading,os;sys.path.insert(0,sys.argv[1]);'
+                'from person_type_demo import start_parent_watchdog;'
+                'start_parent_watchdog();threading.Timer(3,lambda:os._exit(8)).start();'
+                'time.sleep(.1);sys.stdin.isatty();os._exit(0)')
+        process = subprocess.Popen([sys.executable, '-c', code, str(ROOT / 'scripts')],
+                                   stdin=subprocess.PIPE, stdout=subprocess.DEVNULL)
+        try:
+            self.assertEqual(process.wait(timeout=8), 0)
+        finally:
+            process.stdin.close()
+            if process.poll() is None:
+                process.terminate(); process.wait(timeout=5)
+
+    def test_worker_exits_when_dashboard_pipe_closes(self):
+        import subprocess
+        code = ('import sys,time;sys.path.insert(0,sys.argv[1]);'
+                'from person_type_demo import start_parent_watchdog;'
+                'start_parent_watchdog();time.sleep(60)')
+        process = subprocess.Popen([sys.executable, '-c', code, str(ROOT / 'scripts')],
+                                   stdin=subprocess.PIPE, stdout=subprocess.DEVNULL)
+        try:
+            process.stdin.close()
+            self.assertEqual(process.wait(timeout=5), 0)
+        finally:
+            if process.poll() is None:
+                process.terminate(); process.wait(timeout=5)
+
     def test_process_starts_once_stops_and_rejects_old_results(self):
         import os
         import subprocess
