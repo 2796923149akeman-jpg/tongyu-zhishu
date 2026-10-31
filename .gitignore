@@ -42,3 +42,7 @@ htmlcov/
 /xiaozhi-server/.secrets.yaml
 /xiaozhi-server/.private_config.yaml
 /output/
+
+# Optional pose runtime and local model weights.
+/dashboard/person_types.json
+*.pt

@@ -106,6 +106,7 @@ def main(argv=None):
         pass
     finally:
         stopping.set()
+        server.PERSON_TYPE_RUNTIME.stop()
         if timer:
             timer.cancel()
         stop_tunnel(process)

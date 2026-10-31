@@ -718,6 +718,27 @@
       font-size: 11px;
     }
 
+    .person-type-strip {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-top: 8px;
+      padding: 8px 10px;
+      color: var(--ink-2);
+      font-size: 11px;
+      line-height: 1.55;
+      background: var(--surface-soft);
+      border: 1px solid var(--line);
+      border-radius: 9px;
+    }
+
+    .person-type-strip[data-stale="true"] {
+      color: #8a5600;
+      background: var(--warn-soft);
+      border-color: #f0d8a9;
+    }
+
     .device-card {
       display: flex;
       flex-direction: column;
@@ -1439,6 +1460,14 @@
               <span class="video-badge" id="videoBadge" data-state="loading">连接中</span>
             </div>
             <p class="video-note">画面中断不会清空页面；传感器与行为状态会继续独立刷新并标注过期。</p>
+            <div class="person-type-strip" id="personTypeStrip" data-stale="false">
+              <label id="personTypeControl" hidden style="display:flex;align-items:center;gap:6px;cursor:pointer">
+                <input id="personTypeToggle" type="checkbox" role="switch" aria-describedby="personTypeNote">启用人物估算（实验）
+              </label>
+              <span class="chip" id="personTypeChip" data-tone="warn">估算</span>
+              <span id="personTypeText" role="status" aria-live="polite">人物估算未启用</span>
+            </div>
+            <p class="video-note" id="personTypeNote">可选估算疑似成人、儿童人数，不识别身份；关闭不影响原有行为识别。</p>
           </section>
 
           <aside class="card device-card" aria-labelledby="deviceTitle">
@@ -1528,6 +1557,7 @@
       const POLL_STATUS_MS = 3000;
       const POLL_SENSORS_MS = 5000;
       const POLL_HEALTH_MS = 10000;
+      const POLL_PERSON_TYPES_MS = 3000;
       const STALE_STATUS_MS = 15000;
       const STALE_SENSORS_MS = 20000;
       const STALE_HEALTH_MS = 30000;
@@ -1579,6 +1609,9 @@
         videoErrorText: $("#videoErrorText"),
         videoBadge: $("#videoBadge"),
         retryVideoBtn: $("#retryVideoBtn"),
+        personTypeStrip: $("#personTypeStrip"),
+        personTypeChip: $("#personTypeChip"),
+        personTypeText: $("#personTypeText"),
         deviceChip: $("#deviceChip"),
         healthDot: $("#healthDot"),
         healthText: $("#healthText"),
@@ -2565,11 +2598,76 @@
         setText(els.pageDate, dateFormatter.format(now));
       }
 
+      const personTypeToggle = document.getElementById("personTypeToggle");
+      const personTypeControl = document.getElementById("personTypeControl");
+      const canControlPersonType = window.TongyuBootstrap.user?.role === "admin";
+      personTypeControl.hidden = !canControlPersonType;
+      let personTypeBusy = false;
+      let personTypePolling = false;
+      let personTypeRevision = 0;
+
+      function renderPersonTypes(data) {
+        personTypeToggle.checked = Boolean(data.enabled);
+        const counts = data.counts;
+        let message = "人物估算未启用 · 原有行为识别继续运行";
+        if (data.state === "starting") message = "人物估算启动中，正在加载模型…";
+        else if (data.state === "stale") message = "人物估算数据已过期，等待新画面";
+        else if (data.state === "error" || data.error) message = data.error || "人物估算暂不可用";
+        else if (data.state === "running" && counts) {
+          message = `疑似儿童 ${counts.child} · 疑似成人 ${counts.adult} · 未确定 ${counts.unknown}`;
+        }
+        setText(els.personTypeText, message);
+        setChip(els.personTypeChip, data.enabled ? "warn" : "idle", data.enabled ? "估算" : "未启用");
+        els.personTypeStrip.dataset.stale = String(data.state === "stale" || data.state === "error");
+      }
+
+      async function refreshPersonTypes() {
+        if (!window.TongyuBootstrap.permissions.video) {
+          personTypeControl.hidden = true;
+          setText(els.personTypeText, "摄像头画面未开放");
+          return;
+        }
+        if (personTypeBusy || personTypePolling) return;
+        const revision = personTypeRevision;
+        personTypePolling = true;
+        try {
+          const data = await fetchJson("/api/rdk/person-types", 2500);
+          if (revision === personTypeRevision) renderPersonTypes(data);
+        } catch (error) {
+          if (revision === personTypeRevision) setText(els.personTypeText, `人物估算状态连接失败：${readableError(error)}`);
+        } finally { personTypePolling = false; }
+      }
+
+      personTypeToggle.addEventListener("change", async () => {
+        if (personTypeBusy || !canControlPersonType) return;
+        const requested = personTypeToggle.checked;
+        personTypeBusy = true;
+        personTypeRevision++;
+        personTypeToggle.disabled = true;
+        setText(els.personTypeText, requested ? "正在启动人物估算…" : "正在停止人物估算…");
+        try {
+          const response = await fetch("/api/rdk/person-types/settings", {
+            method: "POST", headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({enabled: requested})
+          });
+          const data = await response.json();
+          if (!response.ok) throw new Error(data.error || "切换失败");
+          renderPersonTypes(data);
+        } catch (error) {
+          personTypeToggle.checked = !requested;
+          setText(els.personTypeText, readableError(error));
+        } finally {
+          personTypeBusy = false;
+          personTypeToggle.disabled = false;
+        }
+      });
+
       async function refreshAll() {
         await Promise.allSettled([
           refreshHealth(),
           refreshStatus(),
-          refreshSensors()
+          refreshSensors(),
+          refreshPersonTypes()
         ]);
       }
 
@@ -2599,6 +2697,7 @@
         clearInterval(timers.status);
         clearInterval(timers.sensors);
         clearInterval(timers.health);
+        clearInterval(timers.personTypes);
         timers.status = setInterval(() => {
           if (!document.hidden) refreshStatus();
         }, POLL_STATUS_MS);
@@ -2608,6 +2707,9 @@
         timers.health = setInterval(() => {
           if (!document.hidden) refreshHealth();
         }, POLL_HEALTH_MS);
+        timers.personTypes = setInterval(() => {
+          if (!document.hidden) refreshPersonTypes();
+        }, POLL_PERSON_TYPES_MS);
       }
 
       document.addEventListener("visibilitychange", () => {

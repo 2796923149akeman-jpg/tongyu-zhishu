@@ -53,6 +53,7 @@ from event_contract import (
     validate_status_transition,
 )
 from access_control import AccessStore, COOKIE_NAME, MODULES
+from person_type_runtime import PersonTypeRuntime
 
 HOST = os.environ.get("DASHBOARD_HOST", "127.0.0.1")
 PORT = int(os.environ.get("DASHBOARD_PORT", "8088"))
@@ -62,6 +63,7 @@ AUTH = AccessStore(
 )
 RDK_BASE = os.environ.get("RDK_BASE", "http://192.168.43.54:5000").rstrip("/")
 PROJECT_ROOT = Path(os.environ.get("PROJECT_ROOT", str(ROOT.parent)))
+PERSON_TYPE_RUNTIME = PersonTypeRuntime(PROJECT_ROOT, RDK_BASE)
 DIALOGUE_LIMIT = 200
 DIALOGUE_DATA_FILE = Path(
     os.environ.get("DIALOGUE_DATA_FILE", str(ROOT / "dialogue_messages.json"))
@@ -558,6 +560,10 @@ def health_students_payload() -> dict:
         "classes": health_classes_payload(),
         "generated_at": now_iso(),
     }
+
+
+def person_types_payload() -> dict:
+    return PERSON_TYPE_RUNTIME.status()
 
 
 def validate_date(value: str | None) -> str:
@@ -1194,6 +1200,15 @@ class Handler(BaseHTTPRequestHandler):
             if path == '/api/admin/policy':
                 self.send_json(200, {'ok': True, 'policy': AUTH.set_policy(item)})
                 return
+            if path == '/api/rdk/person-types/settings':
+                try:
+                    if set(item) != {'enabled'}:
+                        raise ValueError('只接受 enabled 开关')
+                    result = PERSON_TYPE_RUNTIME.set_enabled(item['enabled'])
+                    self.send_json(200, result)
+                except ValueError as exc:
+                    self.send_json(400, {'ok': False, 'error': str(exc)})
+                return
             if event_request:
                 try:
                     if path == "/api/events":
@@ -1474,6 +1489,12 @@ class Handler(BaseHTTPRequestHandler):
             except ValueError as exc:
                 self.send_json(400, {"ok": False, "error": "invalid report query", "detail": str(exc)})
             return
+        if path == "/api/rdk/person-types":
+            if not AUTH.permitted(self.current_session(), 'video'):
+                self.send_json(403, {'ok': False, 'error': '管理员尚未开放摄像头画面'})
+                return
+            self.send_json(200, person_types_payload())
+            return
         if path == "/api/config":
             self.send_json(200, {"rdk_base": RDK_BASE})
             return
@@ -1501,7 +1522,12 @@ def main() -> None:
     print(f"Tongyu dashboard: http://127.0.0.1:{PORT}")
     print(f"RDK input: {RDK_BASE}")
     print("Dialogue emotion analysis and summaries run in the dashboard background.")
-    ThreadingHTTPServer((HOST, PORT), Handler).serve_forever()
+    http = ThreadingHTTPServer((HOST, PORT), Handler)
+    try:
+        http.serve_forever()
+    finally:
+        PERSON_TYPE_RUNTIME.stop()
+        http.server_close()
 
 
 if __name__ == "__main__":

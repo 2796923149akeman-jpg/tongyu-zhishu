@@ -110,6 +110,24 @@
 }
 ```
 
+### `GET /api/rdk/person-types`
+
+需登录并开放监控、视频权限（管理员不受开关限制）。返回可选人物估算进程状态；默认关闭，不启动模型。状态为 disabled、starting、running、stale 或 error。只有 running 返回本次运行且未过期的人数，不返回摄像头源地址、人物框、模型本地路径或日志。
+
+```json
+{"ok": true, "enabled": true, "state": "running", "estimate": true, "generated_at": "2026-10-31T10:00:00+00:00", "stale": false, "counts": {"adult": 1, "child": 2, "unknown": 0, "total": 3}}
+```
+
+### `POST /api/rdk/person-types/settings`
+
+管理员同源请求，需 X-CSRF-Token，只接受严格布尔字段：
+
+```json
+{"enabled": true}
+```
+
+开启启动一个共享后台进程，画面源固定为当前 RDK_BASE 的 /snapshot。重复开启不重复启动。关闭会终止该进程；服务重启默认为关闭。缺少本地模型或依赖返回 400，页面提示准备环境。状态查询和控制均不调用远端模型服务，也不上传视频给外部分析服务。详见 [人物估算说明](PERSON_TYPE_DEMO.md)。
+
 ## 异常事件接口
 
 事件读取需登录并开放事件模块；写入仅限管理员并验证 CSRF。统一字段和枚举定义在 `dashboard/event_contract.py`；事件页、日报和后续接口不得各自定义不同格式。
