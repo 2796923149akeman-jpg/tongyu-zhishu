@@ -1,6 +1,6 @@
 # 验证记录
 
-最近更新：2026-10-28。
+最近更新：2026-11-04。
 
 - 7 项隔离自动化测试通过：监控/对话页面及 RDK JSON 代理路由、界面配置保存与校验、消息持久化、访问限制、重复消息和 200 条上限、生产 STT/TTS 入口到 HTTP 接收的顺序、转发故障不阻塞及恢复。
 - 实际浏览器检查对话文字与用户/机器人标识，设备筛选生效，HTML 字样作为普通文本呈现；基础监控页的页面结构和接口错误展示符合预期。
@@ -32,7 +32,7 @@
 - 新增 `dashboard/event_contract.py`，统一事件字段、等级/状态枚举和 B/C 日报映射；`urgent/watch/info` 映射为日报的 `high/medium/low`，`resolved` 映射为 `handled`。
 - 新增 `GET /api/events`、`GET /api/events/{id}`、`POST /api/events`、状态处置和备注接口，事件运行数据写入被 Git 忽略的 `dashboard/events.json`。
 - 使用 `dedupe_key` 防止同一告警重复入库；默认最多保留 2000 条。
-- `tests/test_event_contract.py` 与 `tests/test_events.py` 共 8 项测试通过，覆盖映射、创建、去重、筛选、状态转换、备注、参数错误、持久化和 RDK 告警自动入库。
+- `tests/test_event_contract.py` 与 `tests/test_events.py` 共 11 项测试通过，覆盖映射、创建、去重、筛选、状态转换、备注、证据字段、受保护证据图片路由、参数错误、持久化和 RDK 告警自动入库。
 - 事件页真实接口模式已通过本机 Dashboard 写入测试事件验证，页面显示绿色“接口数据”和真实事件；“接口不可用时回退到演示数据”的行为保留。
 
 ![事件接口真实模式](assets/monitor-events-live.png)
@@ -79,3 +79,36 @@
 整合回归：60 项 unittest 全部通过，覆盖原有 51 项功能测试及新开关和规则回归；Edge 隔离账号验证管理员启停、普通用户只读，390px 布局无横向溢出、无 JS 错误。此处浏览器测试使用模拟画面和推理结果，不能替代实机准确率验收。
 
 本机可选独立环境依赖检查通过；官方 yolov8n-pose.pt 经实际控制器完成合成空画面推理，状态进入 running、人数为零，关闭后进程退出。另覆盖网页服务异常退出时的管道监控，并避免 Windows 原生模型库初始化前启动阻塞读取线程。模型进程使用离线模式，避免启动时外网 DNS 探测。上述结果不代表实机分类准确率。
+
+## 监控与事件 UX 改进（2026-11-04）
+
+- 事件页新增 5 秒静默刷新、新事件提示、快捷筛选、5 分钟待处理超时提示、
+  键盘导航和窄屏详情返回；刷新时保留筛选、排序和当前选中事件。
+- 管理员与普通用户使用不同页面状态：普通用户隐藏整块备注和状态处置区，
+  服务端继续执行管理员与 CSRF 校验。
+- 监控首页的摔倒/斗殴红色告警增加“查看待处理事件”入口，并预置
+  `status=pending&level=urgent&date=all&open=1` 查询参数。
+- 统一事件契约新增 `evidence_url` 和 `evidence_captured_at`。证据 URL 只接受
+  同源路径或 PNG/JPEG/WebP/GIF data URL，拒绝外部链接、协议相对路径和 SVG data URL。
+- `tests/test_event_contract.py` 与 `tests/test_events.py` 共 11 项测试通过，
+  新增覆盖证据字段的合法值、持久化及不安全 URL 拒绝。
+- `tests/test_monitor_events_ux.py` 检查自动刷新、新事件提示、只读权限、告警跳转、
+  证据与超时区域、快捷筛选、键盘操作、窄屏返回和 DOM ID 引用完整性。
+- 事件页和监控页的内联 JavaScript 均通过 `node --check`；`git diff --check` 无空白错误。
+- 本轮验证未连接新的 RDK 硬件，也未使用真实儿童证据图片。真实摄像头触发、
+  证据文件产生、普通账号端到端只读和移动设备触控仍需在设备环境中验收。
+## 红外测温实时对接（2026-11-04）
+
+- `dashboard/health_realtime.py` 统一解析 `mlx_obj`、`mlx_amb`、设备编号、学生编号和
+  ISO 8601/Unix 时间戳；`mlx_amb` 只作为环境温度，不进入学生体温字段。
+- `GET /api/health/realtime` 每 2 秒由测温页读取，返回 `ready`、`unassigned`、
+  `stale`、`timestamp_unknown`、`offline`、`invalid_temperature`、`unavailable`
+  或 `unstable` 状态。
+- `POST /api/health/device-readings` 支持设备令牌、新鲜度校验、学生匹配和 `reading_id`
+  去重；只有有效、新鲜、稳定且关联到已知学生的读数才自动写入健康记录。
+- `tests/test_health_realtime.py` 5 项测试覆盖字段归一化、无学生编号、过期、时间未知、
+  非法温度、不稳定和设备离线；`tests/test_health_api.py` 新增设备令牌、自动入库、
+  重复上报去重和实时接口测试。
+- `dashboard/health-report.js` 已通过 `node --check`。
+- 本轮使用模拟 RDK JSON 和隔离临时数据验证软件链路，未连接真实 MLX 红外传感器；
+  实机温度偏差、画面目标定位、稳定帧判定和新旧设备字段差异仍需现场验收。

@@ -56,6 +56,7 @@ from event_contract import (
     validate_status_transition,
 )
 from access_control import AccessStore, COOKIE_NAME, MODULES
+from health_realtime import normalize_infrared_payload, refresh_infrared_status
 from person_type_runtime import PersonTypeRuntime
 
 HOST = os.environ.get("DASHBOARD_HOST", "127.0.0.1")
@@ -84,8 +85,14 @@ EMOTION_LEXICON_FILE = Path(
     os.environ.get("EMOTION_LEXICON_FILE", str(ROOT / "emotion_lexicon.json"))
 )
 EVENTS_FILE = Path(os.environ.get("EVENTS_FILE", str(ROOT / "events.json")))
+EVIDENCE_DIR = Path(os.environ.get("EVIDENCE_DIR", str(ROOT / "evidence")))
 HEALTH_STUDENTS_FILE = Path(os.environ.get("HEALTH_STUDENTS_FILE", str(ROOT / "health_students.json")))
 HEALTH_RECORDS_FILE = Path(os.environ.get("HEALTH_RECORDS_FILE", str(ROOT / "health_records.json")))
+HEALTH_DEVICE_TOKEN = os.environ.get("HEALTH_DEVICE_TOKEN", "")
+HEALTH_INFRARED_STALE_SECONDS = max(
+    1,
+    int(os.environ.get("HEALTH_INFRARED_STALE_SECONDS", "10")),
+)
 EVENTS_LIMIT = 2000
 HEALTH_SOURCES = ("forehead", "infrared", "ear", "axillary")
 HEALTH_SOURCE_LABELS = {
@@ -122,6 +129,7 @@ def route_module(path):
         return PAGE_ROUTES[path][1]
     for prefix, module in (("/api/rdk/", "monitor"), ("/api/dialogue/", "chat"),
                            ("/api/analysis/", "chat"), ("/api/events", "events"),
+                           ("/evidence/", "events"),
                            ("/api/health/", "health"), ("/api/reports/", "reports")):
         if path.startswith(prefix):
             return module
@@ -159,8 +167,10 @@ DEFAULT_DIALOGUE_CONFIG = {
 MESSAGES_LOCK = threading.Lock()
 EVENTS_LOCK = threading.Lock()
 HEALTH_LOCK = threading.Lock()
+HEALTH_REALTIME_LOCK = threading.Lock()
 RDK_ALERT_LOCK = threading.Lock()
 CURRENT_RDK_ALERT = "normal"
+HEALTH_LAST_INFRARED = None
 DIALOGUE_CONFIG_LOCK = threading.Lock()
 ANALYSIS_CONFIG_LOCK = threading.Lock()
 SUMMARIES_LOCK = threading.Lock()
@@ -561,6 +571,20 @@ def load_health_records() -> list[dict]:
                 continue
             note = text_value(raw.get("note"), "note", 50, default="")
             recheck_of = text_value(raw.get("recheck_of"), "recheck_of", 80, default="") or None
+            device_id = text_value(raw.get("device_id"), "device_id", 160, default="")
+            reading_id = text_value(raw.get("reading_id"), "reading_id", 160, default="")
+            origin = text_value(raw.get("origin"), "origin", 20, default="manual")
+            if origin not in ("manual", "device"):
+                origin = "manual"
+            dedupe_key = text_value(raw.get("dedupe_key"), "dedupe_key", 160, default="")
+            ambient = raw.get("ambient_c")
+            if ambient not in (None, ""):
+                try:
+                    ambient = round(float(ambient), 1)
+                except (TypeError, ValueError):
+                    ambient = None
+            else:
+                ambient = None
             result.append({
                 "id": record_id,
                 "student_id": student_id,
@@ -569,6 +593,11 @@ def load_health_records() -> list[dict]:
                 "source": source,
                 "note": note,
                 "recheck_of": recheck_of,
+                "device_id": device_id,
+                "reading_id": reading_id,
+                "origin": origin,
+                "dedupe_key": dedupe_key,
+                "ambient_c": ambient,
             })
         except (ValueError, TypeError):
             continue
@@ -681,10 +710,136 @@ def create_health_record(payload: dict) -> dict:
             "source": source,
             "note": note,
             "recheck_of": recheck_of,
+            "device_id": "",
+            "reading_id": "",
+            "origin": "manual",
+            "dedupe_key": "",
+            "ambient_c": None,
         }
         HEALTH_RECORDS.append(record)
         save_health_records()
         return dict(record)
+
+
+def ingest_infrared_reading(payload: dict) -> dict:
+    """Normalize one infrared sample and persist it only when it can be attributed."""
+    global HEALTH_LAST_INFRARED
+    reading = normalize_infrared_payload(
+        payload,
+        stale_after_seconds=HEALTH_INFRARED_STALE_SECONDS,
+    )
+    reading["received_at"] = now_iso()
+    with HEALTH_REALTIME_LOCK:
+        HEALTH_LAST_INFRARED = dict(reading)
+
+    if reading["status"] not in ("ready", "unassigned"):
+        return {
+            "stored": False,
+            "duplicate": False,
+            "reason": reading["status"],
+            "reading": reading,
+            "record": None,
+        }
+    if not reading["student_id"]:
+        return {
+            "stored": False,
+            "duplicate": False,
+            "reason": "unassigned",
+            "reading": reading,
+            "record": None,
+        }
+
+    with HEALTH_LOCK:
+        students = {item["id"]: item for item in HEALTH_STUDENTS}
+        if reading["student_id"] not in students:
+            reading["student_known"] = False
+            with HEALTH_REALTIME_LOCK:
+                HEALTH_LAST_INFRARED = dict(reading)
+            return {
+                "stored": False,
+                "duplicate": False,
+                "reason": "unknown_student",
+                "reading": reading,
+                "record": None,
+            }
+        reading["student_known"] = True
+        with HEALTH_REALTIME_LOCK:
+            HEALTH_LAST_INFRARED = dict(reading)
+        dedupe_key = f"infrared:{reading['reading_id']}"
+        duplicate = next(
+            (item for item in HEALTH_RECORDS if item.get("dedupe_key") == dedupe_key),
+            None,
+        )
+        if duplicate is not None:
+            return {
+                "stored": False,
+                "duplicate": True,
+                "reason": "duplicate",
+                "reading": reading,
+                "record": dict(duplicate),
+            }
+        record = {
+            "id": f"R-{uuid.uuid4().hex[:10].upper()}",
+            "student_id": reading["student_id"],
+            "measured_at": reading["measured_at"],
+            "temperature_c": reading["temperature_c"],
+            "source": "infrared",
+            "note": "红外设备自动采集",
+            "recheck_of": None,
+            "device_id": reading["device_id"],
+            "reading_id": reading["reading_id"],
+            "origin": "device",
+            "dedupe_key": dedupe_key,
+            "ambient_c": reading["ambient_c"],
+        }
+        HEALTH_RECORDS.append(record)
+        save_health_records()
+        return {
+            "stored": True,
+            "duplicate": False,
+            "reason": "stored",
+            "reading": reading,
+            "record": dict(record),
+        }
+
+
+def live_infrared_payload() -> dict:
+    """Pull the RDK infrared payload and return the latest normalized sample."""
+    try:
+        raw = read_rdk_json("/api/iot_payload")
+    except (urllib.error.URLError, TimeoutError, ValueError, OSError) as exc:
+        with HEALTH_REALTIME_LOCK:
+            last = dict(HEALTH_LAST_INFRARED) if HEALTH_LAST_INFRARED else None
+        reading = (
+            refresh_infrared_status(
+                last,
+                stale_after_seconds=HEALTH_INFRARED_STALE_SECONDS,
+            )
+            if last
+            else None
+        )
+        return {
+            "ok": True,
+            "source_available": False,
+            "sensor_error": str(exc),
+            "reading": reading,
+            "ingest": None,
+            "stale_after_seconds": HEALTH_INFRARED_STALE_SECONDS,
+        }
+    result = ingest_infrared_reading(raw)
+    return {
+        "ok": True,
+        "source_available": True,
+        "sensor_error": None,
+        "reading": result["reading"],
+        "ingest": {
+            "stored": result["stored"],
+            "duplicate": result["duplicate"],
+            "reason": result["reason"],
+            "record": result["record"],
+        },
+        "stale_after_seconds": HEALTH_INFRARED_STALE_SECONDS,
+    }
 
 
 def import_health_students(payload: dict) -> dict:
@@ -1212,6 +1367,27 @@ class Handler(BaseHTTPRequestHandler):
             return False
         return True
 
+    def require_health_device(self) -> bool:
+        configured = HEALTH_DEVICE_TOKEN
+        if len(configured) < 24:
+            self.send_json(
+                503,
+                {
+                    "ok": False,
+                    "error": "health device token is not configured",
+                    "detail": "请设置至少 24 位的 HEALTH_DEVICE_TOKEN 后重启 Dashboard",
+                },
+            )
+            return False
+        if AUTH.rate_limited("health-device:" + self.client_address[0], 2000, record=True):
+            self.send_json(429, {"ok": False, "error": "device upload rate limited"})
+            return False
+        supplied = self.headers.get("X-Device-Token", "")
+        if not hmac.compare_digest(supplied.encode("utf-8"), configured.encode("utf-8")):
+            self.send_json(403, {"ok": False, "error": "invalid device token"})
+            return False
+        return True
+
     def auth_post(self, path, item):
         session = self.current_session()
         if not self.same_origin() or not self.valid_csrf(session):
@@ -1254,7 +1430,11 @@ class Handler(BaseHTTPRequestHandler):
         path = urlparse(self.path).path
         event_match = re.fullmatch(r"/api/events/([^/]+)/(status|notes)", path)
         event_request = path == "/api/events" or event_match is not None
-        health_post = path in ("/api/health/records", "/api/health/import")
+        health_post = path in (
+            "/api/health/records",
+            "/api/health/import",
+            "/api/health/device-readings",
+        )
         try:
             length = int(self.headers.get('Content-Length', '0'))
             limit = 8192 if path in ('/api/dialogue/config', '/api/dialogue/model', '/api/analysis/config', '/api/analysis/rebuild') else 65536
@@ -1272,7 +1452,10 @@ class Handler(BaseHTTPRequestHandler):
             if path in ('/api/auth/register', '/api/auth/login', '/api/auth/logout'):
                 self.auth_post(path, item)
                 return
-            if path == '/api/dialogue/messages':
+            if path == "/api/health/device-readings":
+                if not self.require_health_device():
+                    return
+            elif path == '/api/dialogue/messages':
                 if not self.require_local_ingest():
                     return
             elif not self.require_session(path, admin=True, write=True):
@@ -1323,7 +1506,18 @@ class Handler(BaseHTTPRequestHandler):
 
             if health_post:
                 try:
-                    if path == "/api/health/records":
+                    if path == "/api/health/device-readings":
+                        result = ingest_infrared_reading(item)
+                        self.send_json(
+                            201 if result["stored"] else 200,
+                            {
+                                "ok": True,
+                                "accepted": result["reason"]
+                                not in ("offline", "unavailable", "invalid_temperature"),
+                                **result,
+                            },
+                        )
+                    elif path == "/api/health/records":
                         record = create_health_record(item)
                         self.send_json(201, {'ok': True, 'record': record})
                     else:
@@ -1481,6 +1675,37 @@ class Handler(BaseHTTPRequestHandler):
                 except (BrokenPipeError, ConnectionResetError):
                     pass
 
+    def serve_evidence(self, path: str) -> None:
+        name = unquote(path[len("/evidence/"):])
+        if not re.fullmatch(
+            r"[A-Za-z0-9][A-Za-z0-9._-]{0,159}\.(?:png|jpe?g|webp|gif)",
+            name,
+            re.IGNORECASE,
+        ):
+            self.send_json(404, {"ok": False, "error": "evidence not found"})
+            return
+        base = EVIDENCE_DIR.resolve()
+        candidate = (base / name).resolve()
+        try:
+            candidate.relative_to(base)
+        except ValueError:
+            self.send_json(403, {"ok": False, "error": "invalid evidence path"})
+            return
+        if not candidate.is_file():
+            self.send_json(404, {"ok": False, "error": "evidence not found"})
+            return
+        if candidate.stat().st_size > 10 * 1024 * 1024:
+            self.send_json(413, {"ok": False, "error": "evidence image is too large"})
+            return
+        content_type = {
+            ".png": "image/png",
+            ".jpg": "image/jpeg",
+            ".jpeg": "image/jpeg",
+            ".webp": "image/webp",
+            ".gif": "image/gif",
+        }[candidate.suffix.lower()]
+        self.send_bytes(200, content_type, candidate.read_bytes())
+
     def do_GET(self) -> None:
         path = urlparse(self.path).path
         if path == '/health':
@@ -1516,6 +1741,9 @@ class Handler(BaseHTTPRequestHandler):
             return
         if path in PAGE_ROUTES:
             self.serve_html(PAGE_ROUTES[path][0])
+            return
+        if path.startswith("/evidence/"):
+            self.serve_evidence(path)
             return
         if path in ('/chat', '/chat.html', '/api/dialogue/messages', '/api/dialogue/config', '/api/dialogue/model', '/api/dialogue/conversations', '/api/analysis/config'):
             raw = AUTH.permitted(self.current_session(), 'dialogue_raw')
@@ -1580,6 +1808,12 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_json(200, {"ok": True, **query_health_records(parse_qs(urlparse(self.path).query))})
             except ValueError as exc:
                 self.send_json(400, {"ok": False, "error": "invalid health query", "detail": str(exc)})
+            return
+        if path == "/api/health/realtime":
+            try:
+                self.send_json(200, live_infrared_payload())
+            except OSError:
+                self.send_json(500, {"ok": False, "error": "Unable to save health data"})
             return
         if path == "/api/reports/daily":
             try:

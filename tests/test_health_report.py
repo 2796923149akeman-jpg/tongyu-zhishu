@@ -154,12 +154,30 @@ class HealthReportPageTests(unittest.TestCase):
         script = (ROOT / "dashboard" / "health-report.js").read_text(encoding="utf-8")
         self.assertIn("dashboard-day-change", script)
 
+    def test_health_page_has_live_infrared_panel_and_freshness_states(self):
+        health = (ROOT / "dashboard" / "health.html").read_text(encoding="utf-8")
+        for element_id in (
+            "infraredRealtime",
+            "irTemperature",
+            "irAmbient",
+            "irMeasuredAt",
+            "irStudent",
+            "irUseReading",
+        ):
+            self.assertIn(f'id="{element_id}"', health)
+        script = (ROOT / "dashboard" / "health-report.js").read_text(encoding="utf-8")
+        self.assertIn("const REALTIME_MS = 2000", script)
+        self.assertIn("function pollInfraredRealtime()", script)
+        self.assertIn("数据已过期", script)
+        self.assertIn("待关联学生", script)
+
     def test_documented_endpoints_match_page_script(self):
         script = (ROOT / "dashboard" / "health-report.js").read_text(encoding="utf-8")
         document = (ROOT / "docs" / "HEALTH_REPORT_UI.md").read_text(encoding="utf-8")
         for endpoint in (
             "/api/health/students",
             "/api/health/records",
+            "/api/health/realtime",
             "/api/health/import",
             "/api/reports/daily",
         ):

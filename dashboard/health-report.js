@@ -13,11 +13,13 @@
   const MIN_TEMP = 35;
   const MAX_TEMP = 42;
   const REFRESH_MS = 30000;
+  const REALTIME_MS = 2000;
   const REQUEST_TIMEOUT_MS = 4000;
 
   const API = {
     students: "/api/health/students",
     records: "/api/health/records",
+    realtime: "/api/health/realtime",
     importStudents: "/api/health/import",
     daily: "/api/reports/daily"
   };
@@ -294,7 +296,8 @@
     day: todayISO(),
     toastTimer: null,
     clockTimer: null,
-    refreshTimer: null
+    refreshTimer: null,
+    realtimeTimer: null
   };
 
   const demo = {
@@ -532,7 +535,9 @@
       recordStudent: "",
       importSummary: null,
       importSample: "",
-      busy: false
+      busy: false,
+      realtime: null,
+      realtimeBusy: false
     };
 
     const els = {
@@ -580,6 +585,16 @@
       importClose: $("#importClose"),
       importCancel: $("#importCancel"),
       importDone: $("#importDone"),
+      infraredRealtime: $("#infraredRealtime"),
+      irChip: $("#irChip"),
+      irTemperature: $("#irTemperature"),
+      irAge: $("#irAge"),
+      irStudent: $("#irStudent"),
+      irAmbient: $("#irAmbient"),
+      irMeasuredAt: $("#irMeasuredAt"),
+      irDevice: $("#irDevice"),
+      irUseReading: $("#irUseReading"),
+      irMessage: $("#irMessage"),
       refreshBtn: $("#refreshBtn"),
       demoRetry: $("#demoRetry")
     };
@@ -1180,6 +1195,152 @@
       if (els.recordStudent) state.recordStudent = els.recordStudent.value;
     }
 
+    const canRecord = window.TongyuBootstrap?.user?.role === "admin";
+
+    function realtimePresentation(payload) {
+      const reading = payload?.reading;
+      const reason = payload?.ingest?.reason || "";
+      if (!reading) {
+        return {
+          tone: "bad",
+          chip: payload && payload.source_available === false ? "连接中断" : "等待数据",
+          age: payload?.source_available === false ? "无法读取 RDK 红外接口" : "等待第一帧红外数据",
+          message: payload?.sensor_error
+            ? `实时红外接口不可用：${String(payload.sensor_error).slice(0, 120)}`
+            : "正在连接实时红外接口。",
+        };
+      }
+      const stateMeta = {
+        ready: { tone: "ok", chip: reason === "stored" ? "已自动入库" : "实时正常" },
+        unassigned: { tone: "warn", chip: "待关联学生" },
+        unknown_student: { tone: "warn", chip: "学生未匹配" },
+        stale: { tone: "bad", chip: "数据已过期" },
+        timestamp_unknown: { tone: "warn", chip: "缺少采集时间" },
+        offline: { tone: "bad", chip: "设备离线" },
+        invalid_temperature: { tone: "warn", chip: "温度不可用" },
+        unavailable: { tone: "idle", chip: "无测温值" },
+        unstable: { tone: "warn", chip: "读数波动" }
+      };
+      let meta = stateMeta[reading.status] || { tone: "warn", chip: "状态未知" };
+      if (reason === "unknown_student") meta = stateMeta.unknown_student;
+      const age = Number.isFinite(reading.age_seconds)
+        ? `${reading.age_seconds} 秒前采集`
+        : "采集时间未知";
+      const messages = {
+        stored: "新红外读数已自动写入该学生的今日测温记录。",
+        duplicate: "该帧已经写入，重复上报不会产生重复记录。",
+        unassigned: "实时读数已到达，但设备未携带 student_id；请选择学生后采用当前读数。",
+        unknown_student: `学生 ${reading.student_id || "--"} 不在当前名单中，请检查设备映射。`,
+        stale: `读数超过 ${reading.stale_after_seconds || 10} 秒未更新，不会自动入库。`,
+        timestamp_unknown: "设备未提供采集时间，读数仅供查看，不能自动入库。",
+        offline: "红外设备报告未连接。",
+        invalid_temperature: "mlx_obj 不在 35.0–42.0 ℃ 范围内，不能作为人体测温记录。",
+        unavailable: "接口暂时没有提供 mlx_obj 目标温度。",
+        unstable: "设备报告读数仍在波动，等待稳定后再自动记录。"
+      };
+      let message = messages[reason] || messages[reading.status] || "等待下一次红外采样。";
+      if (payload?.source_available === false) {
+        message += " RDK 拉取暂时失败，当前显示最近一次设备推送。";
+        if (reading.status !== "ready") meta = { tone: "bad", chip: "连接中断" };
+      }
+      return { tone: meta.tone, chip: meta.chip, age, message };
+    }
+
+    function renderInfraredRealtime(payload = state.realtime) {
+      if (!els.infraredRealtime) return;
+      const reading = payload?.reading || null;
+      const view = realtimePresentation(payload);
+      els.infraredRealtime.dataset.tone = view.tone;
+      els.irChip.dataset.tone = view.tone;
+      setText(els.irChip, view.chip);
+      setText(els.irTemperature, reading && Number.isFinite(Number(reading.temperature_c))
+        ? tempText(reading.temperature_c)
+        : "--");
+      setText(els.irAge, view.age);
+      setText(els.irAmbient, reading && Number.isFinite(Number(reading.ambient_c))
+        ? `${tempText(reading.ambient_c)} ℃`
+        : "--");
+      setText(els.irMeasuredAt, reading?.measured_at ? fmtShort(reading.measured_at) : "--");
+      setText(els.irDevice, reading?.device_id || "--");
+      let studentText = "未关联";
+      if (reading?.student_id) {
+        const student = studentById(reading.student_id);
+        studentText = student
+          ? `${student.name} · ${student.id}`
+          : `未知学生 · ${reading.student_id}`;
+      }
+      setText(els.irStudent, studentText);
+      setText(els.irMessage, view.message);
+      els.irUseReading.hidden = !canRecord;
+      const knownStudent = !reading?.student_id || Boolean(studentById(reading.student_id));
+      els.irUseReading.disabled = !canRecord
+        || app.mode !== "live"
+        || !reading?.valid_temperature
+        || reading?.status === "stale"
+        || reading?.status === "timestamp_unknown"
+        || !knownStudent;
+    }
+
+    function mergeRealtimeRecord(record) {
+      if (!record || record.origin !== "device" || !record.measured_at) return;
+      const measuredDate = dateFmtISO(new Date(record.measured_at));
+      if (measuredDate !== todayISO()) return;
+      const normalized = normalizeRecords({ records: [record] }, measuredDate)[0];
+      if (!normalized) return;
+      let changed = false;
+      if (!state.statusRecords.some((item) => item.id === normalized.id)) {
+        state.statusRecords.push(normalized);
+        changed = true;
+      }
+      if (state.date === measuredDate && !state.records.some((item) => item.id === normalized.id)) {
+        state.records.push(normalized);
+        changed = true;
+      }
+      if (changed) renderAll();
+    }
+
+    async function pollInfraredRealtime() {
+      if (state.realtimeBusy || app.mode !== "live" || document.hidden) {
+        renderInfraredRealtime();
+        return;
+      }
+      state.realtimeBusy = true;
+      try {
+        const payload = await requestJSON(API.realtime, REQUEST_TIMEOUT_MS);
+        state.realtime = payload;
+        if (payload?.ingest?.record) mergeRealtimeRecord(payload.ingest.record);
+      } catch (error) {
+        state.realtime = {
+          source_available: false,
+          sensor_error: describeError(error),
+          reading: state.realtime?.reading || null,
+          ingest: state.realtime?.ingest || null,
+        };
+      } finally {
+        state.realtimeBusy = false;
+        renderInfraredRealtime();
+      }
+    }
+
+    function useInfraredReading() {
+      const reading = state.realtime?.reading;
+      if (!reading || !reading.valid_temperature) return;
+      els.entryTemp.value = tempText(reading.temperature_c);
+      els.entrySource.value = "infrared";
+      if (reading.student_id && studentById(reading.student_id)) {
+        els.entryStudent.value = reading.student_id;
+        renderRecheckOptions();
+      }
+      if (!reading.student_id) els.entryStudent.focus();
+      else els.entryTemp.focus();
+      showEntryMessage(
+        reading.student_id
+          ? `已采用 ${fmtShort(reading.measured_at)} 的红外读数，请核对后保存。`
+          : "已填入红外温度，请选择对应学生后保存。",
+        "warn"
+      );
+    }
+
     function renderAll() {
       renderStats();
       renderRoster();
@@ -1326,6 +1487,7 @@
           await runImport(parseCSV(SAMPLE_CSV));
         });
       }
+      if (els.irUseReading) els.irUseReading.addEventListener("click", useInfraredReading);
       [els.importClose, els.importCancel, els.importDone].forEach((button) => {
         if (!button) return;
         button.addEventListener("click", () => {
@@ -1386,8 +1548,13 @@
         renderImportSummary(state.importSummary);
       }
       if (app.refreshTimer) clearInterval(app.refreshTimer);
+      if (app.realtimeTimer) clearInterval(app.realtimeTimer);
       if (app.mode === "live") {
         app.refreshTimer = setInterval(() => reload(), REFRESH_MS);
+        await pollInfraredRealtime();
+        app.realtimeTimer = setInterval(() => pollInfraredRealtime(), REALTIME_MS);
+      } else {
+        renderInfraredRealtime();
       }
     }
 
@@ -1398,6 +1565,10 @@
       if (app.mode === "demo") buildDemo(state.date);
       reload();
       toast(`日期已切换到 ${state.date}`, "ok");
+    });
+
+    document.addEventListener("visibilitychange", () => {
+      if (!document.hidden && app.mode === "live") pollInfraredRealtime();
     });
 
     startClock();

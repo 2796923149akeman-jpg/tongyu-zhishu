@@ -21,6 +21,8 @@ htmlcov/
 /dashboard/messages.json
 /dashboard/events.json
 /dashboard/event_snapshots/
+
+/dashboard/evidence/
 /dashboard/conversation_summaries.json
 /dashboard/dialogue_config.json
 /dashboard/dialogue_messages.json

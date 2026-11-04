@@ -41,6 +41,8 @@ class EventApiTests(unittest.TestCase):
         self.web.CONVERSATION_SUMMARIES_FILE = Path(self.temp.name) / "conversation_summaries.json"
         self.web.PROJECT_ROOT = Path(self.temp.name)
         self.web.EVENTS_FILE = Path(self.temp.name) / "events.json"
+        self.web.EVIDENCE_DIR = Path(self.temp.name) / "evidence"
+        self.web.EVIDENCE_DIR.mkdir()
         self.web.CURRENT_RDK_ALERT = "normal"
         (Path(self.temp.name) / "xiaozhi-server" / "data").mkdir(parents=True)
         self.web.reload_events()
@@ -84,15 +86,20 @@ class EventApiTests(unittest.TestCase):
             "class_name": "小二班",
             "device_id": "rdk-test",
             "dedupe_key": "test-fall-1",
+            "evidence_url": "/evidence/test-fall-1.png",
+            "evidence_captured_at": now,
         }
 
     def test_create_dedupe_query_status_notes_and_persistence(self):
-        status, created = self.request("/api/events", self.event_payload(), "POST")
+        payload = self.event_payload()
+        status, created = self.request("/api/events", payload, "POST")
         self.assertEqual(status, 201)
         self.assertFalse(created["duplicate"])
         event_id = created["event"]["id"]
         self.assertTrue(event_id.startswith("EVT-"))
         self.assertEqual(created["event"]["class_name"], "小二班")
+        self.assertEqual(created["event"]["evidence_url"], "/evidence/test-fall-1.png")
+        self.assertEqual(created["event"]["evidence_captured_at"], payload["evidence_captured_at"])
         self.assertTrue(created["event"]["history"])
 
         status, duplicate = self.request("/api/events", self.event_payload(), "POST")
@@ -266,6 +273,27 @@ class EventApiTests(unittest.TestCase):
             self.web.atomic_write_json(target, {"saved": True})
             self.assertEqual(replace.call_count, 2)
         self.assertEqual(self.web.read_json_file(target, None), {"saved": True})
+
+    def test_evidence_asset_requires_login_and_is_served_safely(self):
+        image = b"\x89PNG\r\n\x1a\nfixture"
+        (self.web.EVIDENCE_DIR / "event-frame.png").write_bytes(image)
+
+        request = urllib.request.Request(
+            self.base + "/evidence/event-frame.png",
+            headers=self.auth_headers,
+        )
+        with urllib.request.urlopen(request, timeout=5) as response:
+            self.assertEqual(response.status, 200)
+            self.assertEqual(response.headers.get_content_type(), "image/png")
+            self.assertEqual(response.read(), image)
+
+        with self.assertRaises(urllib.error.HTTPError) as unauth:
+            urllib.request.urlopen(self.base + "/evidence/event-frame.png", timeout=5)
+        self.assertEqual(unauth.exception.code, 401)
+
+        status, body = self.request("/evidence/not-an-image.txt")
+        self.assertEqual(status, 404)
+        self.assertFalse(body["ok"])
 
 
 if __name__ == "__main__":

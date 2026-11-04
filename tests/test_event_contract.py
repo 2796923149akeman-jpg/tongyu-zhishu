@@ -74,6 +74,46 @@ class EventContractTests(unittest.TestCase):
         self.assertTrue(event_id.startswith("EVT-20261028-"))
         self.assertEqual(contract.date_key("2026-10-28T00:30:00+00:00"), "2026-10-28")
 
+    def test_evidence_accepts_same_origin_or_raster_data(self):
+        event = contract.normalize_event({
+            "event_type": "fall",
+            "source": "rdk",
+            "occurred_at": "2026-10-28T09:15:22+08:00",
+            "summary": "fall",
+            "evidence_url": "/evidence/EVT-20261028-001.png",
+            "evidence_captured_at": "2026-10-28T09:15:20+08:00",
+        })
+        self.assertEqual(event["evidence_url"], "/evidence/EVT-20261028-001.png")
+        self.assertEqual(
+            event["evidence_captured_at"],
+            "2026-10-28T09:15:20+08:00",
+        )
+
+        data_event = contract.normalize_event({
+            "event_type": "fall",
+            "source": "rdk",
+            "summary": "fall",
+            "evidence_url": "data:image/png;base64,iVBORw0KGgo=",
+        })
+        self.assertTrue(data_event["evidence_url"].startswith("data:image/png;base64,"))
+
+    def test_evidence_rejects_external_svg_and_unsafe_paths(self):
+        for unsafe in (
+            "https://example.com/evidence.png",
+            "//example.com/evidence.png",
+            "/\\example.com/evidence.png",
+            "/evidence/\nimage.png",
+            "data:image/svg+xml;base64,PHN2Zz48L3N2Zz4=",
+        ):
+            with self.subTest(unsafe=unsafe):
+                with self.assertRaises(contract.EventValidationError):
+                    contract.normalize_event({
+                        "event_type": "fall",
+                        "source": "rdk",
+                        "summary": "fall",
+                        "evidence_url": unsafe,
+                    })
+
 
 if __name__ == "__main__":
     unittest.main()
