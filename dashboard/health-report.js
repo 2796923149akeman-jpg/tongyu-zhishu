@@ -1589,16 +1589,23 @@
       setText($(`#${noteId}`), note);
     }
 
-    function renderStats(report) {
+    function countEventStatuses(events) {
+      const counts = {pending: 0, handled: 0, false_alarm: 0};
+      for (const event of events) {
+        if (Object.hasOwn(counts, event.status)) counts[event.status] += 1;
+      }
+      return counts;
+    }
+
+    function renderStats(report, eventCounts) {
       const health = report.health;
       const events = report.events;
-      const handled = events.filter((item) => item.status === "handled").length;
       const urgent = report.dialogues.filter((item) => item.attention === "urgent").length;
 
       setStat("statEvents", "statEventsNote", events.length, "起",
-        events.length ? `待处理 ${events.filter((item) => item.status === "pending").length} 起` : "当日无事件");
-      setStat("statHandled", "statHandledNote", handled, "起",
-        events.length ? `处置率 ${clampPercent((handled / events.length) * 100)}%` : "无需处置");
+        events.length ? `待处理 ${eventCounts.pending} 起 · 误报 ${eventCounts.false_alarm} 起` : "当日无事件");
+      setStat("statHandled", "statHandledNote", eventCounts.handled, "起",
+        events.length ? `已结案 ${clampPercent(((eventCounts.handled + eventCounts.false_alarm) / events.length) * 100)}%` : "无需处置");
       setStat("statDialogues", "statDialoguesNote", report.dialogues.length, "段",
         report.dialogues.length ? `紧急关注 ${urgent} 段` : "当日无留意记录");
       setStat("statMeasured", "statMeasuredNote", health.measured, "人",
@@ -1729,7 +1736,7 @@
       }
     }
 
-    function renderSummary(report) {
+    function renderSummary(report, eventCounts) {
       if (!els.summaryList) return;
       els.summaryList.replaceChildren();
       const health = report.health;
@@ -1739,8 +1746,7 @@
       const lines = [];
       lines.push(`今日 ${health.total} 名在册幼儿中 ${health.measured} 人完成测温，${health.pending} 人未测，${health.recheck} 人需要复测。`);
       if (report.events.length) {
-        const handled = report.events.filter((item) => item.status === "handled").length;
-        lines.push(`安全事件 ${report.events.length} 起，已处置 ${handled} 起，待跟进 ${report.events.length - handled} 起。`);
+        lines.push(`安全事件 ${report.events.length} 起，已处置 ${eventCounts.handled} 起，待跟进 ${eventCounts.pending} 起，误报 ${eventCounts.false_alarm} 起。`);
       } else {
         lines.push("行为识别与人工登记均未上报安全事件。");
       }
@@ -1865,11 +1871,12 @@
         return;
       }
 
-      renderStats(report);
+      const eventCounts = countEventStatuses(report.events);
+      renderStats(report, eventCounts);
       renderEvents(report);
       renderDialogues(report);
       renderClasses(report);
-      renderSummary(report);
+      renderSummary(report, eventCounts);
       renderDetails(report);
       renderTemperatureTrend(report.health.temperature_trend || []);
 
