@@ -377,22 +377,21 @@ python scripts\verify_repository.py
 - `properties.mlx_amb` 作为环境温度；
 - `timestamp`、`collected_at`、`measured_at` 或其他兼容时间字段作为设备采集时间。
 
-页面同时显示关联学生、环境温度、采集时间、设备和最近一次自动入库结果。实时面板不访问
+页面同时显示关联学生、环境温度、采集时间、设备和对应读数的登记状态。网页拉取读数只用于展示。实时面板不访问
 摄像头，也不把环境温度 `mlx_amb` 当作学生体温。
 
 ### 10.1 新鲜度与入库规则
 
-默认超过 10 秒未更新即为过期，可通过 `HEALTH_INFRARED_STALE_SECONDS` 调整。满足以下全部
-条件才自动生成健康记录：
+默认超过 10 秒未更新即为过期，可通过 `HEALTH_INFRARED_STALE_SECONDS` 调整。采集时间超前超过 5 秒时提示时钟异常。通过设备令牌推送的读数满足以下条件时，服务端自动生成健康记录：
 
-1. `connected` 未明确为 `false`；
-2. `stable` 未明确为 `false`；
+1. `connected` 为 `true`；
+2. `stable` 为 `true`；
 3. `mlx_obj` 在 35.0–42.0 ℃；
 4. 设备采集时间存在且未超过新鲜度阈值；
 5. `student_id` 存在于当前学生名单。
 
 记录来源为 `infrared`，同时保存 `device_id`、`reading_id`、`ambient_c`、
-`origin=device` 和去重键。相同 `reading_id` 重复上报只保留一条记录。
+`origin=device` 和去重键。同一设备的相同 `reading_id` 重复上报只保留一条记录。
 
 缺少 `student_id` 时，面板显示“待关联学生”；管理员可以选择学生后点击“采用当前读数”，
 再按手动登记流程核对保存。缺少采集时间、读数超出范围、设备离线或读数不稳定时，不会自动

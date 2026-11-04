@@ -199,7 +199,7 @@ offset=0
 不要把真实儿童照片、可识别身份的画面或大体积 base64 数据提交到 Git。
 
 证据文件可放在被 Git 忽略的 `dashboard/evidence/` 运行时目录，并通过受登录和
-事件模块权限保护的 `GET /evidence/{文件名}` 读取。只允许
+事件模块及视频权限保护的 `GET /evidence/{文件名}` 读取。只允许
 `.png`、`.jpg`、`.jpeg`、`.webp`、`.gif`，单文件最大 10 MiB；目录遍历和非图片
 扩展名返回错误。证据采集程序负责写入文件，事件记录只保存同源路径。
 
@@ -319,9 +319,9 @@ offset=0
 ### `GET /api/health/realtime`
 
 需登录并开放健康模块。服务端请求 RDK `/api/iot_payload`，返回归一化后的最近红外读数、
-采集时间、年龄、是否新鲜以及自动入库结果。`mlx_obj` 是目标温度，`mlx_amb` 仅作为环境
+采集时间、年龄、是否新鲜以及已有的登记状态。此 GET 请求只读。`mlx_obj` 是目标温度，`mlx_amb` 仅作为环境
 温度展示，两者不能混用。缺少采集时间或超过 `HEALTH_INFRARED_STALE_SECONDS`
-（默认 10 秒）时返回 `stale` 或 `timestamp_unknown`，不会自动写入健康记录。
+（默认 10 秒）时返回 `stale` 或 `timestamp_unknown`。采集时间超前超过 5 秒时返回 `timestamp_future`。
 
 ```json
 {
@@ -342,10 +342,10 @@ offset=0
     "status": "ready"
   },
   "ingest": {
-    "stored": true,
+    "stored": false,
     "duplicate": false,
-    "reason": "stored",
-    "record": {"id": "R-ABC123", "source": "infrared"}
+    "reason": "ready",
+    "record": null
   }
 }
 ```
@@ -367,8 +367,7 @@ offset=0
 }
 ```
 
-只有读数有效、时间新鲜、`stable` 不为 `false` 且学生存在于名单时才自动入库。同一
-`reading_id` 会去重。没有 `student_id` 时返回 `reason=unassigned`，页面仍显示实时值，
+设备推送读数有效、时间新鲜、`connected` 和 `stable` 都为 `true` 且学生存在于名单时，服务端自动登记。同一设备的同一 `reading_id` 会去重。没有 `student_id` 时返回 `reason=unassigned`，页面仍显示实时值，
 但不会猜测学生。成功入库返回 HTTP `201`，重复或仅展示返回 HTTP `200`。
 
 ### `POST /api/health/records`

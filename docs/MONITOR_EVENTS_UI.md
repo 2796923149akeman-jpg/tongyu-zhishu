@@ -306,8 +306,8 @@ handled_by → handler
 4. **事件证据画面**：详情页增加证据区域，可显示事件证据图片和采集时间。接口新增
    `evidence_url` 与 `evidence_captured_at`；前端和服务端均只接受同源路径或
    PNG/JPEG/WebP/GIF data URL，拒绝任意外链和 SVG data URL。没有证据时显示明确空状态。
-   `dashboard/evidence/` 作为被 Git 忽略的运行时目录，通过受事件模块权限保护的
-   `/evidence/<文件名>` 读取。真实儿童画面不得提交到 Git。
+   `dashboard/evidence/` 作为被 Git 忽略的运行时目录，通过受事件模块和视频权限保护的
+   `/evidence/<文件名>` 读取。RDK 告警入库时读取的快照也显示在同一区域，点击可查看原图。抓拍通过同样受权限保护的 `/api/events/{id}/snapshot` 访问。真实儿童画面不得提交到 Git。
 5. **待处理超时提醒**：`pending` 事件超过 5 分钟会在列表显示“超时”，统计卡显示超时数量，
    详情显示“待处理 N 分钟 · 已超过 5 分钟”。该时间基于事件 `occurred_at`，不是页面刷新时间。
 6. **筛选、键盘和移动端详情**：增加“今日全部、全部待处理、紧急待处理、已超时”快捷筛选；
