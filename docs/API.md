@@ -173,6 +173,8 @@ offset=0
       "handled_by": null,
       "note": "",
       "dedupe_key": "rdk-fall-20261028-094210",
+      "evidence_url": "/evidence/EVT-20261028-ABC123.png",
+      "evidence_captured_at": "2026-10-28T09:42:10+08:00",
       "history": [
         {
           "at": "2026-10-28T09:42:10+08:00",
@@ -190,6 +192,16 @@ offset=0
   "updated_at": "2026-10-28T09:42:11+08:00"
 }
 ```
+
+`evidence_url` 可选，只允许同源绝对路径（例如 `/evidence/event.png`）或
+`data:image/png|jpeg|webp|gif;base64,...` 栅格图片；外部 URL、协议相对路径
+和 SVG data URL 会被拒绝。`evidence_captured_at` 为可选的 ISO 8601 证据采集时间。
+不要把真实儿童照片、可识别身份的画面或大体积 base64 数据提交到 Git。
+
+证据文件可放在被 Git 忽略的 `dashboard/evidence/` 运行时目录，并通过受登录和
+事件模块权限保护的 `GET /evidence/{文件名}` 读取。只允许
+`.png`、`.jpg`、`.jpeg`、`.webp`、`.gif`，单文件最大 10 MiB；目录遍历和非图片
+扩展名返回错误。证据采集程序负责写入文件，事件记录只保存同源路径。
 
 ### `GET /api/events/{id}`
 

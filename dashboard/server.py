@@ -81,6 +81,7 @@ EMOTION_LEXICON_FILE = Path(
     os.environ.get("EMOTION_LEXICON_FILE", str(ROOT / "emotion_lexicon.json"))
 )
 EVENTS_FILE = Path(os.environ.get("EVENTS_FILE", str(ROOT / "events.json")))
+EVIDENCE_DIR = Path(os.environ.get("EVIDENCE_DIR", str(ROOT / "evidence")))
 HEALTH_STUDENTS_FILE = Path(os.environ.get("HEALTH_STUDENTS_FILE", str(ROOT / "health_students.json")))
 HEALTH_RECORDS_FILE = Path(os.environ.get("HEALTH_RECORDS_FILE", str(ROOT / "health_records.json")))
 EVENTS_LIMIT = 2000
@@ -119,6 +120,7 @@ def route_module(path):
         return PAGE_ROUTES[path][1]
     for prefix, module in (("/api/rdk/", "monitor"), ("/api/dialogue/", "chat"),
                            ("/api/analysis/", "chat"), ("/api/events", "events"),
+                           ("/evidence/", "events"),
                            ("/api/health/", "health"), ("/api/reports/", "reports")):
         if path.startswith(prefix):
             return module
@@ -1391,6 +1393,37 @@ class Handler(BaseHTTPRequestHandler):
                 except (BrokenPipeError, ConnectionResetError):
                     pass
 
+    def serve_evidence(self, path: str) -> None:
+        name = unquote(path[len("/evidence/"):])
+        if not re.fullmatch(
+            r"[A-Za-z0-9][A-Za-z0-9._-]{0,159}\.(?:png|jpe?g|webp|gif)",
+            name,
+            re.IGNORECASE,
+        ):
+            self.send_json(404, {"ok": False, "error": "evidence not found"})
+            return
+        base = EVIDENCE_DIR.resolve()
+        candidate = (base / name).resolve()
+        try:
+            candidate.relative_to(base)
+        except ValueError:
+            self.send_json(403, {"ok": False, "error": "invalid evidence path"})
+            return
+        if not candidate.is_file():
+            self.send_json(404, {"ok": False, "error": "evidence not found"})
+            return
+        if candidate.stat().st_size > 10 * 1024 * 1024:
+            self.send_json(413, {"ok": False, "error": "evidence image is too large"})
+            return
+        content_type = {
+            ".png": "image/png",
+            ".jpg": "image/jpeg",
+            ".jpeg": "image/jpeg",
+            ".webp": "image/webp",
+            ".gif": "image/gif",
+        }[candidate.suffix.lower()]
+        self.send_bytes(200, content_type, candidate.read_bytes())
+
     def do_GET(self) -> None:
         path = urlparse(self.path).path
         if path == '/health':
@@ -1426,6 +1459,9 @@ class Handler(BaseHTTPRequestHandler):
             return
         if path in PAGE_ROUTES:
             self.serve_html(PAGE_ROUTES[path][0])
+            return
+        if path.startswith("/evidence/"):
+            self.serve_evidence(path)
             return
         if path in ('/chat', '/chat.html', '/api/dialogue/messages', '/api/dialogue/config', '/api/dialogue/model', '/api/dialogue/conversations', '/api/analysis/config'):
             raw = AUTH.permitted(self.current_session(), 'dialogue_raw')
