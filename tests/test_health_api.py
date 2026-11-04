@@ -315,6 +315,44 @@ class HealthApiTests(unittest.TestCase):
         self.assertEqual(fallback["reading"]["temperature_c"], 36.6)
         self.assertEqual(fallback["reading"]["status"], "unassigned")
 
+    def test_realtime_get_is_read_only_and_push_rejects_unverified_samples(self):
+        self.import_students()
+        reading = {
+            "connected": True,
+            "stable": True,
+            "student_id": "S-0201",
+            "device_id": "ir-test",
+            "reading_id": "IR-GUARD",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "properties": {"mlx_obj": 36.6},
+        }
+        with patch.object(self.web, "read_rdk_json", return_value=reading):
+            status, realtime = self.request("/api/health/realtime")
+        self.assertEqual(status, 200)
+        self.assertEqual(realtime["reading"]["status"], "ready")
+        self.assertFalse(realtime["ingest"]["stored"])
+        self.assertEqual(self.web.health_record_snapshot(), [])
+
+        headers = {"X-Device-Token": self.web.HEALTH_DEVICE_TOKEN}
+        future = (datetime.now(timezone.utc) + timedelta(minutes=1)).isoformat()
+        for fields, reason in (({"stable": None}, "stability_unknown"),
+                               ({"connected": None}, "connection_unknown"),
+                               ({"timestamp": future}, "timestamp_future")):
+            status, result = self.request("/api/health/device-readings",
+                                          {**reading, **fields}, "POST", headers, authenticated=False)
+            self.assertEqual(status, 200)
+            self.assertFalse(result["stored"])
+            self.assertEqual(result["reason"], reason)
+        self.assertEqual(self.web.health_record_snapshot(), [])
+
+        for device_id in ("ir-test", "ir-test-2"):
+            status, result = self.request("/api/health/device-readings",
+                                          {**reading, "device_id": device_id}, "POST", headers, authenticated=False)
+            self.assertEqual(status, 201)
+            self.assertTrue(result["stored"])
+        self.web.reload_health()
+        self.assertEqual(len(self.web.health_record_snapshot()), 2)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -53,6 +53,8 @@ def _first(payload: dict, keys: tuple[str, ...]):
 
 
 def _number(value):
+    if isinstance(value, bool):
+        return None
     try:
         number = float(value)
     except (TypeError, ValueError):
@@ -75,7 +77,7 @@ def _boolean(value):
 
 
 def parse_sensor_time(value) -> datetime | None:
-    if value in (None, ""):
+    if isinstance(value, bool) or value in (None, ""):
         return None
     if isinstance(value, (int, float)):
         try:
@@ -107,7 +109,7 @@ def parse_sensor_time(value) -> datetime | None:
 
 
 def _iso(value: datetime | None) -> str | None:
-    return value.astimezone(LOCAL_TZ).isoformat(timespec="seconds") if value else None
+    return value.astimezone(LOCAL_TZ).isoformat() if value else None
 
 
 def _text(value, maximum: int = 160) -> str:
@@ -145,11 +147,8 @@ def normalize_infrared_payload(
     current = (now or datetime.now(LOCAL_TZ)).astimezone(LOCAL_TZ)
     measured_dt = parse_sensor_time(_first(payload, TIME_KEYS))
     measured_at = _iso(measured_dt)
-    age_seconds = (
-        max(0, int((current - measured_dt).total_seconds()))
-        if measured_dt is not None
-        else None
-    )
+    age = (current - measured_dt).total_seconds() if measured_dt is not None else None
+    age_seconds = max(0, int(age)) if age is not None else None
     connected_value = _first(payload, ("connected", "sensor_connected"))
     connected = _boolean(connected_value)
     temperature = _number(_first(payload, OBJECT_TEMPERATURE_KEYS))
@@ -178,7 +177,9 @@ def normalize_infrared_payload(
         status = "invalid_temperature"
     elif measured_dt is None:
         status = "timestamp_unknown"
-    elif age_seconds is not None and age_seconds > stale_after_seconds:
+    elif age < -5:
+        status = "timestamp_future"
+    elif age > stale_after_seconds:
         status = "stale"
     elif stable is False:
         status = "unstable"
@@ -216,11 +217,8 @@ def refresh_infrared_status(
     measured_dt = parse_sensor_time(reading.get("measured_at"))
     refreshed = dict(reading)
     refreshed["stale_after_seconds"] = stale_after_seconds
-    refreshed["age_seconds"] = (
-        max(0, int((current - measured_dt).total_seconds()))
-        if measured_dt is not None
-        else None
-    )
+    age = (current - measured_dt).total_seconds() if measured_dt is not None else None
+    refreshed["age_seconds"] = max(0, int(age)) if age is not None else None
     if refreshed.get("connected") is False:
         refreshed["status"] = "offline"
     elif refreshed.get("temperature_c") is None:
@@ -229,7 +227,9 @@ def refresh_infrared_status(
         refreshed["status"] = "invalid_temperature"
     elif measured_dt is None:
         refreshed["status"] = "timestamp_unknown"
-    elif refreshed["age_seconds"] > stale_after_seconds:
+    elif age < -5:
+        refreshed["status"] = "timestamp_future"
+    elif age > stale_after_seconds:
         refreshed["status"] = "stale"
     elif refreshed.get("stable") is False:
         refreshed["status"] = "unstable"

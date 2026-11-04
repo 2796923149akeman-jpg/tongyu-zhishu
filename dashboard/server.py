@@ -736,63 +736,32 @@ def create_health_record(payload: dict) -> dict:
         return dict(record)
 
 
-def ingest_infrared_reading(payload: dict) -> dict:
-    """Normalize one infrared sample and persist it only when it can be attributed."""
-    global HEALTH_LAST_INFRARED
-    reading = normalize_infrared_payload(
-        payload,
-        stale_after_seconds=HEALTH_INFRARED_STALE_SECONDS,
-    )
-    reading["received_at"] = now_iso()
-    with HEALTH_REALTIME_LOCK:
-        HEALTH_LAST_INFRARED = dict(reading)
-
-    if reading["status"] not in ("ready", "unassigned"):
-        return {
-            "stored": False,
-            "duplicate": False,
-            "reason": reading["status"],
-            "reading": reading,
-            "record": None,
-        }
-    if not reading["student_id"]:
-        return {
-            "stored": False,
-            "duplicate": False,
-            "reason": "unassigned",
-            "reading": reading,
-            "record": None,
-        }
-
+def process_infrared_reading(reading: dict, *, persist: bool = False) -> dict:
+    result = {"stored": False, "duplicate": False, "reason": reading["status"], "reading": reading, "record": None}
+    if reading["status"] != "ready":
+        return result
     with HEALTH_LOCK:
-        students = {item["id"]: item for item in HEALTH_STUDENTS}
-        if reading["student_id"] not in students:
+        if not any(item["id"] == reading["student_id"] for item in HEALTH_STUDENTS):
             reading["student_known"] = False
-            with HEALTH_REALTIME_LOCK:
-                HEALTH_LAST_INFRARED = dict(reading)
-            return {
-                "stored": False,
-                "duplicate": False,
-                "reason": "unknown_student",
-                "reading": reading,
-                "record": None,
-            }
+            result["reason"] = "unknown_student"
+            return result
         reading["student_known"] = True
-        with HEALTH_REALTIME_LOCK:
-            HEALTH_LAST_INFRARED = dict(reading)
-        dedupe_key = f"infrared:{reading['reading_id']}"
+        identity = (reading["device_id"], reading["reading_id"])
+        digest = hashlib.sha256(json.dumps(identity, ensure_ascii=False).encode("utf-8")).hexdigest()
+        dedupe_key = f"infrared:{digest}"
         duplicate = next(
-            (item for item in HEALTH_RECORDS if item.get("dedupe_key") == dedupe_key),
+            (item for item in HEALTH_RECORDS
+             if (item.get("device_id"), item.get("reading_id")) == identity),
             None,
         )
         if duplicate is not None:
-            return {
-                "stored": False,
-                "duplicate": True,
-                "reason": "duplicate",
-                "reading": reading,
-                "record": dict(duplicate),
-            }
+            result.update(duplicate=True, reason="duplicate", record=dict(duplicate))
+            return result
+        if not persist:
+            return result
+        if reading["connected"] is not True or reading["stable"] is not True:
+            result["reason"] = "stability_unknown" if reading["connected"] is True else "connection_unknown"
+            return result
         record = {
             "id": f"R-{uuid.uuid4().hex[:10].upper()}",
             "student_id": reading["student_id"],
@@ -807,52 +776,47 @@ def ingest_infrared_reading(payload: dict) -> dict:
             "dedupe_key": dedupe_key,
             "ambient_c": reading["ambient_c"],
         }
-        HEALTH_RECORDS.append(record)
-        save_health_records()
-        return {
-            "stored": True,
-            "duplicate": False,
-            "reason": "stored",
-            "reading": reading,
-            "record": dict(record),
-        }
+        updated = [*HEALTH_RECORDS, record]
+        atomic_write_json(HEALTH_RECORDS_FILE, updated)
+        HEALTH_RECORDS[:] = updated
+        result.update(stored=True, reason="stored", record=dict(record))
+        return result
+
+
+def ingest_infrared_reading(payload: dict) -> dict:
+    global HEALTH_LAST_INFRARED
+    reading = normalize_infrared_payload(payload, stale_after_seconds=HEALTH_INFRARED_STALE_SECONDS)
+    reading["received_at"] = now_iso()
+    result = process_infrared_reading(reading, persist=True)
+    with HEALTH_REALTIME_LOCK:
+        HEALTH_LAST_INFRARED = dict(reading)
+    return result
 
 
 def live_infrared_payload() -> dict:
-    """Pull the RDK infrared payload and return the latest normalized sample."""
+    """Read RDK or a recent device push without writing health records."""
+    with HEALTH_REALTIME_LOCK:
+        cached = dict(HEALTH_LAST_INFRARED) if HEALTH_LAST_INFRARED else None
+    reading = None
+    sensor_error = None
     try:
         raw = read_rdk_json("/api/iot_payload")
-    except (urllib.error.URLError, TimeoutError, ValueError, OSError) as exc:
-        with HEALTH_REALTIME_LOCK:
-            last = dict(HEALTH_LAST_INFRARED) if HEALTH_LAST_INFRARED else None
-        reading = (
-            refresh_infrared_status(
-                last,
-                stale_after_seconds=HEALTH_INFRARED_STALE_SECONDS,
-            )
-            if last
-            else None
-        )
-        return {
-            "ok": True,
-            "source_available": False,
-            "sensor_error": str(exc),
-            "reading": reading,
-            "ingest": None,
-            "stale_after_seconds": HEALTH_INFRARED_STALE_SECONDS,
-        }
-    result = ingest_infrared_reading(raw)
+        reading = normalize_infrared_payload(raw, stale_after_seconds=HEALTH_INFRARED_STALE_SECONDS)
+    except (OSError, ValueError, HTTPException):
+        sensor_error = "RDK 传感器接口暂时不可用"
+    if cached:
+        cached = refresh_infrared_status(cached, stale_after_seconds=HEALTH_INFRARED_STALE_SECONDS)
+        if not reading or (cached["fresh"] and (
+            not reading["fresh"] or cached["measured_at"] >= reading["measured_at"]
+        )):
+            reading = cached
+    result = process_infrared_reading(reading) if reading else None
     return {
         "ok": True,
-        "source_available": True,
-        "sensor_error": None,
-        "reading": result["reading"],
-        "ingest": {
-            "stored": result["stored"],
-            "duplicate": result["duplicate"],
-            "reason": result["reason"],
-            "record": result["record"],
-        },
+        "source_available": sensor_error is None,
+        "sensor_error": sensor_error,
+        "reading": reading,
+        "ingest": {key: result[key] for key in ("stored", "duplicate", "reason", "record")} if result else None,
         "stale_after_seconds": HEALTH_INFRARED_STALE_SECONDS,
     }
 

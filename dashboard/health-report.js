@@ -1216,6 +1216,7 @@
         unknown_student: { tone: "warn", chip: "学生未匹配" },
         stale: { tone: "bad", chip: "数据已过期" },
         timestamp_unknown: { tone: "warn", chip: "缺少采集时间" },
+        timestamp_future: { tone: "warn", chip: "设备时钟异常" },
         offline: { tone: "bad", chip: "设备离线" },
         invalid_temperature: { tone: "warn", chip: "温度不可用" },
         unavailable: { tone: "idle", chip: "无测温值" },
@@ -1233,6 +1234,8 @@
         unknown_student: `学生 ${reading.student_id || "--"} 不在当前名单中，请检查设备映射。`,
         stale: `读数超过 ${reading.stale_after_seconds || 10} 秒未更新，不会自动入库。`,
         timestamp_unknown: "设备未提供采集时间，读数仅供查看，不能自动入库。",
+        timestamp_future: "采集时间超前，请核对 RDK 与服务电脑的时钟。",
+        ready: "读数已关联学生，管理员可采用并确认保存。",
         offline: "红外设备报告未连接。",
         invalid_temperature: "mlx_obj 不在 35.0–42.0 ℃ 范围内，不能作为人体测温记录。",
         unavailable: "接口暂时没有提供 mlx_obj 目标温度。",
@@ -1253,11 +1256,11 @@
       els.infraredRealtime.dataset.tone = view.tone;
       els.irChip.dataset.tone = view.tone;
       setText(els.irChip, view.chip);
-      setText(els.irTemperature, reading && Number.isFinite(Number(reading.temperature_c))
+      setText(els.irTemperature, Number.isFinite(reading?.temperature_c)
         ? tempText(reading.temperature_c)
         : "--");
       setText(els.irAge, view.age);
-      setText(els.irAmbient, reading && Number.isFinite(Number(reading.ambient_c))
+      setText(els.irAmbient, Number.isFinite(reading?.ambient_c)
         ? `${tempText(reading.ambient_c)} ℃`
         : "--");
       setText(els.irMeasuredAt, reading?.measured_at ? fmtShort(reading.measured_at) : "--");
@@ -1272,13 +1275,16 @@
       setText(els.irStudent, studentText);
       setText(els.irMessage, view.message);
       els.irUseReading.hidden = !canRecord;
-      const knownStudent = !reading?.student_id || Boolean(studentById(reading.student_id));
-      els.irUseReading.disabled = !canRecord
-        || app.mode !== "live"
-        || !reading?.valid_temperature
-        || reading?.status === "stale"
-        || reading?.status === "timestamp_unknown"
-        || !knownStudent;
+      els.irUseReading.disabled = !canUseInfraredReading();
+    }
+
+    let infraredReadAt = null;
+    function canUseInfraredReading() {
+      const reading = state.realtime?.reading;
+      return canRecord && app.mode === "live" && infraredReadAt !== null && reading?.fresh === true
+        && reading.connected === true && reading.valid_temperature && !state.realtime?.ingest?.duplicate
+        && (!reading.student_id || Boolean(studentById(reading.student_id)))
+        && reading.age_seconds + (performance.now() - infraredReadAt) / 1000 < reading.stale_after_seconds;
     }
 
     function mergeRealtimeRecord(record) {
@@ -1308,8 +1314,10 @@
       try {
         const payload = await requestJSON(API.realtime, REQUEST_TIMEOUT_MS);
         state.realtime = payload;
+        infraredReadAt = performance.now();
         if (payload?.ingest?.record) mergeRealtimeRecord(payload.ingest.record);
       } catch (error) {
+        infraredReadAt = null;
         state.realtime = {
           source_available: false,
           sensor_error: describeError(error),
@@ -1324,7 +1332,10 @@
 
     function useInfraredReading() {
       const reading = state.realtime?.reading;
-      if (!reading || !reading.valid_temperature) return;
+      if (!canUseInfraredReading()) {
+        renderInfraredRealtime();
+        return;
+      }
       els.entryTemp.value = tempText(reading.temperature_c);
       els.entrySource.value = "infrared";
       if (reading.student_id && studentById(reading.student_id)) {
