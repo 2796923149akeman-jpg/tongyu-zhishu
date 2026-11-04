@@ -1,6 +1,7 @@
 """异常事件 API 的隔离测试。"""
 
 import importlib.util
+import io
 import json
 import tempfile
 import threading
@@ -9,6 +10,7 @@ import urllib.error
 import urllib.request
 from urllib.parse import urlencode
 from datetime import datetime, timedelta, timezone
+from email.message import Message
 from pathlib import Path
 from unittest.mock import patch
 
@@ -62,6 +64,8 @@ class EventApiTests(unittest.TestCase):
         try:
             with urllib.request.urlopen(request, timeout=5) as response:
                 body = response.read()
+                if response.headers.get_content_type() == "image/jpeg":
+                    return response.status, body
                 return response.status, json.loads(body) if body else {}
         except urllib.error.HTTPError as exc:
             body = exc.read()
@@ -167,7 +171,7 @@ class EventApiTests(unittest.TestCase):
         self.assertEqual(status, 404)
 
     def test_rdk_alert_edge_creates_one_deduplicated_event(self):
-        with patch.object(self.web, "read_rdk_json", return_value={"alert_type": "fall", "confidence": 0.8}):
+        with patch.object(self.web, "read_rdk_json", return_value={"alert_type": "fall", "confidence": 0.8, "snapshot_available": False}):
             for _ in range(2):
                 status, body = self.request("/api/rdk/status")
                 self.assertEqual(status, 200)
@@ -182,7 +186,7 @@ class EventApiTests(unittest.TestCase):
         with patch.object(self.web, "read_rdk_json", return_value={"alert_type": "normal"}):
             status, _ = self.request("/api/rdk/status")
             self.assertEqual(status, 200)
-        with patch.object(self.web, "read_rdk_json", return_value={"alert_type": "fight"}):
+        with patch.object(self.web, "read_rdk_json", return_value={"alert_type": "fight", "snapshot_available": False}):
             status, _ = self.request("/api/rdk/status")
             self.assertEqual(status, 200)
 
@@ -190,6 +194,78 @@ class EventApiTests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertEqual(listing["total"], 2)
         self.assertEqual({item["event_type"] for item in listing["events"]}, {"fall", "fight"})
+
+    def test_capture_is_tied_to_event_and_protected_by_video_access(self):
+        image = b"\xff\xd8fixture\xff\xd9"
+        original = urllib.request.urlopen
+
+        def upstream(request, **kwargs):
+            if request.full_url == self.web.RDK_BASE + "/snapshot":
+                stream = io.BytesIO(image)
+                stream.headers = Message()
+                stream.headers["Content-Type"] = "image/jpeg"
+                return stream
+            return original(request, **kwargs)
+
+        with patch.object(self.web, "read_rdk_json", return_value={"alert_type": "fall"}), \
+                patch.object(urllib.request, "urlopen", side_effect=upstream):
+            self.assertEqual(self.request("/api/rdk/status")[0], 200)
+        self.web.reload_events()
+        event = self.request("/api/events")[1]["events"][0]
+        self.assertTrue(event["has_snapshot"])
+        route = f"/api/events/{event['id']}/snapshot"
+        self.assertEqual(self.request(route), (200, image))
+        with patch.object(self.web, "read_rdk_json", return_value={"alert_type": "fight"}), \
+                patch.object(self.web, "capture_event_snapshot", side_effect=TimeoutError):
+            self.assertEqual(self.request("/api/rdk/status")[0], 200)
+        events = {item["event_type"]: item for item in self.request("/api/events")[1]["events"]}
+        self.assertFalse(events["fight"]["has_snapshot"])
+        self.assertEqual(self.request(f"/api/events/{events['fight']['id']}/snapshot")[0], 404)
+        self.web.AUTH.create_user("viewer", "test-viewer-password")
+        token, _ = self.web.AUTH.new_session("viewer")
+        self.auth_headers = {"Cookie": "tongyu_session=" + token}
+        self.assertEqual(self.request(route)[0], 403)
+        self.assertFalse(self.request(f"/api/events/{event['id']}")[1]["event"]["has_snapshot"])
+
+    def test_dialogue_deletion_is_scoped_and_persisted(self):
+        self.web.MESSAGES.clear()
+        self.web.CONVERSATION_SUMMARIES.clear()
+        for ident in ("first", "second"):
+            self.web.MESSAGES.append({"id": ident, "session_id": "shared", "text": ident})
+        self.web.CONVERSATION_SUMMARIES["shared"] = {"message_count": 2}
+        route = "/api/dialogue/delete"
+        self.assertEqual(self.request(route, {"scope": "all", "confirm": False}, "POST")[0], 400)
+        status, result = self.request(route, {"ids": ["first"]}, "POST")
+        self.assertEqual((status, result["deleted"]), (200, 1))
+        self.assertEqual([item["id"] for item in self.web.load_messages()], ["second"])
+        self.assertEqual(self.web.load_summaries(), {})
+        self.web.AUTH.create_user("viewer", "test-viewer-password")
+        token, session = self.web.AUTH.new_session("viewer")
+        admin_headers = self.auth_headers
+        self.auth_headers = {"Cookie": "tongyu_session=" + token, "X-CSRF-Token": session["csrf"]}
+        self.assertEqual(self.request(route, {"scope": "all", "confirm": True}, "POST")[0], 403)
+        self.auth_headers = admin_headers
+        status, result = self.request(route, {"scope": "all", "confirm": True}, "POST")
+        self.assertEqual((status, result["deleted"]), (200, 1))
+        self.assertFalse(self.web.load_messages())
+
+    def test_json_persistence_retries_transient_windows_replace_error(self):
+        real_replace = self.web.os.replace
+        busy = PermissionError("file temporarily busy")
+        busy.winerror = 32
+        target = Path(self.temp.name) / "retry.json"
+        attempts = []
+
+        def replace_once_busy(source, destination):
+            attempts.append(destination)
+            if len(attempts) == 1:
+                raise busy
+            real_replace(source, destination)
+
+        with patch.object(self.web.os, "replace", side_effect=replace_once_busy) as replace:
+            self.web.atomic_write_json(target, {"saved": True})
+            self.assertEqual(replace.call_count, 2)
+        self.assertEqual(self.web.read_json_file(target, None), {"saved": True})
 
 
 if __name__ == "__main__":

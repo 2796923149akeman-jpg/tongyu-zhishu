@@ -20,6 +20,7 @@ htmlcov/
 /dashboard/analysis_config.json
 /dashboard/messages.json
 /dashboard/events.json
+/dashboard/event_snapshots/
 /dashboard/conversation_summaries.json
 /dashboard/dialogue_config.json
 /dashboard/dialogue_messages.json

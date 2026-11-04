@@ -22,29 +22,25 @@
 
 ## 2. 功能概览
 
-- 监控画面：在浏览器中展示上游视频流。
-- 行为提示：展示正常、摔倒和斗殴等识别状态。
-- 可选人物估算（实验）：监控页由管理员开关，默认关闭；开启运行姿态比例估算，关闭停止进程，普通用户只读。需单独准备依赖和本地模型，见 [人物估算说明](docs/PERSON_TYPE_DEMO.md)。
-- 环境数据：展示体温、环境温湿度、eCO₂ 和 TVOC。
-- 注册登录：普通用户自行注册；管理员由运行电脑上的首次启动流程创建。同一登录页根据账号角色分配入口，无需手选身份。
-- 展示权限：管理员控制五个模块、摄像头画面和对话原文开关。普通用户只读，所有普通账号共用一套展示配置；管理员可查看和管理全部模块。
-- 对话记录：持久化保存最近 200 条用户识别文字和机器人回复；左侧按北京时间的日期、设备、会话选择，支持关键词搜索，机器人在左、用户在右。查看历史会话时刷新保留选择。
-- 对话与模型设置：管理员可设置标题、刷新间隔、显示数量，以及对话模型、单句情绪分析方式；支持本地词库和模型分析失败回退。
-- 异常事件：真实事件保存、筛选、详情、处置状态及备注；RDK 行为状态被读取时，新增的摔倒/斗殴告警可写入事件库。
-- 学生测温：管理员导入学生名单、手动登记体温及复测，数据保存在运行电脑中。设备体温自动关联学生尚未实现。
-- 当日日报：汇总事件、需留意的对话和测温状态；受模块及原文权限控制。测温与日报查看当天时跨日自动切到新一天，主动选择的历史日期保留。
-- 一键启动与手机分享：VS Code F5 启动网页或同时启动小智服务，自动打开登录页；可选 cloudflared 生成临时 HTTPS 手机链接。
+| 模块 | 可以做什么 |
+| --- | --- |
+| 实时监控 | 看 RDK 摄像头画面、设备连接状态和摔倒／斗殴提示。查看红外目标温度、红外环境温度、室温、湿度、eCO₂ 和 TVOC，页面标注采集时间、过期和离线状态。 |
+| 异常事件 | 筛选并回看告警，查看详情、备注和处置记录。监控页读取到新的 RDK 摔倒或斗殴告警时，后台保存事件并尝试抓拍。事件详情可打开原图供老师复核，管理员可标记已处理或误报。 |
+| 对话与情绪 | 接收 ESP32 小智的识别文字和机器人回复，按北京时间的日期、设备和会话查看最近 200 条消息，支持搜索和情绪线索回顾。管理员可修改界面和模型配置，删除当前会话或确认清空全部对话及摘要。 |
+| 学生测温 | 管理员可导入名单、手动登记体温及复测。可按日期、班级和学生筛选，并导出 CSV。设备实时温度在监控页查看，学生表单当前由老师选人并输入体温。 |
+| 当日日报 | 按日期和班级汇总异常事件处置、测温完成情况及需留意对话，支持打印。正在查看当天数据时，跨日会更新到新一天。 |
+| 人物估算（实验） | 管理员可在监控视频下方开启，利用本机姿态模型估算疑似成人、疑似儿童和未确定人数。默认关闭，启用需要单独准备模型和依赖。 [人物估算说明](docs/PERSON_TYPE_DEMO.md) |
 
-账号、密码哈希与展示开关保存在本机，重启无需重新注册；重启服务后需重新登录。默认开放五个模块，视频和对话原文默认关闭，管理员不受限制。没有预设的通用管理员用户名或密码，网页注册的账号始终是普通用户。
+管理员在统一登录页登录后，可设置普通账号能够查看的五个业务模块、视频和对话原文。普通账号可自行注册并只读查看已开放内容。五个模块默认开放，视频和对话原文默认关闭。抓拍图片也受视频权限限制。
 
-当前边界：不支持为每个普通账号单独分配模块，也没有找回密码或账号管理页面。设备采集时间偏差、环境数据过期原因和真实手机公网可达性仍需现场验证；首页地址显示修复不等于设备时钟已校准。
+账号、展示设置、告警、抓拍、对话和测温记录保存在运行网页服务的电脑上。同一服务下，手机和电脑可按各自权限查看同一份记录。重启网页后，用户用原账号重新登录即可。
 
 ## 3. 系统软件架构
 
 ```mermaid
 flowchart LR
     Browser[浏览器] -->|HTTP| Dashboard[Dashboard 网页服务]
-    RDK[RDK 数据接口] -->|视频流 / 状态 / 环境数据| Dashboard
+    RDK[RDK 数据接口] -->|视频流 / 状态 / 传感器 / 快照| Dashboard
     Xiaozhi[小智语音后端] -->|对话消息 HTTP| Dashboard
     Dashboard --> Monitor[监控页面]
     Dashboard --> Chat[对话测试页面]
@@ -74,6 +70,8 @@ Dashboard 将上游接口转换为同源网页接口；浏览器只访问 Dashbo
 
 ## 5. 网页效果展示
 
+可查看 [实时监控和事件页](docs/assets/monitor-events-live.png)、[学生测温页](docs/assets/health-page-live.png) 与 [当日日报](docs/assets/reports-page-live.png) 的界面示例。
+
 ### 对话记录页
 
 ![对话测试页](docs/assets/dialogue-test.png)
@@ -84,63 +82,83 @@ Dashboard 将上游接口转换为同源网页接口；浏览器只访问 Dashbo
 
 访问地址：<http://127.0.0.1:8088/>。页面包含监控画面、行为状态和六项传感器数据，并提供对话测试页入口。
 
-## 6. 快速部署
+## 6. 下载后快速运行
 
-当前电脑已配置 VS Code 一键启动：在“运行和调试”选择“同时启动全部服务”，按 F5 后自动打开登录页。首次按提示创建一次管理员；以后复用已保存的账号与展示设置。管理员和普通用户使用同一登录入口，按账号权限进入界面。手机外网演示选择“同时启动全部服务（手机分享）”。详见 [手机演示指南](docs/MOBILE_DEMO.md)。
+下列电脑端命令以 Windows 为例，在下载并解压后的项目根目录执行。先按需要选择运行范围。
 
-用 VS Code 打开整个项目文件夹，按 `Ctrl+Shift+D` 打开“运行和调试”，从上方下拉菜单选择：
-
-| 启动项 | 用途 |
+| 想使用的功能 | 需要准备 |
 | --- | --- |
-| 启动网页服务 | 只启动网页，可查看独立运行的 RDK 视频和环境数据 |
-| 同时启动全部服务 | 网页和小智语音服务一起启动，适合设备语音演示 |
-| 启动网页服务（手机分享） | 网页与临时手机访问链接 |
-| 同时启动全部服务（手机分享） | 网页、小智语音与临时手机访问链接 |
+| 打开网页、登录、管理名单和已有记录 | Python 3.10、网页依赖、首次创建管理员 |
+| 看实时视频、行为状态和传感器 | 再启动 RDK 端程序，并填写 RDK 实际地址 |
+| 使用 ESP32 小智语音 | 再配置本机模型 API，安装完整语音依赖和模型文件，并把 ESP32 指向电脑的小智服务 |
+| 使用模型情绪分析 | 需要有效的本机模型 API 配置。网页的本地词库模式可直接使用 |
+| 生成手机外网链接 | 另备 cloudflared。 [手机演示指南](docs/MOBILE_DEMO.md) |
 
-随后按 F5，不必手动输入启动命令。浏览器未自动打开时访问 <http://127.0.0.1:8088/login>。RDK 和传感器端程序需另行运行，F5 不会替你启动它们；RDK 地址变化时更新本地 `.vscode/launch.json` 中的 `RDK_BASE`。
+### 6.1 首次启动网页
 
-管理员默认进入展示设置页，也可从模块入口查看业务页面；普通用户默认进入开放模块入口，不能导入名单、登记体温、处置事件或修改设置。从某个业务地址跳转登录时，会返回有权限访问的原页面。测试两个角色时，建议一个用普通窗口、另一个用无痕窗口，避免共享同一浏览器会话。
+电脑安装 Python 3.10 后，在 PowerShell 中运行以下命令。如果 `py` 不可用且 `python --version` 显示 3.10，可用 `python -m venv .venv` 创建环境。
 
-本机 `.vscode/launch.json` 不提交到仓库；其他电脑首次使用须安装 VS Code Python / Python Debugger 扩展、选择解释器，并参考 `docs/vscode-launch.example.json` 建立本机启动配置。
-
-使用 Windows CMD 或 Anaconda Prompt。Python 依赖环境为 `xiaozhi-esp32-server`。
-
-### 6.1 本地配置
-
-登录和基础网页使用 Python 标准库；模型配置读写需 `dashboard/requirements.txt` 中的 PyYAML。仅部署网页的安装步骤见 [手机演示指南](docs/MOBILE_DEMO.md#新电脑首次安装)。完整语音交互服务使用 Python 3.10、根目录 `requirements.txt` 中的依赖和 FFmpeg。首次克隆后执行：
-
-```bat
-cd /d D:\ESP32\tongyu-zhishu-v1
-conda activate xiaozhi-esp32-server
-pip install -r requirements.txt
-python scripts\setup_local.py
+```powershell
+py -3.10 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r dashboard/requirements.txt
+$env:RDK_BASE = "http://192.168.43.54:5000"
+.\.venv\Scripts\python.exe scripts/run_dashboard.py
 ```
 
-仓库不上传真实 API Key 和模型权重。在 `xiaozhi-server/data/.config.yaml` 中填写模型 API Key；模型接口、模型名称和儿童陪伴提示词模板已经提供。语音服务使用的 SenseVoiceSmall 和 Silero 模型放入 `xiaozhi-server/models`，所需文件见 [模型文件清单](docs/model-files.json)。
+首次启动时按终端提示创建管理员，再打开 <http://127.0.0.1:8088/login>。网页注册入口创建的是普通账号。**仅运行网页时，API Key 可以留空。** 电脑尚未连上 RDK 时，网页仍可登录和管理本机已有记录，实时区域会提示设备不可用。
 
-### 6.2 启动语音交互服务
+### 6.2 提前启动 RDK，提供实时数据
 
-```bat
-cd /d D:\ESP32\tongyu-zhishu-v1\xiaozhi-server
-conda activate xiaozhi-esp32-server
+把电脑和 RDK 连到彼此可达的网络。在电脑终端 SSH 登录 RDK，之后在 RDK 终端进入程序目录并启动：
+
+```bash
+ssh root@192.168.43.54
+cd /root/wheeltec_fall_detect
+python3 web_fall.py
+```
+
+上述地址和目录是现有设备的示例。使用其他 RDK 时，把 SSH 地址及网页的 `RDK_BASE` 都改成对应设备地址，目录按 RDK 上的部署位置填写。**RDK 上需要提前部署 `wheeltec_fall_detect` 程序、模型和依赖，并连接摄像头及传感器。** SSH 终端运行期间保持程序运行，电脑端 Dashboard 会从 RDK 的 `5000` 端口读取数据。
+
+启动后可在电脑浏览器打开 `http://192.168.43.54:5000/alert_status` 和 `http://192.168.43.54:5000/api/iot_payload`。前者应返回行为状态 JSON，后者应返回传感器连接状态、采集时间和读数。抓拍依赖 RDK 提供的 `/snapshot`。如两个 JSON 接口都打不开，先核对 RDK IP、网络和 RDK 终端报错。
+
+### 6.3 启用小智语音
+
+安装 Git 后，在 Conda 终端进入项目根目录。下列命令创建带 Python 3.10、FFmpeg 和 Opus 的语音环境。语音依赖中有从 GitHub 安装的包，安装时需要联网。
+
+```powershell
+conda create -n tongyu-voice -c conda-forge python=3.10 ffmpeg libopus
+conda activate tongyu-voice
+python -m pip install -r requirements.txt
+python scripts/setup_local.py
+```
+
+初始化脚本会创建本机的 `xiaozhi-server/data/.config.yaml`，已有配置时会保留。打开这个文件，在 `LLM → DeepSeekLLM` 下填写自己申请的 `api_key`、服务 `url` 和该密钥可用的 `model_name`。真实密钥只填本机配置。使用 DeepSeek 官方 API 时，示例模板里的旧模型名 `deepseek-chat` 需要改成当前支持的模型名，例如 `deepseek-flash`。使用其他兼容服务时，三项按该服务的配置配套填写。 [DeepSeek API 配置说明](https://api-docs.deepseek.com/)
+
+在同一文件的 `server.websocket` 中填入服务电脑的局域网地址，例如 `ws://192.168.43.236:8000/xiaozhi/v1/`，再让 ESP32 连接到实际地址。这里填**运行小智的电脑 IP**，RDK 的 IP 用于网页的 `RDK_BASE`。
+
+如果 ESP32 固件通过 OTA 获取连接地址，把固件的 OTA 地址指向这台电脑的 `http://<电脑局域网IP>:8003/xiaozhi/ota/`。可在电脑或同网段手机打开该地址，核对返回的 WebSocket 地址。
+
+将 SenseVoiceSmall 和 Silero 模型目录放到以下位置。可复制团队已验证的模型目录，或从模型发布方获取对应文件。
+
+- 语音识别放在 `xiaozhi-server/models/SenseVoiceSmall/`，保留模型配置、分词器和 `model.pt`。 [SenseVoiceSmall 模型文件](https://huggingface.co/FunAudioLLM/SenseVoiceSmall/tree/main)
+- 语音活动检测所用的 ONNX 文件放在 `xiaozhi-server/models/snakers4_silero-vad/src/silero_vad/data/silero_vad.onnx`。 [Silero VAD 发布页](https://github.com/snakers4/silero-vad/releases)
+
+在项目根目录执行 `python scripts/check_runtime.py` 可检查 Python 模块、FFmpeg、配置文件和模型文件。文件清单包含联调时的示例文件和字节数，可用于比对模型目录。API Key 的有效性需要在实际调用时确认。 [模型文件清单](docs/model-files.json)
+
+保持网页服务运行，在另一个已激活语音环境的终端启动小智：
+
+```powershell
+cd xiaozhi-server
 python app.py
 ```
 
-### 6.3 启动网页服务
+ESP32 连上小智后，对话文字会转发到同一台电脑上的 Dashboard。网页默认端口为 `8088`，小智设备连接默认用 `8000`。修改了网页端口时，需要同步调整小智的 `DIALOGUE_DASHBOARD_URL`。
 
-```bat
-cd /d D:\ESP32\tongyu-zhishu-v1
-conda activate xiaozhi-esp32-server
-set RDK_BASE=http://192.168.43.54:5000
-python scripts/run_dashboard.py
-```
+### 6.4 用 VS Code 一键启动
 
-`RDK_BASE` 是网页服务使用的数据接口地址，地址变化时只修改启动参数。PowerShell 对应写法为：
+安装 Python 和 Python Debugger 扩展，用 VS Code 打开项目根目录，选择已安装所需依赖的 Python 解释器。首次参考 [启动模板](docs/vscode-launch.example.json)，复制为本地的 `.vscode/launch.json`，已有启动配置时按需合入。
 
-```powershell
-$env:RDK_BASE="http://192.168.43.54:5000"
-python scripts/run_dashboard.py
-```
+在“运行和调试”中选择“启动网页服务”或“同时启动全部服务”，按 F5 并输入实际 RDK 地址。选择带“手机分享”的启动项时，可在终端看到临时 HTTPS 登录链接。RDK 端仍按上面的步骤单独启动。
 
 ## 7. API 文档
 
@@ -154,12 +172,14 @@ python scripts/run_dashboard.py
 | POST | `/api/dialogue/messages` | 接收小智后端的对话消息 |
 | GET | `/api/dialogue/messages` | 获取最近 200 条对话消息 |
 | GET/POST | `/api/dialogue/config` | 读取或保存对话界面设置 |
+| POST | `/api/dialogue/delete` | 管理员删除会话记录或清空对话 |
 | GET | `/health` | 获取 Dashboard 服务状态 |
 | GET | `/api/auth/session` | 获取登录状态与 CSRF 验证信息 |
 | POST | `/api/auth/register`、`/api/auth/login`、`/api/auth/logout` | 注册、登录、退出 |
 | GET/POST | `/api/admin/policy` | 管理员读取或保存展示权限 |
 | GET | `/api/config` | 登录后读取 RDK 配置地址 |
 | GET/POST | `/api/events` | 查询事件或由管理员创建事件 |
+| GET | `/api/events/{id}/snapshot` | 查看有权限访问的告警抓拍 |
 | POST | `/api/events/{id}/status`、`/api/events/{id}/notes` | 管理员处置事件、保存备注 |
 | GET | `/api/health/students`、`/api/health/records` | 查询名单和测温记录 |
 | POST | `/api/health/import`、`/api/health/records` | 管理员导入名单、登记体温 |
@@ -181,11 +201,12 @@ python scripts/run_dashboard.py
 ## 9. 测试与验证
 
 ```bat
+python -m pip install -r tests/requirements.txt
 python -m unittest discover -s tests -v
 python scripts\verify_repository.py
 ```
 
-当前自动化测试覆盖网页路由、RDK JSON 代理、消息格式校验、本机访问限制、设备消息顺序、重复消息、缓存上限和转发异常隔离。浏览器检查覆盖页面渲染和设备筛选。详细结果及软件限制见 [验证记录](docs/VALIDATION.md)。
+当前自动化测试覆盖登录权限、RDK 数据代理、事件抓拍、对话删除、测温及日报接口、消息写入与转发。浏览器检查覆盖页面渲染和设备筛选。详细结果及软件限制见 [验证记录](docs/VALIDATION.md)。
 
 ## 10. 团队开发与开源说明
 

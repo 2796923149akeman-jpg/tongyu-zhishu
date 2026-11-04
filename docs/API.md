@@ -195,6 +195,10 @@ offset=0
 
 返回单个事件，响应为 `{"ok": true, "event": {...}}`。
 
+### `GET /api/events/{id}/snapshot`
+
+返回事件抓拍的 JPEG，需要事件查看权限和视频权限。事件列表和详情的 `has_snapshot` 表示当前账号有可查看的抓拍。监控服务记录 RDK 摔倒或斗殴告警时读取一次 `/snapshot`，图片存放在事件数据文件旁的 `event_snapshots` 目录。读取失败仍保存事件。旧事件或没有抓拍的事件返回 `404`。
+
 ### `POST /api/events`
 
 写入一条事件。RDK `/alert_status` 的 fall/fight 会在监控代理轮询时自动入库；其他设备采集程序或人工登记入口调用：
@@ -438,6 +442,10 @@ offset=0
 服务保留最近 200 条消息，并原子写入 `dashboard/dialogue_messages.json`。该运行时文件已由 Git 忽略；服务重启后会重新加载其中的记录。可通过环境变量 `DIALOGUE_DATA_FILE` 修改保存位置。
 
 `emotion.source` 可能为模型结合词库、纯词库或模型失败后的词库兜底。`attention` 取值为 `none`、`watch`、`urgent`，只表示文本线索的查看优先级。
+
+### `POST /api/dialogue/delete`
+
+仅管理员可用，需通过来源及 CSRF 检查。传入 `{"ids":["消息ID"]}` 删除指定消息。页面使用当前会话完整分组中的消息 ID。传入 `{"scope":"all","confirm":true}` 清空对话和摘要。成功返回 `{"ok":true,"deleted":1}`，其中 `deleted` 是实际删除的消息数。
 
 ### `GET /api/dialogue/conversations`
 

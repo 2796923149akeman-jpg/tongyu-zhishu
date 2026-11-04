@@ -1072,6 +1072,14 @@
                 <p class="detail-description" id="detailDescription">--</p>
               </section>
 
+              <section class="detail-block" id="snapshotBlock" hidden>
+                <h3>告警抓拍</h3>
+                <p id="snapshotHint">暂无抓拍</p>
+                <a id="snapshotLink" target="_blank" rel="noopener" hidden aria-label="打开告警抓拍原图">
+                  <img id="snapshotImage" alt="告警抓拍画面" style="display:block;max-width:100%;max-height:340px;object-fit:contain;border-radius:8px">
+                </a>
+              </section>
+
               <section class="detail-block">
                 <div class="block-head">
                   <h4>处理备注</h4>
@@ -1543,6 +1551,7 @@
           detail: item.detail || item.description || "暂无补充描述。",
           device_id: item.device_id || "",
           confidence: Number.isFinite(item.confidence) ? item.confidence : null,
+          hasSnapshot: item.has_snapshot === true,
           handled_at: item.handled_at || null,
           handled_by: item.handled_by || item.handler || "",
           note: item.note || "",
@@ -1700,8 +1709,38 @@
         setText(els.noteCount, `${els.noteInput.value.length} / 200`);
       }
 
+      const snapshotBlock = $("#snapshotBlock");
+      const snapshotHint = $("#snapshotHint");
+      const snapshotLink = $("#snapshotLink");
+      const snapshotImage = $("#snapshotImage");
+      snapshotImage.addEventListener("error", () => {
+        snapshotLink.hidden = true;
+        setText(snapshotHint, "抓拍暂时无法读取。");
+      });
+
+      function renderSnapshot(event) {
+        const eligible = state.mode === "live" && event?.source === "rdk" && ["fall", "fight"].includes(event.type);
+        snapshotBlock.hidden = !eligible;
+        const url = eligible && event.hasSnapshot && window.TongyuBootstrap.permissions.video
+          ? `/api/events/${encodeURIComponent(event.id)}/snapshot` : "";
+        if (!url) {
+          snapshotImage.removeAttribute("src");
+          snapshotLink.removeAttribute("href");
+          snapshotLink.hidden = true;
+          setText(snapshotHint, window.TongyuBootstrap.permissions.video
+            ? "该事件暂无可回看的抓拍。" : "管理员尚未开放摄像头画面。");
+          return;
+        }
+        if (snapshotImage.getAttribute("src") === url) return;
+        setText(snapshotHint, "告警记录时读取的现场画面，点击查看原图。");
+        snapshotLink.href = url;
+        snapshotImage.src = url;
+        snapshotLink.hidden = false;
+      }
+
       function renderDetail() {
         const event = filteredEvents().find((item) => item.id === state.selectedId) || null;
+        renderSnapshot(event);
         if (!event) {
           els.detailEmpty.hidden = false;
           els.detailContent.hidden = true;
@@ -1968,7 +2007,7 @@
               { status: nextStatus, note, handled_by: "值班老师" }
             );
             if (!data.event) throw new Error("接口没有返回事件");
-            replaceEvent(normalizeApiEvent(data.event));
+            replaceEvent(normalizeApiEvent({has_snapshot: event.hasSnapshot, ...data.event}));
             setMode("live", `事件 ${event.id} 已更新为“${statusMeta(nextStatus).label}”。`);
             renderAll();
             showToast(`已${labels[nextStatus]}，并写入服务器。`);
@@ -2011,7 +2050,7 @@
               { note, author: "值班老师" }
             );
             if (!data.event) throw new Error("接口没有返回事件");
-            replaceEvent(normalizeApiEvent(data.event));
+            replaceEvent(normalizeApiEvent({has_snapshot: event.hasSnapshot, ...data.event}));
             setMode("live", `事件 ${event.id} 的备注已保存。`);
             renderAll();
             showToast("备注已保存到服务器。");

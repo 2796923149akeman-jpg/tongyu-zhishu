@@ -173,6 +173,7 @@
       <div class="top-actions">
         <button class="btn" id="settingsButton" type="button">界面设置</button>
         <button class="btn btn-primary" id="analysisButton" type="button">模型与情绪设置</button>
+        <button class="btn" id="clearDialogues" type="button" hidden disabled>清空全部对话</button>
       </div>
     </header>
     <section class="workspace" aria-label="对话记录与情绪分析">
@@ -190,12 +191,13 @@
       <section class="conversation-main" aria-label="当前对话">
         <div class="main-head">
           <div class="current-summary"><strong id="currentTitle">对话记录</strong><div class="subtitle" id="resultSummary">正在读取记录</div></div>
+          <button class="btn" id="deleteConversation" type="button" hidden disabled>删除当前会话</button>
           <div class="connection" id="connection" role="status"><span class="dot"></span><span>正在连接</span></div>
         </div>
         <section class="message-list" id="messageList" aria-live="polite" aria-label="对话消息">
           <div class="empty" id="empty"><div><strong>暂无对话记录</strong><span>设备产生语音对话后，记录会显示在这里。</span></div></div>
         </section>
-        <footer class="main-foot"><span id="lastUpdated">尚未更新</span><span id="messageStats">最多保留 200 条记录</span></footer>
+        <footer class="main-foot"><span id="lastUpdated">尚未更新</span><span id="messageStats">最多保留 200 条记录</span><span id="deleteState" role="status"></span></footer>
       </section>
     </section>
     <footer class="page-foot"><span>情绪标签用于辅助回顾，请结合现场情况核实。</span><span>展示内容由管理员设置；模型设置仅限管理员</span></footer>
@@ -259,6 +261,17 @@
     const emotionIcons = {happy: '●', sad: '●', angry: '●', scared: '●', anxious: '●', disgusted: '●', surprised: '●', neutral: '○'};
     const sourceNames = {'model+lexicon': '模型+词库', lexicon: '本地词库', 'lexicon-fallback': '词库兜底', 'lexicon-no-model': '无模型·词库'};
     let records = [], conversations = [], config = {...defaults}, analysisConfig = {}, dialogueModel = {}, selectedSession = '', pollTimer = null, renderedSignature = '';
+    const canManageRecords = window.TongyuBootstrap.user?.role === 'admin';
+    const deleteButton = $('deleteConversation');
+    const clearButton = $('clearDialogues');
+    deleteButton.hidden = clearButton.hidden = !canManageRecords;
+    let deleting = false;
+    let pollRevision = 0;
+
+    function updateDeleteButtons() {
+      deleteButton.disabled = deleting || !conversations.some(item => item.key === selectedSession);
+      clearButton.disabled = deleting || !records.length;
+    }
 
     function formatTime(value, withDate = false) {
       const time = new Date(value);
@@ -360,6 +373,7 @@
       elements.attentionTotal.textContent = `${attentionCount} 条需留意`;
     }
     function render(force = false) {
+      updateDeleteButtons();
       const shown = visibleRecords();
       const current = conversations.find(item => item.key === selectedSession);
       const signature = JSON.stringify([shown, current?.title, records.length, conversations.length, config, selectedSession, elements.device.value, elements.search.value]);
@@ -422,15 +436,47 @@
     async function loadDialogueModel() { const data = await requestJson('/api/dialogue/model'); applyDialogueModel(data.model); }
     async function poll() {
       clearTimeout(pollTimer);
+      const revision = ++pollRevision;
       try {
         const [messageData, conversationData] = await Promise.all([requestJson('/api/dialogue/messages'), requestJson('/api/dialogue/conversations')]);
+        if (revision !== pollRevision) return;
         records = Array.isArray(messageData.messages) ? messageData.messages : [];
         buildConversations(Array.isArray(conversationData.conversations) ? conversationData.conversations : [], messageData.raw_visible !== false);
         replaceOptions(elements.device, '全部设备', [...new Set(records.map(item => item.device_id))]); renderConversations(); render();
         elements.connection.className = 'connection ok'; elements.connection.lastElementChild.textContent = '分析服务已连接'; elements.updated.textContent = `更新于 ${formatTime(new Date().toISOString())}`;
-      } catch (_) { elements.connection.className = 'connection error'; elements.connection.lastElementChild.textContent = '记录读取失败'; }
-      finally { pollTimer = setTimeout(poll, config.refresh_seconds * 1000); }
+      } catch (_) {
+        if (revision === pollRevision) {
+          elements.connection.className = 'connection error';
+          elements.connection.lastElementChild.textContent = '记录读取失败';
+        }
+      } finally {
+        if (revision === pollRevision) pollTimer = setTimeout(poll, config.refresh_seconds * 1000);
+      }
     }
+    async function deleteRecords(payload, confirmation) {
+      if (!canManageRecords || deleting || !window.confirm(confirmation)) return;
+      deleting = true;
+      updateDeleteButtons();
+      try {
+        const data = await requestJson('/api/dialogue/delete', {
+          method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload)
+        });
+        $('deleteState').textContent = `已删除 ${data.deleted} 条对话记录`;
+        await poll();
+      } catch (error) {
+        $('deleteState').textContent = `删除失败：${error.message}`;
+      } finally {
+        deleting = false;
+        updateDeleteButtons();
+      }
+    }
+    deleteButton.addEventListener('click', () => {
+      const current = conversations.find(item => item.key === selectedSession);
+      if (current) deleteRecords({ids: current.messages.map(item => item.id)},
+        `确定删除当前会话的 ${current.messages.length} 条记录？删除后无法恢复。`);
+    });
+    clearButton.addEventListener('click', () => deleteRecords({scope: 'all', confirm: true},
+      '确定清空服务器上的全部对话记录和摘要？清空后无法恢复。'));
     for (const element of [elements.search, elements.device]) element.addEventListener(element === elements.search ? 'input' : 'change', () => { renderConversations(); render(true); });
     $('settingsButton').addEventListener('click', () => { $('saveState').textContent = ''; elements.settingsDialog.showModal(); });
     for (const id of ['closeSettings', 'cancelSettings']) $(id).addEventListener('click', () => elements.settingsDialog.close());

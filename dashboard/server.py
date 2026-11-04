@@ -8,17 +8,20 @@ STM32 传感器数据转发到同一个简易网页，并提供 ESP32 对话回�
 from __future__ import annotations
 
 import json
+import hashlib
 import hmac
 import os
 import queue
 import re
 import tempfile
 import threading
+import time
 import uuid
 from collections import deque
 from datetime import datetime, timedelta, timezone
 import urllib.error
 import urllib.request
+from http.client import HTTPException
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from http.cookies import SimpleCookie, CookieError
 from pathlib import Path
@@ -182,7 +185,15 @@ def atomic_write_json(path: Path, data) -> None:
             json.dump(data, stream, ensure_ascii=False, indent=2)
             stream.flush()
             os.fsync(stream.fileno())
-        os.replace(temporary_name, path)
+        # Windows may briefly deny replacement while another process has the file open.
+        for delay in (0.01, 0.025, 0.05, 0.1, None):
+            try:
+                os.replace(temporary_name, path)
+                break
+            except PermissionError as exc:
+                if delay is None or getattr(exc, "winerror", None) not in (5, 32, 33):
+                    raise
+                time.sleep(delay)
     finally:
         if os.path.exists(temporary_name):
             os.unlink(temporary_name)
@@ -222,6 +233,36 @@ def load_events() -> list[dict]:
 
 def save_events() -> None:
     atomic_write_json(EVENTS_FILE, EVENTS)
+
+
+SNAPSHOT_LIMIT = 2 * 1024 * 1024
+
+
+def event_snapshot_path(event_id: str) -> Path:
+    key = hashlib.sha256(event_id.encode("utf-8")).hexdigest()
+    return EVENTS_FILE.parent / "event_snapshots" / f"{key}.jpg"
+
+
+def capture_event_snapshot(event_id: str) -> None:
+    request = urllib.request.Request(RDK_BASE + "/snapshot", headers={"Accept": "image/jpeg"})
+    with urllib.request.urlopen(request, timeout=1.5) as response:
+        if response.headers.get_content_type() != "image/jpeg":
+            return
+        image = response.read(SNAPSHOT_LIMIT + 1)
+    if len(image) > SNAPSHOT_LIMIT or not image.startswith(b"\xff\xd8") or not image.endswith(b"\xff\xd9"):
+        return
+    path = event_snapshot_path(event_id)
+    with EVENTS_LOCK:
+        if not any(item["id"] == event_id for item in EVENTS):
+            return
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with tempfile.NamedTemporaryFile(dir=path.parent, suffix=".tmp", delete=False) as stream:
+            temporary = Path(stream.name)
+        try:
+            temporary.write_bytes(image)
+            temporary.replace(path)
+        finally:
+            temporary.unlink(missing_ok=True)
 
 
 def reload_events() -> list[dict]:
@@ -335,10 +376,15 @@ def create_event(payload: dict) -> tuple[dict, int]:
                 return {"event": copy_event(duplicate), "duplicate": True}, 200
         if any(item.get("id") == event["id"] for item in EVENTS):
             raise EventConflict("event id already exists")
-        EVENTS.append(event)
-        if len(EVENTS) > EVENTS_LIMIT:
-            del EVENTS[:len(EVENTS) - EVENTS_LIMIT]
-        save_events()
+        updated = [*EVENTS, event]
+        retained = updated[-EVENTS_LIMIT:]
+        atomic_write_json(EVENTS_FILE, retained)
+        EVENTS[:] = retained
+        for removed in updated[:-EVENTS_LIMIT]:
+            try:
+                event_snapshot_path(removed["id"]).unlink(missing_ok=True)
+            except OSError as exc:
+                print(f"[EVENT] snapshot cleanup failed: {type(exc).__name__}")
     return {"event": copy_event(event), "duplicate": False}, 201
 
 
@@ -425,7 +471,7 @@ def record_rdk_alert(data: dict) -> None:
             confidence = None
         title = "检测到疑似摔倒" if alert == "fall" else "检测到疑似斗殴"
         try:
-            create_event({
+            result, _ = create_event({
                 "event_type": alert,
                 "level": "urgent",
                 "source": "rdk",
@@ -442,6 +488,11 @@ def record_rdk_alert(data: dict) -> None:
             print(f"[EVENT] unable to record RDK alert: {exc}")
             return
         CURRENT_RDK_ALERT = alert
+        if data.get("snapshot_available") is not False:
+            try:
+                capture_event_snapshot(result["event"]["id"])
+            except (OSError, ValueError, HTTPException) as exc:
+                print(f"[EVENT] snapshot unavailable: {type(exc).__name__}")
 
 
 def local_today() -> str:
@@ -907,6 +958,33 @@ def save_summaries() -> None:
     atomic_write_json(CONVERSATION_SUMMARIES_FILE, CONVERSATION_SUMMARIES)
 
 
+def delete_dialogue_records(payload: dict) -> int:
+    clear_all = set(payload) == {"scope", "confirm"} and payload["scope"] == "all" and payload["confirm"] is True
+    ids = payload.get("ids")
+    if not clear_all and (
+        set(payload) != {"ids"} or not isinstance(ids, list) or not 1 <= len(ids) <= DIALOGUE_LIMIT
+        or any(not isinstance(value, str) or not 1 <= len(value) <= 64 for value in ids)
+    ):
+        raise ValueError("请选择要删除的会话，或确认清空全部对话。")
+    selected = set() if clear_all else set(ids)
+    with MESSAGES_LOCK, SUMMARIES_LOCK:
+        removed = [item for item in MESSAGES if clear_all or item.get("id") in selected]
+        remaining = [item for item in MESSAGES if not clear_all and item.get("id") not in selected]
+        sessions = {item.get("session_id") for item in removed}
+        summaries = {} if clear_all else {
+            key: value for key, value in CONVERSATION_SUMMARIES.items() if key not in sessions
+        }
+        if summaries != CONVERSATION_SUMMARIES:
+            atomic_write_json(CONVERSATION_SUMMARIES_FILE, summaries)
+            CONVERSATION_SUMMARIES.clear()
+            CONVERSATION_SUMMARIES.update(summaries)
+        if removed:
+            atomic_write_json(DIALOGUE_DATA_FILE, remaining)
+            MESSAGES.clear()
+            MESSAGES.extend(remaining)
+    return len(removed)
+
+
 def enqueue_analysis(kind: str, value: str) -> None:
     if not ANALYSIS_WORKER_STARTED:
         return
@@ -949,9 +1027,11 @@ def analysis_worker() -> None:
                 messages = messages_for_session(value)
                 if messages:
                     result = summarize_conversation(messages, value, config, PROJECT_ROOT)
-                    with SUMMARIES_LOCK:
-                        CONVERSATION_SUMMARIES[value] = result
-                        save_summaries()
+                    with MESSAGES_LOCK, SUMMARIES_LOCK:
+                        current_ids = [item.get("id") for item in MESSAGES if item.get("session_id") == value]
+                        if current_ids == [item.get("id") for item in messages]:
+                            CONVERSATION_SUMMARIES[value] = result
+                            save_summaries()
             elif kind == "rebuild":
                 with MESSAGES_LOCK:
                     snapshot = list(MESSAGES)
@@ -1200,6 +1280,14 @@ class Handler(BaseHTTPRequestHandler):
             if path == '/api/admin/policy':
                 self.send_json(200, {'ok': True, 'policy': AUTH.set_policy(item)})
                 return
+            if path == '/api/dialogue/delete':
+                try:
+                    deleted = delete_dialogue_records(item)
+                except ValueError as exc:
+                    self.send_json(400, {'ok': False, 'error': str(exc)})
+                else:
+                    self.send_json(200, {'ok': True, 'deleted': deleted})
+                return
             if path == '/api/rdk/person-types/settings':
                 try:
                     if set(item) != {'enabled'}:
@@ -1304,8 +1392,10 @@ class Handler(BaseHTTPRequestHandler):
             inserted = False
             with MESSAGES_LOCK:
                 if not any(m['id'] == record['id'] for m in MESSAGES):
-                    MESSAGES.append(record)
-                    save_messages()
+                    updated = [*MESSAGES, record][-DIALOGUE_LIMIT:]
+                    atomic_write_json(DIALOGUE_DATA_FILE, updated)
+                    MESSAGES.clear()
+                    MESSAGES.extend(updated)
                     inserted = True
             if inserted:
                 if record['role'] == 'user':
@@ -1451,14 +1541,33 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/events":
             try:
                 result = query_events(parse_qs(urlparse(self.path).query))
+                can_view = AUTH.permitted(self.current_session(), "video")
+                for event in result["events"]:
+                    event["has_snapshot"] = can_view and event_snapshot_path(event["id"]).is_file()
                 self.send_json(200, {"ok": True, **result})
             except (EventValidationError, ValueError) as exc:
                 self.send_json(400, {"ok": False, "error": "invalid event query", "detail": str(exc)})
+            return
+        snapshot_get = re.fullmatch(r"/api/events/([^/]+)/snapshot", path)
+        if snapshot_get:
+            if not AUTH.permitted(self.current_session(), "video"):
+                self.send_json(403, {"ok": False, "error": "管理员尚未开放摄像头画面"})
+                return
+            try:
+                event = get_event(unquote(snapshot_get.group(1)))
+                image = event_snapshot_path(event["id"]).read_bytes()
+            except (EventNotFound, OSError):
+                self.send_json(404, {"ok": False, "error": "没有可用抓拍"})
+                return
+            self.send_bytes(200, "image/jpeg", image)
             return
         event_get = re.fullmatch(r"/api/events/([^/]+)", path)
         if event_get:
             try:
                 event = get_event(unquote(event_get.group(1)))
+                event["has_snapshot"] = (
+                    AUTH.permitted(self.current_session(), "video") and event_snapshot_path(event["id"]).is_file()
+                )
                 self.send_json(200, {"ok": True, "event": event})
             except EventNotFound:
                 self.send_json(404, {"ok": False, "error": "event not found"})
