@@ -1641,7 +1641,7 @@
           item.append(top);
 
           const meta = el("p", "event-meta",
-            `${fmtTime(event.occurred_at)} · ${classLabel(report, event.class_id)}${event.location ? " · " + event.location : ""} · 来源：行为识别`);
+            `${fmtTime(event.occurred_at)} · ${event.class_name || classLabel(report, event.class_id)}${event.location ? " · " + event.location : ""} · 来源：行为识别`);
           item.append(meta);
 
           const statusRow = el("div", "attention-top");

@@ -713,7 +713,7 @@ def assign_event_participants(event_id: str, payload: dict) -> dict:
             )
         else:
             event["class_id"] = ""
-            event["class_name"] = "多名学生"
+            event["class_name"] = "跨班事件" if len(class_ids) > 1 else ""
         now = now_iso()
         event["participants"] = participants
         event["parent_visible_at"] = now
@@ -1358,16 +1358,24 @@ def build_daily_report(params: dict) -> dict:
         pending += class_counts["pending"]
         recheck += class_counts["recheck"]
 
+    student_map = {item["id"]: item for item in students}
     events = []
     for event in events_snapshot():
         if date_key(event["occurred_at"]) != date:
             continue
-        if class_id and event.get("class_id") != class_id:
-            continue
+        if class_id:
+            event_class = event.get("class_id")
+            if event_class:
+                if event_class != class_id:
+                    continue
+            elif not any(
+                student_map.get(person["student_id"], {}).get("class_id") == class_id
+                for person in event.get("participants", [])
+            ):
+                continue
         events.append(event_for_report(event))
     events.sort(key=lambda item: item["occurred_at"], reverse=True)
 
-    student_map = {item["id"]: item for item in students}
     dialogues = dialogue_attention_items(date, class_id, student_map)
     return {
         "report": {

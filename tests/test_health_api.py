@@ -228,6 +228,25 @@ class HealthApiTests(unittest.TestCase):
         status, invalid = self.request("/api/reports/daily?date=not-a-date")
         self.assertEqual(status, 400)
 
+    def test_cross_class_incident_appears_once_in_each_relevant_report(self):
+        self.import_students()
+        status, result = self.request("/api/events", {
+            "event_type": "fight", "summary": "跨班斗殴",
+        }, "POST")
+        self.assertEqual(status, 201)
+        event_id = result["event"]["id"]
+        status, _ = self.request(f"/api/events/{event_id}/participants", {
+            "student_ids": ["S-0201", "S-1101"],
+        }, "POST")
+        self.assertEqual(status, 200)
+
+        for class_id in ("", "C-02", "C-11", "C-21"):
+            with self.subTest(class_id=class_id):
+                status, payload = self.request(f"/api/reports/daily?date={self.today}&class_id={class_id}")
+                self.assertEqual(status, 200)
+                ids = [event["id"] for event in payload["report"]["events"]]
+                self.assertEqual(ids, [] if class_id == "C-21" else [event_id])
+
     def test_infrared_device_reading_is_ingested_deduplicated_and_published(self):
         self.import_students()
         measured_at = datetime.now(timezone(timedelta(hours=8))).isoformat(timespec="seconds")
