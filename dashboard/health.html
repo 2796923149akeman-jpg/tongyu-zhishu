@@ -131,30 +131,6 @@
           </article>
         </section>
 
-        <section class="card realtime-card" id="infraredRealtime" data-tone="idle" aria-labelledby="infraredRealtimeTitle">
-          <div class="card-head">
-            <div class="card-title">
-              <h2 id="infraredRealtimeTitle">红外设备</h2>
-              <p>每 2 秒更新 · 超过 10 秒未采样将标为过期</p>
-            </div>
-            <span class="chip" id="irChip" data-tone="idle">等待数据</span>
-          </div>
-          <div class="realtime-grid">
-            <div class="realtime-reading" aria-live="polite">
-              <span class="realtime-label">当前目标温度</span>
-              <strong><span id="irTemperature">--</span><small>℃</small></strong>
-              <span class="realtime-age" id="irAge">等待第一帧红外数据</span>
-            </div>
-            <dl class="realtime-facts">
-              <div><dt>关联学生</dt><dd id="irStudent">未关联</dd></div>
-              <div><dt>环境温度</dt><dd id="irAmbient">--</dd></div>
-              <div><dt>采集时间</dt><dd id="irMeasuredAt">--</dd></div>
-              <div><dt>设备</dt><dd id="irDevice">--</dd></div>
-            </dl>
-          </div>
-          <p class="realtime-message" id="irMessage" role="status">正在连接实时红外接口。</p>
-        </section>
-
         <div class="content-grid">
           <section class="card entry-card" aria-labelledby="entryTitle">
             <div class="card-head">

@@ -588,15 +588,6 @@
       importClose: $("#importClose"),
       importCancel: $("#importCancel"),
       importDone: $("#importDone"),
-      infraredRealtime: $("#infraredRealtime"),
-      irChip: $("#irChip"),
-      irTemperature: $("#irTemperature"),
-      irAge: $("#irAge"),
-      irStudent: $("#irStudent"),
-      irAmbient: $("#irAmbient"),
-      irMeasuredAt: $("#irMeasuredAt"),
-      irDevice: $("#irDevice"),
-      irMessage: $("#irMessage"),
       refreshBtn: $("#refreshBtn"),
       demoRetry: $("#demoRetry")
     };
@@ -1203,111 +1194,37 @@
 
     const canRecord = window.TongyuBootstrap?.user?.role === "admin";
 
-    function realtimePresentation(payload) {
-      const reading = payload?.reading;
-      const reason = payload?.ingest?.reason || "";
-      if (!reading) {
-        return {
-          tone: "bad",
-          chip: payload && payload.source_available === false ? "连接中断" : "等待数据",
-          age: payload?.source_available === false ? "无法读取 RDK 红外接口" : "等待第一帧红外数据",
-          message: payload?.sensor_error
-            ? `实时红外接口不可用：${String(payload.sensor_error).slice(0, 120)}`
-            : "正在连接实时红外接口。",
-        };
-      }
-      const stateMeta = {
-        ready: { tone: "ok", chip: reason === "stored" ? "已自动入库" : "实时正常" },
-        unassigned: { tone: "brand", chip: "待关联学生" },
-        unknown_student: { tone: "warn", chip: "学生未匹配" },
-        stale: { tone: "bad", chip: "数据已过期" },
-        timestamp_unknown: { tone: "warn", chip: "缺少采集时间" },
-        timestamp_future: { tone: "warn", chip: "设备时钟异常" },
-        offline: { tone: "bad", chip: "设备离线" },
-        invalid_temperature: { tone: "warn", chip: "温度不可用" },
-        unavailable: { tone: "idle", chip: "无测温值" },
-        unstable: { tone: "warn", chip: "读数波动" }
-      };
-      let meta = stateMeta[reading.status] || { tone: "warn", chip: "状态未知" };
-      if (reason === "unknown_student") meta = stateMeta.unknown_student;
-      const age = Number.isFinite(reading.age_seconds)
-        ? `${reading.age_seconds} 秒前采集`
-        : "采集时间未知";
-      const messages = {
-        stored: "新红外读数已自动写入该学生的今日测温记录。",
-        duplicate: "该帧已经写入，重复上报不会产生重复记录。",
-        unassigned: "实时温度已同步到红外登记栏，请选择对应学生后保存。",
-        unknown_student: `学生 ${reading.student_id || "--"} 不在当前名单中，请检查设备映射。`,
-        stale: `读数超过 ${reading.stale_after_seconds || 10} 秒未更新，不会自动入库。`,
-        timestamp_unknown: "设备未提供采集时间，读数仅供查看，不能自动入库。",
-        timestamp_future: "采集时间超前，请核对 RDK 与服务电脑的时钟。",
-        ready: "读数已关联学生，请在登记栏选择该学生并确认保存。",
-        offline: "红外设备报告未连接。",
-        invalid_temperature: "目标温度超出 35.0–42.0 ℃，请对准学生重新测量。",
-        unavailable: "暂未收到目标温度。",
-        unstable: "设备报告读数仍在波动，等待稳定后再自动记录。"
-      };
-      let message = messages[reason] || messages[reading.status] || "等待下一次红外采样。";
-      if (payload?.source_available === false) {
-        message += " 暂时无法读取 RDK 红外接口。";
-        if (reading.status !== "ready") meta = { tone: "bad", chip: "连接中断" };
-      }
-      return { tone: meta.tone, chip: meta.chip, age, message };
-    }
-
-    function renderInfraredRealtime(payload = state.realtime) {
-      if (!els.infraredRealtime) return;
-      const reading = payload?.reading || null;
-      const view = realtimePresentation(payload);
-      els.infraredRealtime.dataset.tone = view.tone;
-      els.irChip.dataset.tone = view.tone;
-      setText(els.irChip, view.chip);
-      setText(els.irTemperature, Number.isFinite(reading?.temperature_c)
-        ? tempText(reading.temperature_c)
-        : "--");
-      setText(els.irAge, view.age);
-      setText(els.irAmbient, Number.isFinite(reading?.ambient_c)
-        ? `${tempText(reading.ambient_c)} ℃`
-        : "--");
-      setText(els.irMeasuredAt, reading?.measured_at ? fmtShort(reading.measured_at) : "--");
-      setText(els.irDevice, reading?.device_id || "--");
-      let studentText = "未关联";
-      if (reading?.student_id) {
-        const student = studentById(reading.student_id);
-        studentText = student
-          ? `${student.name} · ${student.id}`
-          : `未知学生 · ${reading.student_id}`;
-      }
-      setText(els.irStudent, studentText);
-      setText(els.irMessage, view.message);
-      renderEntryTemperature();
-    }
-
     let infraredReadAt = null;
-    function canUseInfraredReading() {
-      const reading = state.realtime?.reading;
-      return canRecord && app.mode === "live" && infraredReadAt !== null && reading?.fresh === true
-        && reading.connected === true && Number.isFinite(reading.temperature_c) && !state.realtime?.ingest?.duplicate
-        && (!reading.student_id || Boolean(studentById(reading.student_id)))
-        && reading.age_seconds + (performance.now() - infraredReadAt) / 1000 < reading.stale_after_seconds;
-    }
 
     function usesLiveInfrared() {
       return app.mode !== "demo" && els.entrySource.value === "infrared";
     }
 
     function infraredEntryIssue() {
-      const reading = state.realtime?.reading;
-      if (!canUseInfraredReading()) {
-        if (!canRecord) return "请使用管理员账号登记。";
-        if (infraredReadAt === null && state.realtime?.source_available === false) {
-          return "实时读数获取失败，请等待设备恢复后保存。";
-        }
-        if (reading?.fresh && infraredReadAt !== null && !state.realtime?.ingest?.duplicate
-            && reading.age_seconds + (performance.now() - infraredReadAt) / 1000 >= reading.stale_after_seconds) {
-          return "实时读数已过期，请等待下一次采样。";
-        }
-        return realtimePresentation(state.realtime).message;
+      if (!canRecord) return "请使用管理员账号登记。";
+      const { reading, ingest, source_available: sourceAvailable } = state.realtime || {};
+      if (infraredReadAt === null || !reading) {
+        return sourceAvailable === false
+          ? "暂时无法读取红外设备，请等待连接恢复。"
+          : "正在等待红外读数。";
+      }
+      if (reading.connected !== true) return "红外设备未连接。";
+      if (!Number.isFinite(reading.temperature_c)) return "暂未收到目标温度。";
+      if (reading.status === "stale" ||
+          reading.age_seconds + (performance.now() - infraredReadAt) / 1000 >= reading.stale_after_seconds) {
+        return "实时读数已过期，请等待下一次采样。";
+      }
+      if (!reading.fresh) {
+        const messages = {
+          timestamp_unknown: "设备未提供采集时间，请等待有效读数。",
+          timestamp_future: "采集时间超前，请核对设备时钟。",
+          unstable: "设备报告读数仍在波动，请等待稳定。"
+        };
+        return messages[reading.status] || "正在等待红外读数。";
+      }
+      if (ingest?.duplicate) return "该条读数已自动登记，请等待下一次采样。";
+      if (reading.student_id && !studentById(reading.student_id)) {
+        return "读数关联的学生不在当前名单中。";
       }
       if (reading.student_id && els.entryStudent.value && reading.student_id !== els.entryStudent.value) {
         return "当前红外读数属于另一名学生，请核对后再保存。";
@@ -1331,7 +1248,7 @@
       els.quickTemps.hidden = infrared;
       els.entryTempHint.hidden = !infrared;
       setText(els.entryTempLabel, infrared ? "实时目标温度（℃）" : "体温（℃）");
-      setText(els.entryTempHint, issue || "自动更新，确认读数和学生后保存。");
+      setText(els.entryTempHint, issue || "设备读数自动更新，确认后可直接保存。");
       els.entrySubmit.disabled = state.busy || !["live", "demo"].includes(app.mode) || Boolean(issue);
     }
 
@@ -1355,7 +1272,7 @@
 
     async function pollInfraredRealtime() {
       if (state.realtimeBusy || app.mode !== "live" || document.hidden) {
-        renderInfraredRealtime();
+        renderEntryTemperature();
         return;
       }
       state.realtimeBusy = true;
@@ -1368,13 +1285,12 @@
         infraredReadAt = null;
         state.realtime = {
           source_available: false,
-          sensor_error: describeError(error),
           reading: state.realtime?.reading || null,
           ingest: state.realtime?.ingest || null,
         };
       } finally {
         state.realtimeBusy = false;
-        renderInfraredRealtime();
+        renderEntryTemperature();
       }
     }
 
@@ -1602,7 +1518,7 @@
         await pollInfraredRealtime();
         app.realtimeTimer = setInterval(() => pollInfraredRealtime(), REALTIME_MS);
       } else {
-        renderInfraredRealtime();
+        renderEntryTemperature();
       }
     }
 
