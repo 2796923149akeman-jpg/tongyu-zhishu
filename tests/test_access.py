@@ -171,6 +171,18 @@ class AccessTests(unittest.TestCase):
         reloaded = self.web.AccessStore(self.web.AUTH.path)
         self.assertEqual(reloaded.users['parent-one']['student_ids'], ['S-0201', 'S-0202'])
 
+    def test_admin_page_contains_parent_provisioning_controls(self):
+        page = (ROOT / "dashboard" / "admin.html").read_text(encoding="utf-8")
+        for element_id in (
+            "parentForm",
+            "parentUsername",
+            "parentPassword",
+            "parentStudents",
+            "parentSave",
+        ):
+            self.assertIn(f'id="{element_id}"', page)
+        self.assertIn("家长账号", page)
+
     def test_admin_initialization_is_never_available_to_browser(self):
         self.web.AUTH = self.web.AccessStore(Path(self.temp.name) / 'empty.json', secure=False)
         self.request('/api/auth/session')

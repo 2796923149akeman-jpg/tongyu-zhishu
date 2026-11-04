@@ -420,12 +420,21 @@ def family_event_view(event: dict, allowed_student_ids: set[str] | None) -> dict
         "event_type": event["event_type"],
         "level": event["level"],
         "occurred_at": event["occurred_at"],
-        "summary": event["summary"],
-        "detail": event["detail"],
+        "summary": (
+            "系统检测到疑似摔倒"
+            if event["event_type"] == "fall"
+            else "系统检测到疑似斗殴"
+            if event["event_type"] == "fight"
+            else event["summary"]
+        ),
+        "detail": (
+            "系统检测到疑似摔倒，老师已收到告警并正在核实处置。"
+            if event["event_type"] == "fall"
+            else "系统检测到疑似肢体冲突，老师已收到告警并正在核实处置。"
+        ),
         "location": event.get("location") or "",
         "class_name": event.get("class_name") or "",
         "status": event["status"],
-        "note": event.get("note") or "",
         "handled_at": event.get("handled_at"),
         "participants": participants,
         "parent_visible_at": event["parent_visible_at"],

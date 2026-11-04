@@ -202,6 +202,7 @@
       const toastNode = $("#toast");
       let toastTimer = null;
       let loading = false;
+      let signature = "";
 
       function setText(node, value) {
         const next = String(value ?? "");
@@ -260,12 +261,6 @@
         description.className = "description";
         description.textContent = event.detail || "老师已收到该告警，正在处理。";
         body.append(head, meta, people, description);
-        if (event.note) {
-          const note = document.createElement("p");
-          note.className = "note";
-          note.textContent = `老师说明：${event.note}`;
-          body.append(note);
-        }
         article.append(body);
 
         const evidence = document.createElement("div");
@@ -305,7 +300,11 @@
           const data = await response.json();
           if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
           const events = Array.isArray(data.events) ? data.events : [];
-          list.replaceChildren(...events.map(eventCard));
+          const nextSignature = JSON.stringify(events);
+          if (nextSignature !== signature) {
+            signature = nextSignature;
+            list.replaceChildren(...events.map(eventCard));
+          }
           empty.hidden = events.length > 0;
           chip.dataset.tone = "ok";
           setText(chip, `已同步 ${events.length} 条`);

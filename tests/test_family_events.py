@@ -120,6 +120,8 @@ class FamilyEventApiTests(unittest.TestCase):
             "status": "pending",
             "occurred_at": "2026-11-04T10:00:00+08:00",
             "summary": f"{event_type}-{student_name}",
+            "detail": "内部记录：张小明 王小明，家长不应看到自由文本姓名",
+            "note": "内部老师备注，家长不应看到",
             "dedupe_key": dedupe,
             "participants": participants,
             "parent_visible_at": "2026-11-04T10:01:00+08:00",
@@ -171,6 +173,8 @@ class FamilyEventApiTests(unittest.TestCase):
             [person["student_name"] for person in fight["participants"]],
             ["王小明"],
         )
+        self.assertNotIn("内部记录", json.dumps(fight, ensure_ascii=False))
+        self.assertNotIn("内部老师备注", json.dumps(fight, ensure_ascii=False))
 
     def test_parent_cannot_read_another_family_or_general_events(self):
         self.assertEqual(
