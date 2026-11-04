@@ -592,6 +592,23 @@ offset=0
 
 以上模型和分析设置接口仅限管理员同源访问，写操作需 CSRF。
 
+## 家长账号管理
+
+管理员通过 `GET /api/admin/parents` 查看家长账号及学生绑定，通过
+`POST /api/admin/parents` 创建账号或更新绑定。创建新账号时必须提供密码；
+已有家长账号只更新 `student_ids` 时可以不提供密码。
+
+```json
+{
+  "username": "parent-one",
+  "password": "至少六位密码",
+  "student_ids": ["S-0201", "S-0202"]
+}
+```
+
+家长角色不能访问全园监控、异常事件总表、对话、测温、日报或个人视频。服务端会拒绝
+所有非 `/welcome`、非 `/family-events`、非 `/api/family/*` 路径；不能只依赖前端隐藏。
+
 ## 通用错误
 
 不存在的路径返回 HTTP `404`：

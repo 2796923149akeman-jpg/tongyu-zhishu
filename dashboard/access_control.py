@@ -43,6 +43,22 @@ def password_hash(password, salt):
     return hashlib.scrypt(password.encode("utf-8"), salt=salt, n=16384, r=8, p=1, dklen=32).hex()
 
 
+def student_ids(value):
+    if value is None:
+        return []
+    if not isinstance(value, (list, tuple)):
+        raise ValueError("绑定的学生必须是列表")
+    normalized = []
+    for student_id in value:
+        if not isinstance(student_id, str) or not re.fullmatch(r"[A-Za-z0-9-]{3,20}", student_id.strip()):
+            raise ValueError("学生编号格式不正确")
+        if student_id.strip() not in normalized:
+            normalized.append(student_id.strip())
+    if not 1 <= len(normalized) <= 20:
+        raise ValueError("家长账号必须绑定 1–20 名学生")
+    return normalized
+
+
 class AccessStore:
     idle_seconds = 30 * 60
     lifetime_seconds = 8 * 60 * 60
@@ -83,10 +99,11 @@ class AccessStore:
         with self.lock:
             return any(u["role"] == "admin" for u in self.users.values())
 
-    def create_user(self, username, password, *, role="viewer"):
+    def create_user(self, username, password, *, role="viewer", bound_student_ids=None):
         username, password = credentials(username, password)
-        if role not in ("viewer", "admin"):
+        if role not in ("viewer", "admin", "parent"):
             raise ValueError("Invalid role")
+        bound_student_ids = student_ids(bound_student_ids) if role == "parent" else []
         with self.lock:
             if username.casefold() in self.users:
                 raise ValueError("该用户名不可用，请换一个")
@@ -95,7 +112,8 @@ class AccessStore:
             salt = secrets.token_bytes(16)
             users = copy.deepcopy(self.users)
             users[username.casefold()] = {"username": username, "role": role,
-                                         "salt": salt.hex(), "password_hash": password_hash(password, salt)}
+                                         "salt": salt.hex(), "password_hash": password_hash(password, salt),
+                                         "student_ids": bound_student_ids}
             self._save(users, self.policy)
             self.users = users
 
@@ -115,7 +133,12 @@ class AccessStore:
             return None
         with self.lock:
             user = self.users.get(session.get("username"))
-            return {k: user[k] for k in ("username", "role")} if user else None
+            if not user:
+                return None
+            result = {k: user[k] for k in ("username", "role")}
+            if user["role"] == "parent":
+                result["student_ids"] = list(user.get("student_ids", []))
+            return result
 
     def permitted(self, session, key):
         user = self.public_user(session)
@@ -123,8 +146,37 @@ class AccessStore:
             return False
         if user["role"] == "admin":
             return True
+        if user["role"] == "parent":
+            return False
         with self.lock:
             return bool(self.policy["modules"].get(key, self.policy.get(key, False)))
+
+    def list_parents(self):
+        with self.lock:
+            return sorted(
+                [
+                    {
+                        "username": user["username"],
+                        "student_ids": list(user.get("student_ids", [])),
+                    }
+                    for user in self.users.values()
+                    if user.get("role") == "parent"
+                ],
+                key=lambda item: item["username"].casefold(),
+            )
+
+    def update_parent_bindings(self, username, bound):
+        normalized = student_ids(bound)
+        with self.lock:
+            key = username.strip().casefold()
+            user = self.users.get(key)
+            if not user or user.get("role") != "parent":
+                raise ValueError("家长账号不存在")
+            users = copy.deepcopy(self.users)
+            users[key]["student_ids"] = normalized
+            self._save(users, self.policy)
+            self.users = users
+            return {"username": users[key]["username"], "student_ids": normalized}
 
     def rate_limited(self, key, limit, *, record=False):
         with self.lock:

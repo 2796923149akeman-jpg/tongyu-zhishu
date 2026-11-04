@@ -139,6 +139,14 @@ def route_module(path):
     return None
 
 
+def parent_path_allowed(path: str) -> bool:
+    return (
+        path == "/welcome"
+        or path == "/family-events.html"
+        or path.startswith("/api/family/")
+    )
+
+
 def public_messages(items, raw):
     if raw:
         return items
@@ -760,6 +768,50 @@ def health_students_payload() -> dict:
         "classes": health_classes_payload(),
         "generated_at": now_iso(),
     }
+
+
+def create_or_update_parent(payload: dict) -> dict:
+    if not isinstance(payload, dict):
+        raise ValueError("request must be an object")
+    username = payload.get("username")
+    password = payload.get("password")
+    bound = payload.get("student_ids")
+    if not isinstance(username, str):
+        raise ValueError("username is required")
+    if not isinstance(bound, list):
+        raise ValueError("student_ids must be a list")
+    if any(not isinstance(item, str) for item in bound):
+        raise ValueError("student_ids must contain strings")
+    bound = [item.strip() for item in bound]
+    known = {
+        item["id"]
+        for item in health_student_snapshot()
+        if item.get("active", True)
+    }
+    unknown = [item for item in bound if item not in known]
+    if unknown:
+        raise ValueError(f"unknown student_ids: {', '.join(map(str, unknown))}")
+    existing = next(
+        (
+            item for item in AUTH.list_parents()
+            if item["username"].casefold() == username.strip().casefold()
+        ),
+        None,
+    )
+    if existing:
+        return AUTH.update_parent_bindings(existing["username"], bound)
+    if not isinstance(password, str):
+        raise ValueError("password is required for a new parent account")
+    AUTH.create_user(
+        username,
+        password,
+        role="parent",
+        bound_student_ids=bound,
+    )
+    return next(
+        item for item in AUTH.list_parents()
+        if item["username"].casefold() == username.strip().casefold()
+    )
 
 
 def person_types_payload() -> dict:
@@ -1390,6 +1442,12 @@ class Handler(BaseHTTPRequestHandler):
         policy = AUTH.get_policy() if user else None
         permissions = ({"modules": dict.fromkeys(MODULES, True), "video": True, "dialogue_raw": True}
                        if user and user["role"] == "admin" else policy)
+        if user and user["role"] == "parent":
+            permissions = {
+                "modules": dict.fromkeys(MODULES, False),
+                "video": False,
+                "dialogue_raw": False,
+            }
         bootstrap = json.dumps({"user": user, "policy": policy, "permissions": permissions,
                                 "csrf": session["csrf"] if session else None}, ensure_ascii=True).replace("<", "\\u003c")
         source = (ROOT / filename).read_text(encoding="utf-8")
@@ -1424,6 +1482,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.deny(path, 401, "请先登录")
         if not self.same_origin():
             return self.deny(path, 403, "请求来源不匹配")
+        if user["role"] == "parent" and not parent_path_allowed(path):
+            return self.deny(path, 403, "家长账号只能查看绑定孩子的安全事件")
         if admin and user["role"] != "admin":
             return self.deny(path, 403, "此操作仅限管理员")
         module = route_module(path)
@@ -1546,6 +1606,13 @@ class Handler(BaseHTTPRequestHandler):
                 return
             if path == '/api/admin/policy':
                 self.send_json(200, {'ok': True, 'policy': AUTH.set_policy(item)})
+                return
+            if path == '/api/admin/parents':
+                try:
+                    parent = create_or_update_parent(item)
+                    self.send_json(200, {'ok': True, 'parent': parent})
+                except (ValueError, TypeError) as exc:
+                    self.send_json(400, {'ok': False, 'error': str(exc)})
                 return
             if path == '/api/dialogue/delete':
                 try:
@@ -1823,11 +1890,21 @@ class Handler(BaseHTTPRequestHandler):
                                  'initialized': AUTH.initialized,
                                  'policy': AUTH.get_policy() if AUTH.public_user(session) else None})
             return
-        admin = path in ('/admin', '/admin.html', '/api/admin/policy', '/api/dialogue/model', '/api/analysis/config')
+        admin = path in (
+            '/admin',
+            '/admin.html',
+            '/api/admin/policy',
+            '/api/admin/parents',
+            '/api/dialogue/model',
+            '/api/analysis/config',
+        )
         if not self.require_session(path, admin=admin):
             return
         if path == '/api/admin/policy':
             self.send_json(200, {'policy': AUTH.get_policy()})
+            return
+        if path == '/api/admin/parents':
+            self.send_json(200, {'parents': AUTH.list_parents()})
             return
         if path in PAGE_ROUTES:
             self.serve_html(PAGE_ROUTES[path][0])

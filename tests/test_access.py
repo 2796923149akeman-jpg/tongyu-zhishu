@@ -130,6 +130,47 @@ class AccessTests(unittest.TestCase):
         for path in ('/api/admin/policy', '/api/dialogue/model', '/api/dialogue/config', '/api/analysis/config', '/api/analysis/rebuild', '/api/health/records'):
             self.assertEqual(self.request(path, {})[0], 403)
 
+    def test_admin_provisions_parent_account_with_student_bindings(self):
+        self.login()
+        status, _, _ = self.request(
+            '/api/health/import',
+            {
+                'students': [
+                    {'id': 'S-0201', 'name': '张小明', 'class_id': 'C-02'},
+                    {'id': 'S-0202', 'name': '李小红', 'class_id': 'C-02'},
+                ]
+            },
+        )
+        self.assertEqual(status, 200)
+        status, created, _ = self.request(
+            '/api/admin/parents',
+            {
+                'username': 'parent-one',
+                'password': 'parent-fixture',
+                'student_ids': ['S-0201', 'S-0202'],
+            },
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(created['parent']['student_ids'], ['S-0201', 'S-0202'])
+        status, listing, _ = self.request('/api/admin/parents')
+        self.assertEqual(status, 200)
+        self.assertEqual(listing['parents'][0]['username'], 'parent-one')
+
+        self.login('parent-one', 'parent-fixture')
+        status, session, _ = self.request('/api/auth/session')
+        self.assertEqual(status, 200)
+        self.assertEqual(session['user']['role'], 'parent')
+        self.assertEqual(session['user']['student_ids'], ['S-0201', 'S-0202'])
+        self.assertEqual(self.request('/welcome')[0], 200)
+        self.assertEqual(self.request('/api/events')[0], 403)
+        self.assertEqual(self.request('/health.html')[0], 403)
+        self.assertEqual(self.request('/api/admin/parents')[0], 403)
+
+        saved = self.web.AUTH.path.read_text(encoding='utf-8')
+        self.assertNotIn('parent-fixture', saved)
+        reloaded = self.web.AccessStore(self.web.AUTH.path)
+        self.assertEqual(reloaded.users['parent-one']['student_ids'], ['S-0201', 'S-0202'])
+
     def test_admin_initialization_is_never_available_to_browser(self):
         self.web.AUTH = self.web.AccessStore(Path(self.temp.name) / 'empty.json', secure=False)
         self.request('/api/auth/session')

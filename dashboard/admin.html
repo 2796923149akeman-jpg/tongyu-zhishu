@@ -18,4 +18,19 @@
     </section>
     <div class="access-actions"><button class="access-primary" id="policySave" type="submit">保存展示设置</button><p class="access-feedback" id="policyFeedback" role="status" aria-live="polite"></p></div>
   </form>
+  <section class="access-box">
+    <h2>家长账号</h2>
+    <p class="access-note">家长只能查看绑定孩子已关联的安全事件，不能进入全园监控、测温或对话页面。</p>
+    <form id="parentForm">
+      <label>账号<input id="parentUsername" autocomplete="off" required></label>
+      <label>初始密码<input id="parentPassword" type="password" autocomplete="new-password" placeholder="修改绑定时可留空"></label>
+      <label for="parentStudents">绑定学生</label>
+      <select id="parentStudents" multiple size="7" required></select>
+      <div class="access-actions">
+        <button class="access-primary" id="parentSave" type="submit">创建/更新家长账号</button>
+        <p class="access-feedback" id="parentFeedback" role="status" aria-live="polite"></p>
+      </div>
+    </form>
+    <div id="parentList" aria-live="polite"></div>
+  </section>
 </main></body></html>
