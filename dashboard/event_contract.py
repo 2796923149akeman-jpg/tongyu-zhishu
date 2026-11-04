@@ -50,6 +50,7 @@ ALLOWED_STATUS_TRANSITIONS = {
     "false_alarm": {"pending"},
 }
 MAX_HISTORY = 100
+MAX_PARTICIPANTS = 20
 MAX_EVIDENCE_URL = 500_000
 RASTER_DATA_IMAGE = re.compile(
     r"^data:image/(?:png|jpeg|webp|gif);base64,[A-Za-z0-9+/]+={0,2}$",
@@ -148,6 +149,42 @@ def normalize_evidence_url(value) -> str:
     return value
 
 
+def normalize_participants(value) -> list[dict]:
+    if value in (None, ""):
+        return []
+    if not isinstance(value, list):
+        raise EventValidationError("participants must be a list")
+    if len(value) > MAX_PARTICIPANTS:
+        raise EventValidationError("too many participants")
+    participants = []
+    seen = set()
+    for raw in value:
+        if not isinstance(raw, dict):
+            raise EventValidationError("participant must be an object")
+        student_id = text_value(raw.get("student_id"), "participant.student_id", 20, required=True)
+        if not re.fullmatch(r"[A-Za-z0-9-]{3,20}", student_id):
+            raise EventValidationError("invalid participant.student_id")
+        if student_id in seen:
+            continue
+        seen.add(student_id)
+        participants.append({
+            "student_id": student_id,
+            "student_name": text_value(
+                raw.get("student_name") or raw.get("name"),
+                "participant.student_name",
+                20,
+                required=True,
+            ),
+            "input_name": text_value(
+                raw.get("input_name"),
+                "participant.input_name",
+                20,
+                default="",
+            ),
+        })
+    return participants
+
+
 def normalize_event(payload: dict, event_id: str | None = None) -> dict:
     """把接口、日报或历史文件中的事件规范化为统一结构。"""
     if not isinstance(payload, dict):
@@ -192,6 +229,13 @@ def normalize_event(payload: dict, event_id: str | None = None) -> dict:
     evidence_captured_at = (
         normalize_iso(evidence_captured_at, "evidence_captured_at")
         if evidence_captured_at
+        else None
+    )
+    participants = normalize_participants(payload.get("participants"))
+    parent_visible_at = payload.get("parent_visible_at")
+    parent_visible_at = (
+        normalize_iso(parent_visible_at, "parent_visible_at")
+        if parent_visible_at
         else None
     )
 
@@ -261,6 +305,8 @@ def normalize_event(payload: dict, event_id: str | None = None) -> dict:
         "dedupe_key": dedupe_key,
         "evidence_url": evidence_url,
         "evidence_captured_at": evidence_captured_at,
+        "participants": participants,
+        "parent_visible_at": parent_visible_at,
         "history": history,
         "updated_at": normalize_iso(payload.get("updated_at") or now_iso(), "updated_at"),
     }
@@ -295,4 +341,11 @@ def event_for_report(event: dict) -> dict:
         "handler": event.get("handled_by") or "",
         "handled_at": event.get("handled_at") or "",
         "note": event.get("note") or "",
+        "participants": [
+            {
+                "student_id": item.get("student_id") or "",
+                "student_name": item.get("student_name") or "",
+            }
+            for item in event.get("participants", [])
+        ],
     }

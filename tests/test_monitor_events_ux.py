@@ -31,6 +31,17 @@ class MonitorEventsUxTests(unittest.TestCase):
         self.assertIn("els.eventActions.hidden = !isAdmin", self.events)
         self.assertIn("if (!isAdmin) {", self.events)
 
+    def test_teacher_can_assign_participants_by_name(self):
+        for element_id in (
+            "participantsList",
+            "participantNames",
+            "assignParticipants",
+            "participantFeedback",
+        ):
+            self.assertIn(f'id="{element_id}"', self.events)
+        self.assertIn("/participants", self.events)
+        self.assertIn("姓名@学号", self.events)
+
     def test_monitor_alert_links_to_pending_urgent_events(self):
         self.assertIn(
             'href="/events.html?status=pending&amp;level=urgent&amp;date=all&amp;open=1"',

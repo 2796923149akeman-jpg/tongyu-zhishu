@@ -44,6 +44,7 @@ from event_contract import (
     EVENT_LEVELS,
     EVENT_SOURCES,
     EVENT_STATUSES,
+    MAX_PARTICIPANTS,
     EventConflict,
     EventNotFound,
     EventValidationError,
@@ -120,6 +121,7 @@ PAGE_ROUTES = {
     "/events": ("events.html", "events"), "/events.html": ("events.html", "events"),
     "/chat": ("chat.html", "chat"), "/chat.html": ("chat.html", "chat"),
     "/health.html": ("health.html", "health"), "/reports.html": ("reports.html", "reports"),
+    "/family-events.html": ("family-events.html", None),
     "/admin": ("admin.html", "admin"), "/admin.html": ("admin.html", "admin"),
     "/welcome": ("welcome.html", None),
 }
@@ -137,6 +139,14 @@ def route_module(path):
     if path == "/api/config":
         return "monitor"
     return None
+
+
+def parent_path_allowed(path: str) -> bool:
+    return (
+        path == "/welcome"
+        or path == "/family-events.html"
+        or path.startswith("/api/family/")
+    )
 
 
 def public_messages(items, raw):
@@ -387,6 +397,85 @@ def query_events(params: dict) -> dict:
     }
 
 
+def family_event_view(event: dict, allowed_student_ids: set[str] | None) -> dict | None:
+    if not event.get("parent_visible_at") or event.get("status") == "false_alarm":
+        return None
+    participants = [
+        dict(item)
+        for item in event.get("participants", [])
+        if allowed_student_ids is None or item.get("student_id") in allowed_student_ids
+    ]
+    if allowed_student_ids is not None and not participants:
+        return None
+    snapshot_path = event_snapshot_path(event["id"])
+    snapshot_time = None
+    try:
+        snapshot_time = datetime.fromtimestamp(
+            snapshot_path.stat().st_mtime,
+            timezone.utc,
+        ).isoformat()
+    except OSError:
+        pass
+    return {
+        "id": event["id"],
+        "event_type": event["event_type"],
+        "level": event["level"],
+        "occurred_at": event["occurred_at"],
+        "summary": (
+            "系统检测到疑似摔倒"
+            if event["event_type"] == "fall"
+            else "系统检测到疑似斗殴"
+            if event["event_type"] == "fight"
+            else event["summary"]
+        ),
+        "detail": (
+            "系统检测到疑似摔倒，老师已收到告警并正在核实处置。"
+            if event["event_type"] == "fall"
+            else "系统检测到疑似肢体冲突，老师已收到告警并正在核实处置。"
+        ),
+        "location": event.get("location") or "",
+        "class_name": event.get("class_name") or "",
+        "status": event["status"],
+        "handled_at": event.get("handled_at"),
+        "participants": participants,
+        "parent_visible_at": event["parent_visible_at"],
+        "has_snapshot": snapshot_path.is_file(),
+        "snapshot_captured_at": snapshot_time,
+    }
+
+
+def family_events_payload(session: dict) -> dict:
+    user = AUTH.public_user(session)
+    if not user:
+        raise PermissionError("login required")
+    allowed = None if user["role"] == "admin" else set(user.get("student_ids", []))
+    events = []
+    for event in events_snapshot():
+        visible = family_event_view(event, allowed)
+        if visible is not None:
+            events.append(visible)
+    events.sort(key=lambda item: item["occurred_at"], reverse=True)
+    return {
+        "student_ids": sorted(allowed) if allowed is not None else [],
+        "events": events[:100],
+        "generated_at": now_iso(),
+    }
+
+
+def family_event_detail(session: dict, event_id: str) -> dict:
+    user = AUTH.public_user(session)
+    if not user:
+        raise PermissionError("login required")
+    allowed = None if user["role"] == "admin" else set(user.get("student_ids", []))
+    event = next((item for item in events_snapshot() if item["id"] == event_id), None)
+    if event is None:
+        raise EventNotFound("event not found")
+    visible = family_event_view(event, allowed)
+    if visible is None:
+        raise EventNotFound("event not found")
+    return visible
+
+
 def create_event(payload: dict) -> tuple[dict, int]:
     if not isinstance(payload, dict):
         raise EventValidationError("event must be an object")
@@ -473,6 +562,110 @@ def append_event_note(event_id: str, payload: dict) -> dict:
         event["history"] = event["history"][-100:]
         save_events()
         return {"event": copy_event(event)}
+
+
+def resolve_event_participants(names_value: str) -> list[dict]:
+    names = re.split(r"\s+", names_value.strip()) if isinstance(names_value, str) else []
+    names = [name for name in names if name]
+    if not names:
+        raise EventValidationError("participant names are required")
+    if len(names) > MAX_PARTICIPANTS:
+        raise EventValidationError(f"at most {MAX_PARTICIPANTS} participants are allowed")
+    students = health_student_snapshot()
+    by_id = {student["id"]: student for student in students if student.get("active", True)}
+    by_name = {}
+    for student in by_id.values():
+        by_name.setdefault(student["name"], []).append(student)
+
+    participants = []
+    errors = []
+    seen = set()
+    for value in names:
+        token = value.strip()
+        if "@" in token:
+            name, student_id = (part.strip() for part in token.rsplit("@", 1))
+            student = by_id.get(student_id)
+            if student is None or (name and student["name"] != name):
+                errors.append(f"未找到学生：{token}")
+                continue
+        else:
+            candidates = by_name.get(token, [])
+            if len(candidates) != 1:
+                if candidates:
+                    choices = "、".join(
+                        f"{item['name']}@{item['id']}" for item in candidates
+                    )
+                    errors.append(f"姓名“{token}”对应多名学生，请使用：{choices}")
+                else:
+                    errors.append(f"未找到学生：{token}")
+                continue
+            student = candidates[0]
+        if student["id"] in seen:
+            continue
+        seen.add(student["id"])
+        participants.append({
+            "student_id": student["id"],
+            "student_name": student["name"],
+            "input_name": token,
+        })
+    if errors:
+        raise EventValidationError("；".join(errors))
+    return participants
+
+
+def assign_event_participants(event_id: str, payload: dict) -> dict:
+    if not isinstance(payload, dict):
+        raise EventValidationError("request must be an object")
+    names = payload.get("names")
+    if not isinstance(names, str):
+        raise EventValidationError("names must be a string")
+    participants = resolve_event_participants(names)
+    with EVENTS_LOCK:
+        event = next((item for item in EVENTS if item.get("id") == event_id), None)
+        if event is None:
+            raise EventNotFound("event not found")
+        if event["event_type"] == "fall" and len(participants) != 1:
+            raise EventValidationError("fall event requires exactly one student")
+        if event["event_type"] == "fight" and len(participants) < 2:
+            raise EventValidationError("fight event requires at least two students")
+        if event["event_type"] not in ("fall", "fight") and not participants:
+            raise EventValidationError("event requires at least one student")
+        students = {item["id"]: item for item in health_student_snapshot()}
+        class_ids = {
+            students[item["student_id"]].get("class_id", "")
+            for item in participants
+            if item["student_id"] in students
+        }
+        class_ids.discard("")
+        if len(class_ids) == 1:
+            class_id = next(iter(class_ids))
+            event["class_id"] = class_id
+            event["class_name"] = (
+                students[participants[0]["student_id"]].get("class_name") or class_id
+            )
+        else:
+            event["class_id"] = ""
+            event["class_name"] = "多名学生"
+        now = now_iso()
+        event["participants"] = participants
+        event["parent_visible_at"] = now
+        event["updated_at"] = now
+        labels = "、".join(item["student_name"] for item in participants)
+        handled_by = text_value(
+            payload.get("handled_by"),
+            "handled_by",
+            80,
+            default="值班老师",
+        )
+        event["history"].append({
+            "at": now,
+            "action": "关联事件学生",
+            "by": handled_by,
+            "note": f"已关联：{labels}；家长账号可查看该事件。",
+        })
+        event["history"] = event["history"][-100:]
+        save_events()
+        return {"event": copy_event(event), "changed": True}
 
 
 def record_rdk_alert(data: dict) -> None:
@@ -659,6 +852,50 @@ def health_students_payload() -> dict:
         "classes": health_classes_payload(),
         "generated_at": now_iso(),
     }
+
+
+def create_or_update_parent(payload: dict) -> dict:
+    if not isinstance(payload, dict):
+        raise ValueError("request must be an object")
+    username = payload.get("username")
+    password = payload.get("password")
+    bound = payload.get("student_ids")
+    if not isinstance(username, str):
+        raise ValueError("username is required")
+    if not isinstance(bound, list):
+        raise ValueError("student_ids must be a list")
+    if any(not isinstance(item, str) for item in bound):
+        raise ValueError("student_ids must contain strings")
+    bound = [item.strip() for item in bound]
+    known = {
+        item["id"]
+        for item in health_student_snapshot()
+        if item.get("active", True)
+    }
+    unknown = [item for item in bound if item not in known]
+    if unknown:
+        raise ValueError(f"unknown student_ids: {', '.join(map(str, unknown))}")
+    existing = next(
+        (
+            item for item in AUTH.list_parents()
+            if item["username"].casefold() == username.strip().casefold()
+        ),
+        None,
+    )
+    if existing:
+        return AUTH.update_parent_bindings(existing["username"], bound)
+    if not isinstance(password, str):
+        raise ValueError("password is required for a new parent account")
+    AUTH.create_user(
+        username,
+        password,
+        role="parent",
+        bound_student_ids=bound,
+    )
+    return next(
+        item for item in AUTH.list_parents()
+        if item["username"].casefold() == username.strip().casefold()
+    )
 
 
 def person_types_payload() -> dict:
@@ -1298,6 +1535,12 @@ class Handler(BaseHTTPRequestHandler):
         policy = AUTH.get_policy() if user else None
         permissions = ({"modules": dict.fromkeys(MODULES, True), "video": True, "dialogue_raw": True}
                        if user and user["role"] == "admin" else policy)
+        if user and user["role"] == "parent":
+            permissions = {
+                "modules": dict.fromkeys(MODULES, False),
+                "video": False,
+                "dialogue_raw": False,
+            }
         bootstrap = json.dumps({"user": user, "policy": policy, "permissions": permissions,
                                 "csrf": session["csrf"] if session else None}, ensure_ascii=True).replace("<", "\\u003c")
         source = (ROOT / filename).read_text(encoding="utf-8")
@@ -1332,6 +1575,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.deny(path, 401, "请先登录")
         if not self.same_origin():
             return self.deny(path, 403, "请求来源不匹配")
+        if user["role"] == "parent" and not parent_path_allowed(path):
+            return self.deny(path, 403, "家长账号只能查看绑定孩子的安全事件")
         if admin and user["role"] != "admin":
             return self.deny(path, 403, "此操作仅限管理员")
         module = route_module(path)
@@ -1420,7 +1665,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:
         path = urlparse(self.path).path
-        event_match = re.fullmatch(r"/api/events/([^/]+)/(status|notes)", path)
+        event_match = re.fullmatch(r"/api/events/([^/]+)/(status|notes|participants)", path)
         event_request = path == "/api/events" or event_match is not None
         health_post = path in (
             "/api/health/records",
@@ -1455,6 +1700,13 @@ class Handler(BaseHTTPRequestHandler):
             if path == '/api/admin/policy':
                 self.send_json(200, {'ok': True, 'policy': AUTH.set_policy(item)})
                 return
+            if path == '/api/admin/parents':
+                try:
+                    parent = create_or_update_parent(item)
+                    self.send_json(200, {'ok': True, 'parent': parent})
+                except (ValueError, TypeError) as exc:
+                    self.send_json(400, {'ok': False, 'error': str(exc)})
+                return
             if path == '/api/dialogue/delete':
                 try:
                     deleted = delete_dialogue_records(item)
@@ -1482,8 +1734,10 @@ class Handler(BaseHTTPRequestHandler):
                     action = event_match.group(2)
                     if action == "status":
                         result = change_event_status(event_id, item)
-                    else:
+                    elif action == "notes":
                         result = append_event_note(event_id, item)
+                    else:
+                        result = assign_event_participants(event_id, item)
                     event_with_visible_evidence(result["event"], True)
                     self.send_json(200, {'ok': True, **result})
                     return
@@ -1729,13 +1983,64 @@ class Handler(BaseHTTPRequestHandler):
                                  'initialized': AUTH.initialized,
                                  'policy': AUTH.get_policy() if AUTH.public_user(session) else None})
             return
-        admin = path in ('/admin', '/admin.html', '/api/admin/policy', '/api/dialogue/model', '/api/analysis/config')
+        admin = path in (
+            '/admin',
+            '/admin.html',
+            '/api/admin/policy',
+            '/api/admin/parents',
+            '/api/dialogue/model',
+            '/api/analysis/config',
+        )
         if not self.require_session(path, admin=admin):
+            return
+        if path.startswith("/api/family/"):
+            user = AUTH.public_user(self.current_session())
+            if not user or user["role"] not in ("parent", "admin"):
+                self.send_json(403, {"ok": False, "error": "parent account required"})
+                return
+            if path == "/api/family/events":
+                try:
+                    self.send_json(200, {"ok": True, **family_events_payload(self.current_session())})
+                except PermissionError:
+                    self.send_json(403, {"ok": False, "error": "parent account required"})
+                return
+            snapshot_match = re.fullmatch(r"/api/family/events/([^/]+)/snapshot", path)
+            if snapshot_match:
+                event_id = unquote(snapshot_match.group(1))
+                try:
+                    family_event_detail(self.current_session(), event_id)
+                    image = event_snapshot_path(event_id).read_bytes()
+                    self.send_bytes(200, "image/jpeg", image)
+                except EventNotFound:
+                    self.send_json(404, {"ok": False, "error": "event not found"})
+                except OSError:
+                    self.send_json(404, {"ok": False, "error": "snapshot not found"})
+                return
+            event_match = re.fullmatch(r"/api/family/events/([^/]+)", path)
+            if event_match:
+                try:
+                    event = family_event_detail(
+                        self.current_session(),
+                        unquote(event_match.group(1)),
+                    )
+                    self.send_json(200, {"ok": True, "event": event})
+                except EventNotFound:
+                    self.send_json(404, {"ok": False, "error": "event not found"})
+                return
+            self.send_json(404, {"ok": False, "error": "not found"})
             return
         if path == '/api/admin/policy':
             self.send_json(200, {'policy': AUTH.get_policy()})
             return
+        if path == '/api/admin/parents':
+            self.send_json(200, {'parents': AUTH.list_parents()})
+            return
         if path in PAGE_ROUTES:
+            if path == "/family-events.html":
+                user = AUTH.public_user(self.current_session())
+                if not user or user["role"] not in ("parent", "admin"):
+                    self.deny(path, 403, "家长账号才能查看")
+                    return
             self.serve_html(PAGE_ROUTES[path][0])
             return
         if path.startswith("/evidence/"):

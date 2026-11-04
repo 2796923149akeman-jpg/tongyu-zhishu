@@ -29,8 +29,9 @@
   }
   function safeNext(user) {
     const next = new URLSearchParams(location.search).get('next');
-    const allowed = ['/welcome', '/', '/admin', '/admin.html', '/events', '/chat', ...Object.values(routes).map(r => r[0])];
-    const home = user?.role === 'admin' ? '/admin' : '/welcome';
+    const allowed = ['/welcome', '/family-events.html', '/', '/admin', '/admin.html', '/events', '/chat', ...Object.values(routes).map(r => r[0])];
+    const home = user?.role === 'admin' ? '/admin' : user?.role === 'parent' ? '/family-events.html' : '/welcome';
+    if (user?.role === 'parent') return next === '/family-events.html' ? next : home;
     if (user?.role !== 'admin' && ['/admin', '/admin.html'].includes(next)) return home;
     return allowed.includes(next) ? next : home;
   }
@@ -46,9 +47,11 @@
   }
   function accountBar() {
     const bar = document.createElement('div'); bar.className = 'account-bar';
-    const who = document.createElement('span'); who.textContent = `${state.user.username} · ${state.user.role === 'admin' ? '管理员' : '演示账号'}`; bar.append(who);
+    const roleLabel = state.user.role === 'admin' ? '管理员' : state.user.role === 'parent' ? '家长' : '演示账号';
+    const who = document.createElement('span'); who.textContent = `${state.user.username} · ${roleLabel}`; bar.append(who);
     const home = document.createElement('a'); home.href = '/welcome'; home.textContent = '模块入口'; bar.append(home);
     if (state.user.role === 'admin') { const link = document.createElement('a'); link.href = '/admin'; link.textContent = '展示设置'; bar.append(link); }
+    if (state.user.role === 'parent') { const link = document.createElement('a'); link.href = '/family-events.html'; link.textContent = '孩子异常事件'; bar.append(link); }
     const logout = document.createElement('button'); logout.type = 'button'; logout.textContent = '退出登录';
     logout.addEventListener('click', async () => {
       logout.disabled = true;
@@ -109,6 +112,103 @@
       catch (error) { feedback.dataset.success = 'false'; feedback.textContent = error.message; }
       finally { button.disabled = false; }
     });
+
+    const parentForm = document.getElementById('parentForm');
+    const parentUsername = document.getElementById('parentUsername');
+    const parentPassword = document.getElementById('parentPassword');
+    const parentStudents = document.getElementById('parentStudents');
+    const parentFeedback = document.getElementById('parentFeedback');
+    const parentList = document.getElementById('parentList');
+    let students = [];
+    let parents = [];
+
+    function renderParentStudents(selected = []) {
+      const chosen = new Set(selected);
+      parentStudents.replaceChildren();
+      for (const student of students) {
+        const option = new Option(`${student.name} · ${student.id} · ${student.class_name || student.class_id}`, student.id);
+        option.selected = chosen.has(student.id);
+        parentStudents.append(option);
+      }
+    }
+
+    function renderParents() {
+      parentList.replaceChildren();
+      if (!parents.length) {
+        const empty = document.createElement('p');
+        empty.className = 'access-note';
+        empty.textContent = '尚未创建家长账号。';
+        parentList.append(empty);
+        return;
+      }
+      for (const parent of parents) {
+        const row = document.createElement('div');
+        row.className = 'access-switch';
+        const text = document.createElement('span');
+        text.textContent = `${parent.username} · ${parent.student_ids.join('、')}`;
+        const edit = document.createElement('button');
+        edit.type = 'button';
+        edit.textContent = '修改绑定';
+        edit.addEventListener('click', () => {
+          parentUsername.value = parent.username;
+          parentPassword.value = '';
+          renderParentStudents(parent.student_ids);
+          parentFeedback.textContent = '修改绑定不需要重填密码。';
+        });
+        row.append(text, edit);
+        parentList.append(row);
+      }
+    }
+
+    async function loadParents() {
+      try {
+        const [studentData, parentData] = await Promise.all([
+          json('/api/health/students'),
+          json('/api/admin/parents'),
+        ]);
+        students = Array.isArray(studentData.students) ? studentData.students : [];
+        parents = Array.isArray(parentData.parents) ? parentData.parents : [];
+        renderParentStudents();
+        renderParents();
+      } catch (error) {
+        parentFeedback.dataset.success = 'false';
+        parentFeedback.textContent = `家长账号加载失败：${error.message}`;
+      }
+    }
+
+    parentForm.addEventListener('submit', async event => {
+      event.preventDefault();
+      const button = document.getElementById('parentSave');
+      const studentIds = [...parentStudents.selectedOptions].map(option => option.value);
+      parentFeedback.dataset.success = 'false';
+      if (!studentIds.length) {
+        parentFeedback.textContent = '请至少选择一名学生。';
+        return;
+      }
+      button.disabled = true;
+      parentFeedback.textContent = '正在保存…';
+      try {
+        const payload = {
+          username: parentUsername.value.trim(),
+          student_ids: studentIds,
+        };
+        if (parentPassword.value) payload.password = parentPassword.value;
+        await json('/api/admin/parents', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify(payload),
+        });
+        parentFeedback.dataset.success = 'true';
+        parentFeedback.textContent = '家长账号和绑定已保存。';
+        parentPassword.value = '';
+        await loadParents();
+      } catch (error) {
+        parentFeedback.textContent = `保存失败：${error.message}`;
+      } finally {
+        button.disabled = false;
+      }
+    });
+    loadParents();
   }
   document.addEventListener('DOMContentLoaded', () => {
     const page = document.body.dataset.accessPage;
@@ -120,7 +220,7 @@
         if (new URL(link.href).pathname === path) link.hidden = !state.permissions.modules[key];
       }
     }
-    if (state.user.role !== 'admin') for (const id of ['settingsButton', 'analysisButton', 'openImport', 'importNoteDetail', 'resolveBtn', 'falseAlarmBtn', 'reopenBtn', 'saveNoteBtn', 'noteInput']) { const node = document.getElementById(id); if (node) node.hidden = true; }
+    if (state.user.role !== 'admin') for (const id of ['settingsButton', 'analysisButton', 'openImport', 'importNoteDetail', 'assignParticipants', 'resolveBtn', 'falseAlarmBtn', 'reopenBtn', 'saveNoteBtn', 'noteInput']) { const node = document.getElementById(id); if (node) node.hidden = true; }
     if (state.user.role !== 'admin') {
       const entry = document.querySelector('.entry-card');
       if (entry) entry.hidden = true;

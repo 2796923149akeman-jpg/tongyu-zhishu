@@ -43,9 +43,12 @@ class EventApiTests(unittest.TestCase):
         self.web.EVENTS_FILE = Path(self.temp.name) / "events.json"
         self.web.EVIDENCE_DIR = Path(self.temp.name) / "evidence"
         self.web.EVIDENCE_DIR.mkdir()
+        self.web.HEALTH_STUDENTS_FILE = Path(self.temp.name) / "health_students.json"
+        self.web.HEALTH_RECORDS_FILE = Path(self.temp.name) / "health_records.json"
         self.web.CURRENT_RDK_ALERT = "normal"
         (Path(self.temp.name) / "xiaozhi-server" / "data").mkdir(parents=True)
         self.web.reload_events()
+        self.web.reload_health()
         self.web.Handler.log_message = lambda *args: None
         self.http = self.web.ThreadingHTTPServer(("127.0.0.1", 0), self.web.Handler)
         self.thread = threading.Thread(target=self.http.serve_forever, daemon=True)
@@ -294,6 +297,87 @@ class EventApiTests(unittest.TestCase):
         status, body = self.request("/evidence/not-an-image.txt")
         self.assertEqual(status, 404)
         self.assertFalse(body["ok"])
+
+    def test_teacher_can_assign_single_and_multiple_participants(self):
+        status, imported = self.request(
+            "/api/health/import",
+            {
+                "students": [
+                    {"id": "S-0201", "name": "张小明", "class_id": "C-02"},
+                    {"id": "S-0202", "name": "李小红", "class_id": "C-02"},
+                ]
+            },
+            "POST",
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(imported["imported"], 2, imported)
+
+        fall_payload = self.event_payload()
+        fall_payload["dedupe_key"] = "participant-fall"
+        status, created = self.request("/api/events", fall_payload, "POST")
+        self.assertEqual(status, 201)
+        fall_id = created["event"]["id"]
+        status, assigned = self.request(
+            f"/api/events/{fall_id}/participants",
+            {"names": "张小明", "handled_by": "王老师"},
+            "POST",
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(assigned["event"]["participants"][0]["student_id"], "S-0201")
+        self.assertEqual(assigned["event"]["class_name"], "小二班")
+        self.assertTrue(assigned["event"]["parent_visible_at"])
+
+        fight_payload = self.event_payload()
+        fight_payload["event_type"] = "fight"
+        fight_payload["dedupe_key"] = "participant-fight"
+        status, created = self.request("/api/events", fight_payload, "POST")
+        fight_id = created["event"]["id"]
+        status, invalid = self.request(
+            f"/api/events/{fight_id}/participants",
+            {"names": "张小明"},
+            "POST",
+        )
+        self.assertEqual(status, 400)
+        status, assigned = self.request(
+            f"/api/events/{fight_id}/participants",
+            {"names": "张小明　李小红", "handled_by": "王老师"},
+            "POST",
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(
+            [item["student_id"] for item in assigned["event"]["participants"]],
+            ["S-0201", "S-0202"],
+        )
+
+    def test_duplicate_student_names_require_explicit_id(self):
+        self.request(
+            "/api/health/import",
+            {
+                "students": [
+                    {"id": "S-0201", "name": "张小明", "class_id": "C-02"},
+                    {"id": "S-0202", "name": "张小明", "class_id": "C-02"},
+                ]
+            },
+            "POST",
+        )
+        payload = self.event_payload()
+        payload["dedupe_key"] = "duplicate-name-fall"
+        status, created = self.request("/api/events", payload, "POST")
+        event_id = created["event"]["id"]
+        status, body = self.request(
+            f"/api/events/{event_id}/participants",
+            {"names": "张小明"},
+            "POST",
+        )
+        self.assertEqual(status, 400)
+        self.assertIn("S-0201", body["detail"])
+        status, assigned = self.request(
+            f"/api/events/{event_id}/participants",
+            {"names": "张小明@S-0202"},
+            "POST",
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(assigned["event"]["participants"][0]["student_id"], "S-0202")
         payload = self.event_payload()
         payload["evidence_url"] = "data:image/png;base64,YQ=="
         status, result = self.request("/api/events", payload, "POST")

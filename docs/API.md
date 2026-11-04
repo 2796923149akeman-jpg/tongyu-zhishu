@@ -175,6 +175,14 @@ offset=0
       "dedupe_key": "rdk-fall-20261028-094210",
       "evidence_url": "/evidence/EVT-20261028-ABC123.png",
       "evidence_captured_at": "2026-10-28T09:42:10+08:00",
+      "participants": [
+        {
+          "student_id": "S-0201",
+          "student_name": "张小明",
+          "input_name": "张小明"
+        }
+      ],
+      "parent_visible_at": null,
       "history": [
         {
           "at": "2026-10-28T09:42:10+08:00",
@@ -197,6 +205,10 @@ offset=0
 `data:image/png|jpeg|webp|gif;base64,...` 栅格图片；外部 URL、协议相对路径
 和 SVG data URL 会被拒绝。`evidence_captured_at` 为可选的 ISO 8601 证据采集时间。
 不要把真实儿童照片、可识别身份的画面或大体积 base64 数据提交到 Git。
+
+`participants` 记录事件参与学生，摔倒事件应有 1 名、斗殴事件应有至少 2 名。
+`student_id` 必须来自学生名单；同名情况应通过学号选择。`parent_visible_at`
+表示老师完成学生关联并允许家长查看事件的时间，未完成关联时为空。
 
 证据文件可放在被 Git 忽略的 `dashboard/evidence/` 运行时目录，并通过受登录和
 事件模块及视频权限保护的 `GET /evidence/{文件名}` 读取。只允许
@@ -241,6 +253,22 @@ offset=0
 ```
 
 允许 `pending` → `resolved` / `false_alarm`，以及 `resolved` / `false_alarm` → `pending`（重新打开）。状态变更会追加 `history`。
+
+### `POST /api/events/{id}/participants`
+
+管理员按学生姓名关联事件参与人：
+
+```json
+{
+  "names": "张小明 李小红",
+  "handled_by": "值班老师"
+}
+```
+
+姓名之间可用普通空格、全角空格或连续空格分隔。摔倒事件必须解析出 1 名学生，
+斗殴事件至少解析出 2 名学生。同名学生会拒绝自动选择，要求使用
+`姓名@学号`，例如 `张小明@S-0201`。成功后会写入 `participants`、
+`parent_visible_at`，并在处理记录中追加关联操作。
 
 ### `POST /api/events/{id}/notes`
 
@@ -563,6 +591,63 @@ offset=0
 请求体为 `{}`，返回 HTTP `202`，把现有消息的情绪分析和会话总结加入后台队列。后台分析不阻塞 ESP32 消息接收和语音链路。
 
 以上模型和分析设置接口仅限管理员同源访问，写操作需 CSRF。
+
+## 家长账号管理
+
+管理员通过 `GET /api/admin/parents` 查看家长账号及学生绑定，通过
+`POST /api/admin/parents` 创建账号或更新绑定。创建新账号时必须提供密码；
+已有家长账号只更新 `student_ids` 时可以不提供密码。
+
+```json
+{
+  "username": "parent-one",
+  "password": "至少六位密码",
+  "student_ids": ["S-0201", "S-0202"]
+}
+```
+
+家长角色不能访问全园监控、异常事件总表、对话、测温、日报或个人视频。服务端会拒绝
+所有非 `/welcome`、非 `/family-events`、非 `/api/family/*` 路径；不能只依赖前端隐藏。
+
+### `GET /api/family/events`
+
+家长读取已由老师关联、且参与学生包含自己孩子的安全事件。未关联事件、
+`false_alarm` 事件和其他孩子的事件不会返回。多人斗殴事件只返回当前家长绑定学生的
+姓名，不泄露其他孩子姓名。
+
+```json
+{
+  "ok": true,
+  "student_ids": ["S-0201"],
+  "events": [
+    {
+      "id": "EVT-20261104-ABC123",
+      "event_type": "fight",
+      "level": "urgent",
+      "occurred_at": "2026-11-04T10:00:00+08:00",
+      "summary": "检测到疑似斗殴",
+      "status": "pending",
+      "participants": [
+        {"student_id": "S-0201", "student_name": "张小明", "input_name": "张小明"}
+      ],
+      "parent_visible_at": "2026-11-04T10:01:00+08:00",
+      "has_snapshot": true,
+      "snapshot_captured_at": "2026-11-04T10:00:01+08:00"
+    }
+  ],
+  "generated_at": "2026-11-04T10:02:00+08:00"
+}
+```
+
+### `GET /api/family/events/{id}`
+
+读取单条家长可见事件；事件不存在、未关联或不属于绑定孩子时统一返回 `404`，
+避免泄露其他孩子的事件是否存在。
+
+### `GET /api/family/events/{id}/snapshot`
+
+读取该事件的告警截图。接口会再次校验事件参与学生，家长无法通过修改 URL 查看其他
+孩子的截图。没有截图时返回 `404`。
 
 ## 通用错误
 

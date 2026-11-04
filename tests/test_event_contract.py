@@ -114,6 +114,42 @@ class EventContractTests(unittest.TestCase):
                         "evidence_url": unsafe,
                     })
 
+    def test_participants_are_normalized_and_deduplicated(self):
+        event = contract.normalize_event({
+            "event_type": "fight",
+            "source": "rdk",
+            "summary": "fight",
+            "participants": [
+                {"student_id": "S-0201", "student_name": "张小明", "input_name": "张小明"},
+                {"student_id": "S-0201", "student_name": "张小明", "input_name": "张小明"},
+                {"student_id": "S-0202", "student_name": "李小红", "input_name": "李小红"},
+            ],
+        })
+        self.assertEqual(
+            [item["student_id"] for item in event["participants"]],
+            ["S-0201", "S-0202"],
+        )
+        self.assertEqual(event["participants"][0]["input_name"], "张小明")
+
+    def test_participants_reject_invalid_ids_and_excess_counts(self):
+        with self.assertRaises(contract.EventValidationError):
+            contract.normalize_event({
+                "event_type": "fall",
+                "source": "rdk",
+                "summary": "fall",
+                "participants": [{"student_id": "../bad", "student_name": "bad"}],
+            })
+        with self.assertRaises(contract.EventValidationError):
+            contract.normalize_event({
+                "event_type": "fight",
+                "source": "rdk",
+                "summary": "fight",
+                "participants": [
+                    {"student_id": f"S-{index:04d}", "student_name": "学生"}
+                    for index in range(contract.MAX_PARTICIPANTS + 1)
+                ],
+            })
+
 
 if __name__ == "__main__":
     unittest.main()
