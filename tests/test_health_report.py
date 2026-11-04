@@ -162,7 +162,8 @@ class HealthReportPageTests(unittest.TestCase):
             "irAmbient",
             "irMeasuredAt",
             "irStudent",
-            "irUseReading",
+            "entryTempLabel",
+            "entryTempHint",
         ):
             self.assertIn(f'id="{element_id}"', health)
         script = (ROOT / "dashboard" / "health-report.js").read_text(encoding="utf-8")

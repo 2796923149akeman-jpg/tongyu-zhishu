@@ -152,7 +152,6 @@
               <div><dt>设备</dt><dd id="irDevice">--</dd></div>
             </dl>
             <div class="realtime-actions">
-              <button class="btn btn-quiet" id="irUseReading" type="button" disabled>采用当前读数</button>
               <small id="irMessage" role="status">正在连接实时红外接口。</small>
             </div>
           </div>
@@ -257,9 +256,8 @@
             <div class="card-head">
               <div class="card-title">
                 <h2 id="entryTitle">测温登记</h2>
-                <p>选择学生后录入本次测量结果</p>
+                <p>选择学生，确认实时红外读数后保存，也可切换测量来源手动登记</p>
               </div>
-              <span class="chip" data-tone="brand">手动登记</span>
             </div>
 
             <form id="entryForm" novalidate>
@@ -271,12 +269,13 @@
                   </select>
                 </div>
                 <div class="field">
-                  <label for="entryTemp">体温（℃）</label>
+                  <label id="entryTempLabel" for="entryTemp">体温（℃）</label>
                   <div class="temp-input">
-                    <input id="entryTemp" type="number" inputmode="decimal" min="35" max="42" step="0.1" placeholder="36.5" required>
+                    <input id="entryTemp" type="number" inputmode="decimal" min="35" max="42" step="0.1" placeholder="36.5" aria-describedby="entryTempHint" required>
                     <span>℃</span>
                   </div>
                   <div class="quick-temps" id="quickTemps" aria-label="常用体温快速填入"></div>
+                  <span class="hint" id="entryTempHint" hidden></span>
                 </div>
                 <div class="field">
                   <label for="entrySource">测量来源</label>

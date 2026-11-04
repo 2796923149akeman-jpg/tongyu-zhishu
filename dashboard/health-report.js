@@ -555,6 +555,8 @@
       entryForm: $("#entryForm"),
       entryStudent: $("#entryStudent"),
       entryTemp: $("#entryTemp"),
+      entryTempLabel: $("#entryTempLabel"),
+      entryTempHint: $("#entryTempHint"),
       entrySource: $("#entrySource"),
       entryNote: $("#entryNote"),
       entryRecheckWrap: $("#entryRecheckWrap"),
@@ -593,7 +595,6 @@
       irAmbient: $("#irAmbient"),
       irMeasuredAt: $("#irMeasuredAt"),
       irDevice: $("#irDevice"),
-      irUseReading: $("#irUseReading"),
       irMessage: $("#irMessage"),
       refreshBtn: $("#refreshBtn"),
       demoRetry: $("#demoRetry")
@@ -640,7 +641,7 @@
       if (!els.entrySource) return;
       els.entrySource.replaceChildren();
       SOURCES.forEach((item) => els.entrySource.append(new Option(item.label, item.value)));
-      els.entrySource.value = "forehead";
+      els.entrySource.value = app.mode === "live" ? "infrared" : "forehead";
     }
 
     function filteredStudents() {
@@ -845,7 +846,8 @@
       if (!els.entryStudent) return;
       els.entryStudent.value = student.id;
       els.entryTemp.value = "";
-      els.entryTemp.focus();
+      renderEntryTemperature();
+      (usesLiveInfrared() ? els.entryStudent : els.entryTemp).focus();
       renderRecheckOptions();
       if (status && status.key === "recheck") {
         const options = Array.from(els.entryRecheck?.options || []);
@@ -854,7 +856,7 @@
         }
       }
       els.entryStudent.scrollIntoView({ block: "center", behavior: "smooth" });
-      toast(`已选择 ${student.name}（${student.id}），请输入体温`);
+      toast(`已选择 ${student.name}（${student.id}）`);
     }
 
     function renderRecheckOptions() {
@@ -884,7 +886,8 @@
 
     function validateEntry() {
       const studentId = els.entryStudent.value;
-      const raw = els.entryTemp.value.trim();
+      const infrared = usesLiveInfrared();
+      const raw = infrared ? String(state.realtime?.reading?.temperature_c ?? "") : els.entryTemp.value.trim();
       const number = Number(raw);
 
       els.entryStudent.removeAttribute("aria-invalid");
@@ -894,6 +897,10 @@
         els.entryStudent.setAttribute("aria-invalid", "true");
         els.entryStudent.focus();
         return { error: "请先选择学生。" };
+      }
+      if (infrared) {
+        const issue = infraredEntryIssue();
+        if (issue) return { error: issue };
       }
       if (raw === "" || Number.isNaN(number)) {
         els.entryTemp.setAttribute("aria-invalid", "true");
@@ -930,7 +937,7 @@
         return;
       }
       state.busy = true;
-      if (els.entrySubmit) els.entrySubmit.disabled = true;
+      renderEntryTemperature();
       showEntryMessage("正在保存…", "warn");
 
       try {
@@ -943,8 +950,6 @@
         }
         await reload();
         els.entryForm.reset();
-        fillSources();
-        renderRecheckOptions();
         toast("测温记录已保存", "ok");
         showEntryMessage(
           `已保存：${studentById(record.student_id)?.name || record.student_id} ${tempText(record.temperature_c)} ℃`,
@@ -957,7 +962,7 @@
         showEntryMessage(`保存失败：${describeError(error)}`, "bad");
       } finally {
         state.busy = false;
-        if (els.entrySubmit) els.entrySubmit.disabled = false;
+        renderEntryTemperature();
       }
     }
 
@@ -1230,12 +1235,12 @@
       const messages = {
         stored: "新红外读数已自动写入该学生的今日测温记录。",
         duplicate: "该帧已经写入，重复上报不会产生重复记录。",
-        unassigned: "实时读数已到达，但设备未携带 student_id；请选择学生后采用当前读数。",
+        unassigned: "实时温度已同步到红外登记栏，请选择对应学生后保存。",
         unknown_student: `学生 ${reading.student_id || "--"} 不在当前名单中，请检查设备映射。`,
         stale: `读数超过 ${reading.stale_after_seconds || 10} 秒未更新，不会自动入库。`,
         timestamp_unknown: "设备未提供采集时间，读数仅供查看，不能自动入库。",
         timestamp_future: "采集时间超前，请核对 RDK 与服务电脑的时钟。",
-        ready: "读数已关联学生，管理员可采用并确认保存。",
+        ready: "读数已关联学生，请在登记栏选择该学生并确认保存。",
         offline: "红外设备报告未连接。",
         invalid_temperature: "mlx_obj 不在 35.0–42.0 ℃ 范围内，不能作为人体测温记录。",
         unavailable: "接口暂时没有提供 mlx_obj 目标温度。",
@@ -1243,7 +1248,7 @@
       };
       let message = messages[reason] || messages[reading.status] || "等待下一次红外采样。";
       if (payload?.source_available === false) {
-        message += " RDK 拉取暂时失败，当前显示最近一次设备推送。";
+        message += " 暂时无法读取 RDK 红外接口。";
         if (reading.status !== "ready") meta = { tone: "bad", chip: "连接中断" };
       }
       return { tone: meta.tone, chip: meta.chip, age, message };
@@ -1274,8 +1279,7 @@
       }
       setText(els.irStudent, studentText);
       setText(els.irMessage, view.message);
-      els.irUseReading.hidden = !canRecord;
-      els.irUseReading.disabled = !canUseInfraredReading();
+      renderEntryTemperature();
     }
 
     let infraredReadAt = null;
@@ -1285,6 +1289,48 @@
         && reading.connected === true && reading.valid_temperature && !state.realtime?.ingest?.duplicate
         && (!reading.student_id || Boolean(studentById(reading.student_id)))
         && reading.age_seconds + (performance.now() - infraredReadAt) / 1000 < reading.stale_after_seconds;
+    }
+
+    function usesLiveInfrared() {
+      return app.mode !== "demo" && els.entrySource.value === "infrared";
+    }
+
+    function infraredEntryIssue() {
+      const reading = state.realtime?.reading;
+      if (!canUseInfraredReading()) {
+        if (!canRecord) return "请使用管理员账号登记。";
+        if (infraredReadAt === null && state.realtime?.source_available === false) {
+          return "实时读数获取失败，请等待设备恢复后保存。";
+        }
+        if (reading?.fresh && infraredReadAt !== null && !state.realtime?.ingest?.duplicate
+            && reading.age_seconds + (performance.now() - infraredReadAt) / 1000 >= reading.stale_after_seconds) {
+          return "实时读数已过期，请等待下一次采样。";
+        }
+        return realtimePresentation(state.realtime).message;
+      }
+      if (reading.student_id && els.entryStudent.value && reading.student_id !== els.entryStudent.value) {
+        return "当前红外读数属于另一名学生，请核对后再保存。";
+      }
+      return "";
+    }
+
+    function renderEntryTemperature() {
+      const infrared = usesLiveInfrared();
+      const temperature = state.realtime?.reading?.temperature_c;
+      const issue = infrared ? infraredEntryIssue() : "";
+      if (infrared) {
+        els.entryTemp.value = Number.isFinite(temperature) ? tempText(temperature) : "";
+        els.entryTemp.removeAttribute("aria-invalid");
+      } else if (els.entryTemp.readOnly) {
+        els.entryTemp.value = "";
+      }
+      els.entryTemp.readOnly = infrared;
+      els.entryTemp.placeholder = infrared ? "--" : "36.5";
+      els.quickTemps.hidden = infrared;
+      els.entryTempHint.hidden = !infrared;
+      setText(els.entryTempLabel, infrared ? "实时目标温度（℃）" : "体温（℃）");
+      setText(els.entryTempHint, issue || "自动更新，确认读数和学生后保存。");
+      els.entrySubmit.disabled = state.busy || !["live", "demo"].includes(app.mode) || Boolean(issue);
     }
 
     function mergeRealtimeRecord(record) {
@@ -1328,28 +1374,6 @@
         state.realtimeBusy = false;
         renderInfraredRealtime();
       }
-    }
-
-    function useInfraredReading() {
-      const reading = state.realtime?.reading;
-      if (!canUseInfraredReading()) {
-        renderInfraredRealtime();
-        return;
-      }
-      els.entryTemp.value = tempText(reading.temperature_c);
-      els.entrySource.value = "infrared";
-      if (reading.student_id && studentById(reading.student_id)) {
-        els.entryStudent.value = reading.student_id;
-        renderRecheckOptions();
-      }
-      if (!reading.student_id) els.entryStudent.focus();
-      else els.entryTemp.focus();
-      showEntryMessage(
-        reading.student_id
-          ? `已采用 ${fmtShort(reading.measured_at)} 的红外读数，请核对后保存。`
-          : "已填入红外温度，请选择对应学生后保存。",
-        "warn"
-      );
     }
 
     function renderAll() {
@@ -1397,7 +1421,7 @@
       fillClassFilter(els.recordClass, state.recordClass);
       fillStudentFilter(els.recordStudent, state.recordClass, state.recordStudent);
       fillEntryStudents();
-      if (els.entrySubmit) els.entrySubmit.disabled = app.mode !== "live" && app.mode !== "demo";
+      renderEntryTemperature();
       renderAll();
     }
 
@@ -1445,14 +1469,22 @@
         });
       }
       if (els.entryStudent) {
-        els.entryStudent.addEventListener("change", renderRecheckOptions);
+        els.entryStudent.addEventListener("change", () => {
+          renderRecheckOptions();
+          renderEntryTemperature();
+        });
       }
+      els.entrySource.addEventListener("change", () => {
+        showEntryMessage("");
+        renderEntryTemperature();
+      });
       if (els.entryForm) els.entryForm.addEventListener("submit", submitEntry);
       if (els.entryForm) {
         els.entryForm.addEventListener("reset", () => {
           setTimeout(() => {
             fillSources();
             renderRecheckOptions();
+            renderEntryTemperature();
           }, 0);
         });
       }
@@ -1498,7 +1530,6 @@
           await runImport(parseCSV(SAMPLE_CSV));
         });
       }
-      if (els.irUseReading) els.irUseReading.addEventListener("click", useInfraredReading);
       [els.importClose, els.importCancel, els.importDone].forEach((button) => {
         if (!button) return;
         button.addEventListener("click", () => {
@@ -1551,6 +1582,7 @@
     async function boot() {
       setMode("loading");
       await probeMode();
+      fillSources();
       state.date = els.recordDate ? els.recordDate.value || todayISO() : todayISO();
       if (els.recordDate && !els.recordDate.value) els.recordDate.value = state.date;
       await reload();
@@ -1583,7 +1615,6 @@
     });
 
     startClock();
-    fillSources();
     bindEvents();
     const dateInput = els.recordDate;
     if (dateInput) dateInput.value = todayISO();
