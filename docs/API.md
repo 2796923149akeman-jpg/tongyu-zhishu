@@ -203,6 +203,16 @@ offset=0
 `.png`、`.jpg`、`.jpeg`、`.webp`、`.gif`，单文件最大 10 MiB；目录遍历和非图片
 扩展名返回错误。证据采集程序负责写入文件，事件记录只保存同源路径。
 
+### 告警自动截图
+
+RDK `/alert_status` 从正常状态进入 `fall`/`fight` 并创建新事件后，Dashboard
+会在后台从 `/video_feed` 抓取一帧 JPEG，写入
+`dashboard/evidence/<事件编号>.jpg`，并把 `evidence_url` 与
+`evidence_captured_at` 挂到事件上，处理记录追加“自动截图”。抓取或保存失败
+不影响事件入库，事件保留空证据；同一告警持续期间不重复抓取，恢复正常后再次
+告警才重新抓取。设置 `EVIDENCE_AUTO_CAPTURE=0` 可关闭自动截图，
+`EVIDENCE_CAPTURE_TIMEOUT`（默认 6 秒）控制单次抓取的最长等待时间。
+
 ### `GET /api/events/{id}`
 
 返回单个事件，响应为 `{"ok": true, "event": {...}}`。

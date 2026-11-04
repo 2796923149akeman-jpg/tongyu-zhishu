@@ -174,7 +174,8 @@ class EventApiTests(unittest.TestCase):
         self.assertEqual(status, 404)
 
     def test_rdk_alert_edge_creates_one_deduplicated_event(self):
-        with patch.object(self.web, "read_rdk_json", return_value={"alert_type": "fall", "confidence": 0.8}):
+        with patch.object(self.web, "read_rdk_json", return_value={"alert_type": "fall", "confidence": 0.8}), \
+                patch.object(self.web, "start_event_evidence_capture"):
             for _ in range(2):
                 status, body = self.request("/api/rdk/status")
                 self.assertEqual(status, 200)
@@ -186,10 +187,12 @@ class EventApiTests(unittest.TestCase):
         self.assertEqual(listing["events"][0]["event_type"], "fall")
         self.assertEqual(listing["events"][0]["level"], "urgent")
 
-        with patch.object(self.web, "read_rdk_json", return_value={"alert_type": "normal"}):
+        with patch.object(self.web, "read_rdk_json", return_value={"alert_type": "normal"}), \
+                patch.object(self.web, "start_event_evidence_capture"):
             status, _ = self.request("/api/rdk/status")
             self.assertEqual(status, 200)
-        with patch.object(self.web, "read_rdk_json", return_value={"alert_type": "fight"}):
+        with patch.object(self.web, "read_rdk_json", return_value={"alert_type": "fight"}), \
+                patch.object(self.web, "start_event_evidence_capture"):
             status, _ = self.request("/api/rdk/status")
             self.assertEqual(status, 200)
 
@@ -197,6 +200,71 @@ class EventApiTests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertEqual(listing["total"], 2)
         self.assertEqual({item["event_type"] for item in listing["events"]}, {"fall", "fight"})
+
+    def test_new_rdk_alert_starts_evidence_capture_once(self):
+        with patch.object(self.web, "read_rdk_json", return_value={"alert_type": "fall"}):
+            with patch.object(self.web, "start_event_evidence_capture") as started:
+                status, body = self.request("/api/rdk/status")
+                self.assertEqual(status, 200)
+                # 同一告警持续期间不重复抓取；恢复后再告警才会再次抓取。
+                status, _ = self.request("/api/rdk/status")
+                self.assertEqual(status, 200)
+                self.assertEqual(started.call_count, 1)
+                event_id = started.call_args[0][0]
+                self.assertTrue(event_id.startswith("EVT-"))
+                self.assertEqual(self.web.get_event(event_id)["event_type"], "fall")
+
+    def test_attach_event_evidence_writes_file_and_serves_it(self):
+        frame = b"\xff\xd8" + b"fixture-jpeg" * 512 + b"\xff\xd9"
+        status, created = self.request("/api/events", self.event_payload(), "POST")
+        event_id = created["event"]["id"]
+        with patch.object(self.web, "capture_rdk_frame", return_value=frame):
+            self.assertTrue(self.web.attach_event_evidence(event_id))
+        event = self.web.get_event(event_id)
+        self.assertEqual(event["evidence_url"], f"/evidence/{event_id}.jpg")
+        self.assertTrue(event["evidence_captured_at"])
+        self.assertEqual(event["history"][-1]["action"], "自动截图")
+        request = urllib.request.Request(
+            self.base + event["evidence_url"],
+            headers=self.auth_headers,
+        )
+        with urllib.request.urlopen(request, timeout=5) as response:
+            self.assertEqual(response.status, 200)
+            self.assertEqual(response.headers.get_content_type(), "image/jpeg")
+            self.assertEqual(response.read(), frame)
+
+    def test_attach_event_evidence_skips_failed_capture_and_missing_event(self):
+        with patch.object(self.web, "capture_rdk_frame", return_value=None):
+            self.assertFalse(self.web.attach_event_evidence("EVT-missing"))
+        frame = b"\xff\xd8" + b"x" * 512 + b"\xff\xd9"
+        with patch.object(self.web, "capture_rdk_frame", return_value=frame):
+            self.assertFalse(self.web.attach_event_evidence("EVT-missing"))
+
+    def test_capture_rdk_frame_parses_jpeg_from_stream(self):
+        frame = b"\xff\xd8" + b"jpeg-bytes" * 256 + b"\xff\xd9"
+
+        class Upstream:
+            def __init__(self):
+                self.chunks = [
+                    b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + frame[:80],
+                    frame[80:],
+                ]
+
+            def read1(self, size):
+                return self.chunks.pop(0) if self.chunks else b""
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+        with patch.object(self.web.urllib.request, "urlopen", return_value=Upstream()):
+            self.assertEqual(self.web.capture_rdk_frame(timeout=5), frame)
+        # 超时后没有完整 JPEG 帧时返回 None。
+        with patch.object(self.web.urllib.request, "urlopen", return_value=Upstream()), \
+                patch.object(self.web.time, "monotonic", side_effect=[0.0, 9999.0]):
+            self.assertIsNone(self.web.capture_rdk_frame(timeout=5))
 
     def test_evidence_asset_requires_login_and_is_served_safely(self):
         image = b"\x89PNG\r\n\x1a\nfixture"

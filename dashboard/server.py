@@ -14,6 +14,7 @@ import queue
 import re
 import tempfile
 import threading
+import time
 import uuid
 from collections import deque
 from datetime import datetime, timedelta, timezone
@@ -83,6 +84,13 @@ EMOTION_LEXICON_FILE = Path(
 )
 EVENTS_FILE = Path(os.environ.get("EVENTS_FILE", str(ROOT / "events.json")))
 EVIDENCE_DIR = Path(os.environ.get("EVIDENCE_DIR", str(ROOT / "evidence")))
+# 摔倒/斗殴告警入库时自动从 RDK 视频流抓一帧作为证据；置 0 可关闭。
+EVIDENCE_AUTO_CAPTURE = os.environ.get("EVIDENCE_AUTO_CAPTURE", "1") != "0"
+EVIDENCE_CAPTURE_TIMEOUT = max(
+    1.0,
+    float(os.environ.get("EVIDENCE_CAPTURE_TIMEOUT", "6")),
+)
+EVIDENCE_MAX_FRAME = 8 * 1024 * 1024
 HEALTH_STUDENTS_FILE = Path(os.environ.get("HEALTH_STUDENTS_FILE", str(ROOT / "health_students.json")))
 HEALTH_RECORDS_FILE = Path(os.environ.get("HEALTH_RECORDS_FILE", str(ROOT / "health_records.json")))
 HEALTH_DEVICE_TOKEN = os.environ.get("HEALTH_DEVICE_TOKEN", "")
@@ -435,7 +443,7 @@ def record_rdk_alert(data: dict) -> None:
             confidence = None
         title = "检测到疑似摔倒" if alert == "fall" else "检测到疑似斗殴"
         try:
-            create_event({
+            result, _ = create_event({
                 "event_type": alert,
                 "level": "urgent",
                 "source": "rdk",
@@ -451,7 +459,94 @@ def record_rdk_alert(data: dict) -> None:
         except Exception as exc:  # 事件写入失败不阻断监控代理
             print(f"[EVENT] unable to record RDK alert: {exc}")
             return
+        if not result.get("duplicate"):
+            # 后台抓取证据画面，避免拖慢监控轮询；抓取失败不影响事件入库。
+            start_event_evidence_capture(result["event"]["id"])
         CURRENT_RDK_ALERT = alert
+
+
+def capture_rdk_frame(timeout: float | None = None) -> bytes | None:
+    """从 RDK 的 MJPEG 视频流里抓取一帧 JPEG；失败返回 None。"""
+    request = urllib.request.Request(
+        RDK_BASE + "/video_feed",
+        headers={"Accept": "multipart/x-mixed-replace", "User-Agent": "TongyuDashboard/1.0"},
+    )
+    deadline = time.monotonic() + (timeout or EVIDENCE_CAPTURE_TIMEOUT)
+    try:
+        with urllib.request.urlopen(request, timeout=timeout or EVIDENCE_CAPTURE_TIMEOUT) as response:
+            data = b""
+            while time.monotonic() < deadline:
+                chunk = response.read1(16 * 1024)
+                if not chunk:
+                    break
+                data += chunk
+                start = data.find(b"\xff\xd8")
+                if start >= 0:
+                    end = data.find(b"\xff\xd9", start + 2)
+                    if end > start:
+                        frame = data[start:end + 2]
+                        if 512 <= len(frame) <= EVIDENCE_MAX_FRAME:
+                            return frame
+                        data = data[end + 2:]
+                if len(data) > EVIDENCE_MAX_FRAME + 64 * 1024:
+                    data = data[-64 * 1024:]
+    except Exception as exc:  # 网络或设备不可用时不留证据，只记录日志
+        print(f"[EVIDENCE] unable to capture RDK frame: {exc}")
+        return None
+    return None
+
+
+def save_event_evidence(event_id: str, frame: bytes) -> str:
+    """把证据帧写入运行时目录，返回受保护的同源路径。"""
+    EVIDENCE_DIR.mkdir(parents=True, exist_ok=True)
+    name = f"{event_id}.jpg"
+    target = EVIDENCE_DIR / name
+    temporary = EVIDENCE_DIR / f".{name}.part"
+    temporary.write_bytes(frame)
+    os.replace(temporary, target)
+    return f"/evidence/{name}"
+
+
+def attach_event_evidence(event_id: str) -> bool:
+    """为已入库事件抓取并挂载证据画面。"""
+    frame = capture_rdk_frame()
+    if not frame:
+        return False
+    try:
+        evidence_url = save_event_evidence(event_id, frame)
+    except OSError as exc:
+        print(f"[EVIDENCE] unable to save evidence for {event_id}: {exc}")
+        return False
+    with EVENTS_LOCK:
+        event = next((item for item in EVENTS if item.get("id") == event_id), None)
+        if event is None:
+            return False
+        now = now_iso()
+        event["evidence_url"] = evidence_url
+        event["evidence_captured_at"] = now
+        event["history"].append({
+            "at": now,
+            "action": "自动截图",
+            "by": "RDK 视频流",
+            "note": "告警时自动抓取一帧画面作为事件证据。",
+        })
+        event["history"] = event["history"][-100:]
+        event["updated_at"] = now
+        save_events()
+    return True
+
+
+def start_event_evidence_capture(event_id: str) -> None:
+    """后台线程抓取证据画面，避免阻塞监控轮询。"""
+    if not EVIDENCE_AUTO_CAPTURE:
+        return
+    thread = threading.Thread(
+        target=attach_event_evidence,
+        args=(event_id,),
+        name=f"evidence-{event_id}",
+        daemon=True,
+    )
+    thread.start()
 
 
 def local_today() -> str:

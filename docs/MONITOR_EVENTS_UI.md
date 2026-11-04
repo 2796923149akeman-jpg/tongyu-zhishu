@@ -341,3 +341,25 @@ handled_by → handler
 
 页面结构、接口和自动刷新逻辑已完成；真实 RDK 告警、摄像头证据和不同网络延迟下的
 端到端表现仍需在接入设备后复测，不能仅用演示数据替代现场验收。
+
+## 告警自动截图（2026-11-04）
+
+RDK 行为告警自动入库的同时，Dashboard 会在后台线程从 RDK 的
+`/video_feed` 抓取一帧 JPEG 作为事件证据：
+
+- 只有从正常状态进入 `fall`/`fight` 的**新事件**才抓取；同一告警持续期间
+  不重复抓取，恢复正常后再次告警才重新抓取，与事件去重节奏一致。
+- 证据写入被 Git 忽略的 `dashboard/evidence/<事件编号>.jpg`，事件记录保存
+  `evidence_url` 与 `evidence_captured_at`，处理记录追加“自动截图”。
+- 抓取在后台线程执行（默认最长 6 秒，`EVIDENCE_CAPTURE_TIMEOUT` 可调），
+  不会拖慢监控页对 `/api/rdk/status` 的轮询；失败时事件照常入库，只是没有
+  证据画面，详情页显示空状态。
+- 真实儿童画面不得提交到 Git；`dashboard/evidence/` 已被 `.gitignore` 忽略。
+
+### 验收步骤
+
+1. 保持 RDK `/video_feed` 可用，令 `/alert_status` 从正常进入 `fall`（或 `fight`）。
+2. 打开 `/events`，新事件详情出现证据画面与“证据时间”，处理记录含“自动截图”。
+3. 令告警持续 30 秒，确认不会反复生成事件或覆盖证据。
+4. 停止 RDK 视频流后再次制造告警，确认事件仍入库、证据区域显示空状态。
+5. 设置 `EVIDENCE_AUTO_CAPTURE=0` 重启，确认不再生成证据文件。
