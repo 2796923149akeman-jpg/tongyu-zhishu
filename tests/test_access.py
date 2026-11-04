@@ -125,7 +125,7 @@ class AccessTests(unittest.TestCase):
         reloaded = self.web.AccessStore(self.web.AUTH.path)
         self.assertEqual(reloaded.users['teacher']['role'], 'viewer')
         self.assertEqual(self.request('/api/auth/register', {'username': 'TEACHER', 'password': 'other-fixture'})[0], 400)
-        for path in ('/admin', '/admin.html', '/api/admin/policy', '/api/dialogue/model', '/api/analysis/config'):
+        for path in ('/admin', '/admin.html', '/family-events.html', '/api/admin/policy', '/api/dialogue/model', '/api/analysis/config'):
             self.assertEqual(self.request(path)[0], 403)
         for path in ('/api/admin/policy', '/api/dialogue/model', '/api/dialogue/config', '/api/analysis/config', '/api/analysis/rebuild', '/api/health/records'):
             self.assertEqual(self.request(path, {})[0], 403)

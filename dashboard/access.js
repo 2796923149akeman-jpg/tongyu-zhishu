@@ -29,8 +29,9 @@
   }
   function safeNext(user) {
     const next = new URLSearchParams(location.search).get('next');
-    const allowed = ['/welcome', '/', '/admin', '/admin.html', '/events', '/chat', ...Object.values(routes).map(r => r[0])];
-    const home = user?.role === 'admin' ? '/admin' : '/welcome';
+    const allowed = ['/welcome', '/family-events.html', '/', '/admin', '/admin.html', '/events', '/chat', ...Object.values(routes).map(r => r[0])];
+    const home = user?.role === 'admin' ? '/admin' : user?.role === 'parent' ? '/family-events.html' : '/welcome';
+    if (user?.role === 'parent') return next === '/family-events.html' ? next : home;
     if (user?.role !== 'admin' && ['/admin', '/admin.html'].includes(next)) return home;
     return allowed.includes(next) ? next : home;
   }

@@ -1,0 +1,329 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <meta name="description" content="绑定的孩子在园安全异常事件">
+  <title>孩子异常事件 · 童域智枢</title>
+  <link rel="icon" href="data:,">
+  <style>
+    :root {
+      --brand: #145c57;
+      --brand-soft: #e5f4f2;
+      --ink: #172230;
+      --ink-2: #425166;
+      --muted: #718096;
+      --line: #dce4ec;
+      --surface: #ffffff;
+      --surface-soft: #f6f8fa;
+      --bad: #bf3a30;
+      --bad-soft: #fff0ed;
+      --warn: #9a6b12;
+      --warn-soft: #fff8e6;
+      --ok: #18794e;
+      --ok-soft: #eaf8ef;
+      --shadow: 0 10px 28px rgba(23, 34, 48, 0.08);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      color: var(--ink);
+      background: #f1f5f8;
+      font-family: "Microsoft YaHei", "PingFang SC", system-ui, sans-serif;
+    }
+    a { color: var(--brand); }
+    .top {
+      color: #fff;
+      background: linear-gradient(125deg, #123e49, #17695f);
+    }
+    .top-inner, .main-inner {
+      width: min(1040px, calc(100% - 32px));
+      margin: 0 auto;
+    }
+    .top-inner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 18px 0;
+    }
+    .brand { display: flex; align-items: center; gap: 9px; color: #fff; text-decoration: none; font-weight: 700; }
+    .brand-mark { display: grid; width: 34px; height: 34px; place-items: center; background: rgba(255, 255, 255, 0.13); border-radius: 10px; }
+    .top a.secondary { color: #d9f3ef; font-size: 12px; text-decoration: none; }
+    main { padding: 24px 0 48px; }
+    .hero {
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 18px;
+      margin-bottom: 18px;
+    }
+    .eyebrow { margin: 0 0 4px; color: var(--brand); font-size: 12px; font-weight: 700; letter-spacing: 0.08em; }
+    h1 { margin: 0; font-size: clamp(26px, 4vw, 36px); letter-spacing: -0.03em; }
+    .hero p { margin: 7px 0 0; color: var(--muted); font-size: 13px; }
+    .chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 10px;
+      color: var(--brand);
+      font-size: 11px;
+      font-weight: 700;
+      background: var(--brand-soft);
+      border: 1px solid #b7ddd8;
+      border-radius: 999px;
+      white-space: nowrap;
+    }
+    .chip[data-tone="warn"] { color: var(--warn); background: var(--warn-soft); border-color: #ead8a9; }
+    .chip[data-tone="bad"] { color: var(--bad); background: var(--bad-soft); border-color: #f0c8c2; }
+    .notice {
+      padding: 12px 14px;
+      margin-bottom: 14px;
+      color: var(--ink-2);
+      font-size: 12px;
+      line-height: 1.7;
+      background: var(--brand-soft);
+      border: 1px solid #c7e5e1;
+      border-radius: 12px;
+    }
+    .event-list { display: grid; gap: 14px; }
+    .event {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(220px, 34%);
+      gap: 18px;
+      padding: 18px;
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      box-shadow: var(--shadow);
+    }
+    .event[data-level="urgent"] { border-left: 5px solid var(--bad); }
+    .event-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+    .event h2 { width: 100%; margin: 4px 0 0; font-size: 18px; }
+    .meta { margin: 7px 0 0; color: var(--muted); font-size: 12px; }
+    .people { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+    .person { padding: 4px 8px; color: var(--brand); font-size: 11px; background: var(--brand-soft); border-radius: 999px; }
+    .description {
+      margin: 12px 0 0;
+      padding: 10px 12px;
+      color: var(--ink-2);
+      font-size: 13px;
+      line-height: 1.7;
+      background: var(--surface-soft);
+      border-radius: 10px;
+    }
+    .note { margin-top: 8px; color: var(--warn); font-size: 11px; }
+    .evidence {
+      display: grid;
+      align-content: start;
+      gap: 8px;
+    }
+    .evidence img {
+      display: block;
+      width: 100%;
+      max-height: 240px;
+      object-fit: contain;
+      background: #0b1220;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+    }
+    .evidence a { font-size: 11px; }
+    .empty {
+      padding: 42px 20px;
+      text-align: center;
+      color: var(--muted);
+      background: var(--surface);
+      border: 1px dashed var(--line);
+      border-radius: 14px;
+    }
+    .empty strong { display: block; margin-bottom: 5px; color: var(--ink); }
+    .toast {
+      position: fixed;
+      right: 20px;
+      bottom: 20px;
+      max-width: min(380px, calc(100% - 32px));
+      padding: 11px 14px;
+      color: #fff;
+      font-size: 12px;
+      line-height: 1.6;
+      background: #172230;
+      border-radius: 10px;
+      box-shadow: var(--shadow);
+    }
+    @media (max-width: 760px) {
+      .hero { align-items: flex-start; flex-direction: column; }
+      .event { grid-template-columns: 1fr; padding: 15px; }
+      .evidence img { max-height: 300px; }
+    }
+  </style>
+</head>
+<body>
+  <header class="top">
+    <div class="top-inner">
+      <a class="brand" href="/welcome"><span class="brand-mark">智</span><span>童域智枢 · 家长端</span></a>
+      <a class="secondary" href="/welcome">返回模块入口</a>
+    </div>
+  </header>
+  <main>
+    <div class="main-inner">
+      <section class="hero">
+        <div>
+          <p class="eyebrow">家园安全通知</p>
+          <h1>孩子异常事件</h1>
+          <p>仅显示老师已确认关联、且包含您绑定孩子的摔倒或斗殴事件。</p>
+        </div>
+        <span class="chip" id="syncChip" data-tone="idle">正在同步</span>
+      </section>
+      <p class="notice">安全事件截图可能包含未成年人画面，请仅在监护用途内查看，不要转发或公开。页面每 5 秒自动同步。</p>
+      <section class="event-list" id="eventList" aria-live="polite"></section>
+      <div class="empty" id="emptyState" hidden>
+        <strong>暂无需要家长查看的安全事件</strong>
+        <p>老师关联学生后，相关事件会自动出现在这里。</p>
+      </div>
+    </div>
+  </main>
+  <div class="toast" id="toast" role="status" hidden></div>
+
+  <script>
+    (() => {
+      "use strict";
+      const $ = (selector) => document.querySelector(selector);
+      const labels = {
+        fall: "摔倒告警",
+        fight: "疑似斗殴",
+        pending: "老师正在处理",
+        resolved: "老师已处理",
+        false_alarm: "误报"
+      };
+      const list = $("#eventList");
+      const empty = $("#emptyState");
+      const chip = $("#syncChip");
+      const toastNode = $("#toast");
+      let toastTimer = null;
+      let loading = false;
+
+      function setText(node, value) {
+        const next = String(value ?? "");
+        if (node && node.textContent !== next) node.textContent = next;
+      }
+
+      function formatTime(value) {
+        const date = new Date(value);
+        return Number.isNaN(date.getTime())
+          ? "--"
+          : new Intl.DateTimeFormat("zh-CN", {
+            timeZone: "Asia/Shanghai",
+            month: "2-digit",
+            day: "2-digit",
+            hour: "2-digit",
+            minute: "2-digit"
+          }).format(date);
+      }
+
+      function showToast(message) {
+        clearTimeout(toastTimer);
+        setText(toastNode, message);
+        toastNode.hidden = false;
+        toastTimer = setTimeout(() => { toastNode.hidden = true; }, 4000);
+      }
+
+      function eventCard(event) {
+        const article = document.createElement("article");
+        article.className = "event";
+        article.dataset.level = event.level || "watch";
+        const body = document.createElement("div");
+        const head = document.createElement("div");
+        head.className = "event-head";
+        const type = document.createElement("span");
+        type.className = "chip";
+        type.dataset.tone = event.level === "urgent" ? "bad" : "warn";
+        type.textContent = labels[event.event_type] || event.event_type;
+        const status = document.createElement("span");
+        status.className = "chip";
+        status.textContent = labels[event.status] || event.status;
+        const title = document.createElement("h2");
+        title.textContent = event.summary;
+        head.append(type, status, title);
+        const meta = document.createElement("p");
+        meta.className = "meta";
+        meta.textContent = `${formatTime(event.occurred_at)} · ${event.location || "位置未记录"}`;
+        const people = document.createElement("div");
+        people.className = "people";
+        for (const person of event.participants || []) {
+          const personNode = document.createElement("span");
+          personNode.className = "person";
+          personNode.textContent = `${person.student_name} · ${person.student_id}`;
+          people.append(personNode);
+        }
+        const description = document.createElement("p");
+        description.className = "description";
+        description.textContent = event.detail || "老师已收到该告警，正在处理。";
+        body.append(head, meta, people, description);
+        if (event.note) {
+          const note = document.createElement("p");
+          note.className = "note";
+          note.textContent = `老师说明：${event.note}`;
+          body.append(note);
+        }
+        article.append(body);
+
+        const evidence = document.createElement("div");
+        evidence.className = "evidence";
+        if (event.has_snapshot) {
+          const link = document.createElement("a");
+          link.href = `/api/family/events/${encodeURIComponent(event.id)}/snapshot`;
+          link.target = "_blank";
+          link.rel = "noopener";
+          link.textContent = "查看完整告警截图";
+          const image = document.createElement("img");
+          image.src = link.href;
+          image.alt = `${event.summary}的告警截图`;
+          image.loading = "lazy";
+          image.addEventListener("error", () => {
+            image.remove();
+            link.remove();
+          });
+          evidence.append(image, link);
+        } else {
+          const unavailable = document.createElement("span");
+          unavailable.className = "meta";
+          unavailable.textContent = "该事件没有可用截图";
+          evidence.append(unavailable);
+        }
+        article.append(evidence);
+        return article;
+      }
+
+      async function loadEvents() {
+        if (loading || document.hidden) return;
+        loading = true;
+        chip.dataset.tone = "idle";
+        setText(chip, "正在同步");
+        try {
+          const response = await fetch("/api/family/events", { cache: "no-store" });
+          const data = await response.json();
+          if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+          const events = Array.isArray(data.events) ? data.events : [];
+          list.replaceChildren(...events.map(eventCard));
+          empty.hidden = events.length > 0;
+          chip.dataset.tone = "ok";
+          setText(chip, `已同步 ${events.length} 条`);
+        } catch (error) {
+          chip.dataset.tone = "bad";
+          setText(chip, "同步失败");
+          showToast(`事件同步失败：${error.message}`);
+        } finally {
+          loading = false;
+        }
+      }
+
+      document.addEventListener("visibilitychange", () => {
+        if (!document.hidden) loadEvents();
+      });
+      loadEvents();
+      setInterval(loadEvents, 5000);
+    })();
+  </script>
+</body>
+</html>

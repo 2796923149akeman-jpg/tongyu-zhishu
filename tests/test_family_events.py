@@ -207,6 +207,16 @@ class FamilyEventApiTests(unittest.TestCase):
         ids = {event["id"] for event in json.loads(body)["events"]}
         self.assertNotIn(self.unassigned["id"], ids)
 
+    def test_parent_event_page_is_served_and_uses_scoped_endpoints(self):
+        status, headers, body = self.request("/family-events.html", self.parent_one)
+        self.assertEqual(status, 200)
+        self.assertEqual(headers.get_content_type(), "text/html")
+        text = body.decode("utf-8")
+        self.assertIn("孩子异常事件", text)
+        self.assertIn('id="eventList"', text)
+        self.assertIn("/api/family/events", text)
+        self.assertIn("/snapshot", text)
+
 
 if __name__ == "__main__":
     unittest.main()

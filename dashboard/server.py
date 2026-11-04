@@ -120,6 +120,7 @@ PAGE_ROUTES = {
     "/events": ("events.html", "events"), "/events.html": ("events.html", "events"),
     "/chat": ("chat.html", "chat"), "/chat.html": ("chat.html", "chat"),
     "/health.html": ("health.html", "health"), "/reports.html": ("reports.html", "reports"),
+    "/family-events.html": ("family-events.html", None),
     "/admin": ("admin.html", "admin"), "/admin.html": ("admin.html", "admin"),
     "/welcome": ("welcome.html", None),
 }
@@ -2013,6 +2014,11 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json(200, {'parents': AUTH.list_parents()})
             return
         if path in PAGE_ROUTES:
+            if path == "/family-events.html":
+                user = AUTH.public_user(self.current_session())
+                if not user or user["role"] not in ("parent", "admin"):
+                    self.deny(path, 403, "家长账号才能查看")
+                    return
             self.serve_html(PAGE_ROUTES[path][0])
             return
         if path.startswith("/evidence/"):
