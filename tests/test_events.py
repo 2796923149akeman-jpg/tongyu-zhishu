@@ -266,6 +266,92 @@ class EventApiTests(unittest.TestCase):
                 patch.object(self.web.time, "monotonic", side_effect=[0.0, 9999.0]):
             self.assertIsNone(self.web.capture_rdk_frame(timeout=5))
 
+    def write_roster(self):
+        self.web.HEALTH_STUDENTS_FILE = Path(self.temp.name) / "health_students.json"
+        self.web.HEALTH_STUDENTS_FILE.write_text(
+            json.dumps([
+                {"id": "S-0201", "name": "陈小满", "class_id": "C-02", "class_name": "小二班", "active": True},
+                {"id": "S-0202", "name": "王一诺", "class_id": "C-02", "class_name": "小二班", "active": True},
+                {"id": "S-0211", "name": "赵小果", "class_id": "C-02", "class_name": "小二班", "active": False},
+                {"id": "S-0301", "name": "李一诺", "class_id": "C-11", "class_name": "中一班", "active": True},
+            ], ensure_ascii=False),
+            encoding="utf-8",
+        )
+        self.web.reload_health()
+
+    def test_assign_students_by_names_space_separated(self):
+        self.write_roster()
+        status, created = self.request("/api/events", self.event_payload(), "POST")
+        event_id = created["event"]["id"]
+
+        status, assigned = self.request(
+            f"/api/events/{event_id}/students",
+            {"names": "陈小满  王一诺", "handled_by": "李老师"},
+            "POST",
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(assigned["event"]["students"], [
+            {"id": "S-0201", "name": "陈小满"},
+            {"id": "S-0202", "name": "王一诺"},
+        ])
+        self.assertEqual(assigned["event"]["history"][-1]["action"], "关联学生")
+        self.assertEqual(assigned["event"]["history"][-1]["by"], "李老师")
+
+        # 中文逗号、顿号与重复姓名：去重且可重复登记
+        status, assigned = self.request(
+            f"/api/events/{event_id}/students",
+            {"names": "陈小满，王一诺、陈小满"},
+            "POST",
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(len(assigned["event"]["students"]), 2)
+
+        # 学生筛选与关键词检索
+        status, listing = self.request(f"/api/events?student_id=S-0201")
+        self.assertEqual(status, 200)
+        self.assertEqual(listing["total"], 1)
+        status, listing = self.request("/api/events?student_id=S-9999")
+        self.assertEqual(listing["total"], 0)
+        status, listing = self.request("/api/events?" + urlencode({"q": "王一诺"}))
+        self.assertEqual(listing["total"], 1)
+
+    def test_assign_students_rejects_unknown_inactive_and_other_event_types(self):
+        self.write_roster()
+        status, created = self.request("/api/events", self.event_payload(), "POST")
+        event_id = created["event"]["id"]
+
+        status, body = self.request(
+            f"/api/events/{event_id}/students",
+            {"names": "陈小满 不存在"},
+            "POST",
+        )
+        self.assertEqual(status, 400)
+        self.assertIn("不存在", body["detail"])
+
+        status, body = self.request(
+            f"/api/events/{event_id}/students",
+            {"names": "赵小果"},
+            "POST",
+        )
+        self.assertEqual(status, 400)
+
+        other = self.event_payload()
+        other["event_type"] = "environment"
+        other["dedupe_key"] = "test-env-1"
+        status, created_other = self.request("/api/events", other, "POST")
+        self.assertEqual(status, 201)
+        status, body = self.request(
+            f"/api/events/{created_other['event']['id']}/students",
+            {"names": "陈小满"},
+            "POST",
+        )
+        self.assertEqual(status, 400)
+
+        status, body = self.request(f"/api/events/{event_id}/students", {"names": ""}, "POST")
+        self.assertEqual(status, 400)
+        status, body = self.request(f"/api/events/{event_id}/students", {"names": "姓名" * 11}, "POST")
+        self.assertEqual(status, 400)
+
     def test_evidence_asset_requires_login_and_is_served_safely(self):
         image = b"\x89PNG\r\n\x1a\nfixture"
         (self.web.EVIDENCE_DIR / "event-frame.png").write_bytes(image)

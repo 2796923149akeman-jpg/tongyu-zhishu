@@ -50,6 +50,7 @@ ALLOWED_STATUS_TRANSITIONS = {
     "false_alarm": {"pending"},
 }
 MAX_HISTORY = 100
+MAX_STUDENTS = 20
 MAX_EVIDENCE_URL = 500_000
 RASTER_DATA_IMAGE = re.compile(
     r"^data:image/(?:png|jpeg|webp|gif);base64,[A-Za-z0-9+/]+={0,2}$",
@@ -195,6 +196,18 @@ def normalize_event(payload: dict, event_id: str | None = None) -> dict:
         else None
     )
 
+    students = []
+    raw_students = payload.get("students")
+    if isinstance(raw_students, list):
+        for raw_student in raw_students[-MAX_STUDENTS:]:
+            if not isinstance(raw_student, dict):
+                continue
+            student_id = text_value(raw_student.get("id"), "students.id", 20)
+            name = text_value(raw_student.get("name"), "students.name", 20, default="")
+            if not student_id or any(item["id"] == student_id for item in students):
+                continue
+            students.append({"id": student_id, "name": name})
+
     confidence = payload.get("confidence")
     if confidence in (None, ""):
         confidence = None
@@ -261,6 +274,7 @@ def normalize_event(payload: dict, event_id: str | None = None) -> dict:
         "dedupe_key": dedupe_key,
         "evidence_url": evidence_url,
         "evidence_captured_at": evidence_captured_at,
+        "students": students,
         "history": history,
         "updated_at": normalize_iso(payload.get("updated_at") or now_iso(), "updated_at"),
     }

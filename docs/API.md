@@ -141,6 +141,7 @@ status=pending|resolved|false_alarm
 level=urgent|watch|info
 source=rdk|sensor|dialogue|device|manual
 class_id=C-02
+student_id=S-0201
 date_from=2026-10-28
 date_to=2026-10-28
 q=关键词
@@ -175,6 +176,9 @@ offset=0
       "dedupe_key": "rdk-fall-20261028-094210",
       "evidence_url": "/evidence/EVT-20261028-ABC123.png",
       "evidence_captured_at": "2026-10-28T09:42:10+08:00",
+      "students": [
+        {"id": "S-0201", "name": "陈小满"}
+      ],
       "history": [
         {
           "at": "2026-10-28T09:42:10+08:00",
@@ -255,6 +259,29 @@ RDK `/alert_status` 从正常状态进入 `fall`/`fight` 并创建新事件后�
 ```
 
 备注最多 200 字，会追加到 `history`。
+
+### `POST /api/events/{id}/students`
+
+老师在处理端确认事件涉及的儿童后，按姓名登记；多人用空格、全角空格、逗号或
+顿号分隔：
+
+```json
+{"names": "陈小满 王一诺", "handled_by": "李老师"}
+```
+
+姓名必须与学生名单（`GET /api/health/students`）中的姓名完全一致；未找到或
+同名无法唯一确认时返回 `400`，并在 `detail` 中列出无法确认的姓名。只有
+`fall`/`fight` 事件可以关联学生。成功后事件增加：
+
+```json
+"students": [
+  {"id": "S-0201", "name": "陈小满"},
+  {"id": "S-0202", "name": "王一诺"}
+]
+```
+
+处理记录追加“关联学生”。关联后，该事件会出现在对应家长的账号异常事件页中
+（见“家长账号接口”）。重复登记会覆盖之前的关联结果。
 
 ### 统一枚举和日报映射
 

@@ -56,6 +56,23 @@ class MonitorEventsUxTests(unittest.TestCase):
         self.assertIn("function safeEvidenceUrl(value)", self.events)
         self.assertIn("function isOverdue(event, now = Date.now())", self.events)
 
+    def test_event_detail_has_student_assignment_region(self):
+        for element_id in (
+            "studentChips",
+            "studentCount",
+            "studentNamesInput",
+            "assignStudentsBtn",
+            "studentNote",
+        ):
+            self.assertIn(f'id="{element_id}"', self.events)
+        self.assertIn("function renderStudentChips(event)", self.events)
+        self.assertIn("function assignStudents()", self.events)
+        self.assertIn(
+            '`/api/events/${encodeURIComponent(event.id)}/students`',
+            self.events,
+        )
+        self.assertIn("多个姓名用空格分开", self.events)
+
     def test_quick_filters_keyboard_and_mobile_detail_are_wired(self):
         for quick_filter in ("today", "pending", "urgent", "overdue"):
             self.assertIn(f'data-quick="{quick_filter}"', self.events)

@@ -271,6 +271,7 @@ def query_events(params: dict) -> dict:
     level = one("level").strip().lower()
     source = one("source").strip().lower()
     class_id = one("class_id").strip()
+    student_id = one("student_id").strip()
     keyword = one("q").strip().casefold()
     date_from = one("date_from").strip()
     date_to = one("date_to").strip()
@@ -307,6 +308,10 @@ def query_events(params: dict) -> dict:
             continue
         if class_id and event.get("class_id") != class_id:
             continue
+        if student_id and not any(
+            item.get("id") == student_id for item in event.get("students", [])
+        ):
+            continue
         event_day = date_key(event["occurred_at"])
         if date_from and event_day < date_from:
             continue
@@ -321,6 +326,7 @@ def query_events(params: dict) -> dict:
                 event.get("device_id", ""),
                 event.get("class_id", ""),
                 event.get("class_name", ""),
+                " ".join(item.get("name", "") for item in event.get("students", [])),
             ]).casefold()
             if keyword not in haystack:
                 continue
@@ -417,6 +423,76 @@ def append_event_note(event_id: str, payload: dict) -> dict:
             "note": note,
         })
         event["history"] = event["history"][-100:]
+        save_events()
+        return {"event": copy_event(event)}
+
+
+def split_student_names(value) -> list[str]:
+    """把老师输入的姓名按空格/全角空格/逗号/顿号拆分并去重。"""
+    if not isinstance(value, str):
+        raise EventValidationError("names must be a string")
+    names = [part for part in re.split(r"[\s\u3000,，、]+", value.strip()) if part]
+    if not names:
+        raise EventValidationError("names is required")
+    if len(names) > 20:
+        raise EventValidationError("too many students")
+    ordered, seen = [], set()
+    for name in names:
+        if len(name) > 20:
+            raise EventValidationError("student name is too long")
+        if name not in seen:
+            seen.add(name)
+            ordered.append(name)
+    return ordered
+
+
+def resolve_student_names(names: list[str]) -> tuple[list[dict], list[str]]:
+    """按学生名单姓名解析；返回 (确认的学生, 无法唯一确认的姓名)。"""
+    active = [item for item in health_student_snapshot() if item.get("active", True)]
+    by_name = {}
+    for student in active:
+        by_name.setdefault(student["name"], []).append(student)
+    resolved, problems, seen_ids = [], [], set()
+    for name in names:
+        matches = by_name.get(name, [])
+        if len(matches) != 1:
+            problems.append(name)
+            continue
+        student = matches[0]
+        if student["id"] in seen_ids:
+            continue
+        seen_ids.add(student["id"])
+        resolved.append({"id": student["id"], "name": student["name"]})
+    return resolved, problems
+
+
+def assign_event_students(event_id: str, payload: dict) -> dict:
+    """老师按姓名把学生关联到摔倒/斗殴事件；家长账号随后可看到该事件。"""
+    if not isinstance(payload, dict):
+        raise EventValidationError("request must be an object")
+    names = split_student_names(payload.get("names"))
+    handled_by = text_value(payload.get("handled_by"), "handled_by", 80, default="值班老师")
+    students, problems = resolve_student_names(names)
+    if problems:
+        raise EventValidationError(
+            "无法确认学生：" + "、".join(problems) + "；请按学生名单中的姓名填写"
+        )
+    with EVENTS_LOCK:
+        event = next((item for item in EVENTS if item.get("id") == event_id), None)
+        if event is None:
+            raise EventNotFound("event not found")
+        if event["event_type"] not in ("fall", "fight"):
+            raise EventValidationError("只有摔倒或斗殴事件需要关联学生")
+        now = now_iso()
+        event["students"] = students
+        event["history"].append({
+            "at": now,
+            "action": "关联学生",
+            "by": handled_by,
+            "note": "、".join(item["name"] for item in students),
+        })
+        event["history"] = event["history"][-100:]
+        event["updated_at"] = now
         save_events()
         return {"event": copy_event(event)}
 
@@ -1443,7 +1519,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:
         path = urlparse(self.path).path
-        event_match = re.fullmatch(r"/api/events/([^/]+)/(status|notes)", path)
+        event_match = re.fullmatch(r"/api/events/([^/]+)/(status|notes|students)", path)
         event_request = path == "/api/events" or event_match is not None
         health_post = path in (
             "/api/health/records",
@@ -1497,6 +1573,8 @@ class Handler(BaseHTTPRequestHandler):
                     action = event_match.group(2)
                     if action == "status":
                         result = change_event_status(event_id, item)
+                    elif action == "students":
+                        result = assign_event_students(event_id, item)
                     else:
                         result = append_event_note(event_id, item)
                     self.send_json(200, {'ok': True, **result})
