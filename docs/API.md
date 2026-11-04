@@ -609,6 +609,46 @@ offset=0
 家长角色不能访问全园监控、异常事件总表、对话、测温、日报或个人视频。服务端会拒绝
 所有非 `/welcome`、非 `/family-events`、非 `/api/family/*` 路径；不能只依赖前端隐藏。
 
+### `GET /api/family/events`
+
+家长读取已由老师关联、且参与学生包含自己孩子的安全事件。未关联事件、
+`false_alarm` 事件和其他孩子的事件不会返回。多人斗殴事件只返回当前家长绑定学生的
+姓名，不泄露其他孩子姓名。
+
+```json
+{
+  "ok": true,
+  "student_ids": ["S-0201"],
+  "events": [
+    {
+      "id": "EVT-20261104-ABC123",
+      "event_type": "fight",
+      "level": "urgent",
+      "occurred_at": "2026-11-04T10:00:00+08:00",
+      "summary": "检测到疑似斗殴",
+      "status": "pending",
+      "participants": [
+        {"student_id": "S-0201", "student_name": "张小明", "input_name": "张小明"}
+      ],
+      "parent_visible_at": "2026-11-04T10:01:00+08:00",
+      "has_snapshot": true,
+      "snapshot_captured_at": "2026-11-04T10:00:01+08:00"
+    }
+  ],
+  "generated_at": "2026-11-04T10:02:00+08:00"
+}
+```
+
+### `GET /api/family/events/{id}`
+
+读取单条家长可见事件；事件不存在、未关联或不属于绑定孩子时统一返回 `404`，
+避免泄露其他孩子的事件是否存在。
+
+### `GET /api/family/events/{id}/snapshot`
+
+读取该事件的告警截图。接口会再次校验事件参与学生，家长无法通过修改 URL 查看其他
+孩子的截图。没有截图时返回 `404`。
+
 ## 通用错误
 
 不存在的路径返回 HTTP `404`：

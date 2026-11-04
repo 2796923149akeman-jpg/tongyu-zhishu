@@ -395,6 +395,76 @@ def query_events(params: dict) -> dict:
     }
 
 
+def family_event_view(event: dict, allowed_student_ids: set[str] | None) -> dict | None:
+    if not event.get("parent_visible_at") or event.get("status") == "false_alarm":
+        return None
+    participants = [
+        dict(item)
+        for item in event.get("participants", [])
+        if allowed_student_ids is None or item.get("student_id") in allowed_student_ids
+    ]
+    if allowed_student_ids is not None and not participants:
+        return None
+    snapshot_path = event_snapshot_path(event["id"])
+    snapshot_time = None
+    try:
+        snapshot_time = datetime.fromtimestamp(
+            snapshot_path.stat().st_mtime,
+            timezone.utc,
+        ).isoformat()
+    except OSError:
+        pass
+    return {
+        "id": event["id"],
+        "event_type": event["event_type"],
+        "level": event["level"],
+        "occurred_at": event["occurred_at"],
+        "summary": event["summary"],
+        "detail": event["detail"],
+        "location": event.get("location") or "",
+        "class_name": event.get("class_name") or "",
+        "status": event["status"],
+        "note": event.get("note") or "",
+        "handled_at": event.get("handled_at"),
+        "participants": participants,
+        "parent_visible_at": event["parent_visible_at"],
+        "has_snapshot": snapshot_path.is_file(),
+        "snapshot_captured_at": snapshot_time,
+    }
+
+
+def family_events_payload(session: dict) -> dict:
+    user = AUTH.public_user(session)
+    if not user:
+        raise PermissionError("login required")
+    allowed = None if user["role"] == "admin" else set(user.get("student_ids", []))
+    events = []
+    for event in events_snapshot():
+        visible = family_event_view(event, allowed)
+        if visible is not None:
+            events.append(visible)
+    events.sort(key=lambda item: item["occurred_at"], reverse=True)
+    return {
+        "student_ids": sorted(allowed) if allowed is not None else [],
+        "events": events[:100],
+        "generated_at": now_iso(),
+    }
+
+
+def family_event_detail(session: dict, event_id: str) -> dict:
+    user = AUTH.public_user(session)
+    if not user:
+        raise PermissionError("login required")
+    allowed = None if user["role"] == "admin" else set(user.get("student_ids", []))
+    event = next((item for item in events_snapshot() if item["id"] == event_id), None)
+    if event is None:
+        raise EventNotFound("event not found")
+    visible = family_event_view(event, allowed)
+    if visible is None:
+        raise EventNotFound("event not found")
+    return visible
+
+
 def create_event(payload: dict) -> tuple[dict, int]:
     if not isinstance(payload, dict):
         raise EventValidationError("event must be an object")
@@ -1899,6 +1969,42 @@ class Handler(BaseHTTPRequestHandler):
             '/api/analysis/config',
         )
         if not self.require_session(path, admin=admin):
+            return
+        if path.startswith("/api/family/"):
+            user = AUTH.public_user(self.current_session())
+            if not user or user["role"] not in ("parent", "admin"):
+                self.send_json(403, {"ok": False, "error": "parent account required"})
+                return
+            if path == "/api/family/events":
+                try:
+                    self.send_json(200, {"ok": True, **family_events_payload(self.current_session())})
+                except PermissionError:
+                    self.send_json(403, {"ok": False, "error": "parent account required"})
+                return
+            snapshot_match = re.fullmatch(r"/api/family/events/([^/]+)/snapshot", path)
+            if snapshot_match:
+                event_id = unquote(snapshot_match.group(1))
+                try:
+                    family_event_detail(self.current_session(), event_id)
+                    image = event_snapshot_path(event_id).read_bytes()
+                    self.send_bytes(200, "image/jpeg", image)
+                except EventNotFound:
+                    self.send_json(404, {"ok": False, "error": "event not found"})
+                except OSError:
+                    self.send_json(404, {"ok": False, "error": "snapshot not found"})
+                return
+            event_match = re.fullmatch(r"/api/family/events/([^/]+)", path)
+            if event_match:
+                try:
+                    event = family_event_detail(
+                        self.current_session(),
+                        unquote(event_match.group(1)),
+                    )
+                    self.send_json(200, {"ok": True, "event": event})
+                except EventNotFound:
+                    self.send_json(404, {"ok": False, "error": "event not found"})
+                return
+            self.send_json(404, {"ok": False, "error": "not found"})
             return
         if path == '/api/admin/policy':
             self.send_json(200, {'policy': AUTH.get_policy()})
