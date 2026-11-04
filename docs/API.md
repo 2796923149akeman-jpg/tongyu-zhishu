@@ -4,7 +4,7 @@
 
 ## 登录与权限
 
-业务页面和读取 API 均需账号会话；按模块开关限制查看。业务 POST 仅限管理员，必须同源并携带 `X-CSRF-Token`。`/api/auth/session` 提供 CSRF，注册账号固定为查看者，管理员通过本机初始化创建。`/health` 只返回 `{"ok": true}`，登录后用 `/api/config` 读取 RDK 地址。只有 `POST /api/dialogue/messages` 保留独立的本机机器上传检查，拒绝公网转发请求。完整流程见 [手机演示指南](MOBILE_DEMO.md)。
+业务页面和读取 API 均需账号会话；按模块开关限制查看。除设备红外推送外，业务 POST 仅限管理员，必须同源并携带 `X-CSRF-Token`。`POST /api/health/device-readings` 使用独立的 `X-Device-Token`，不能读取名单或历史记录。`/api/auth/session` 提供 CSRF，注册账号固定为查看者，管理员通过本机初始化创建。`/health` 只返回 `{"ok": true}`，登录后用 `/api/config` 读取 RDK 地址。只有 `POST /api/dialogue/messages` 保留独立的本机机器上传检查，拒绝公网转发请求。完整流程见 [手机演示指南](MOBILE_DEMO.md)。
 
 ## 接口来源与验证说明
 
@@ -311,6 +311,61 @@ offset=0
   ]
 }
 ```
+
+### `GET /api/health/realtime`
+
+需登录并开放健康模块。服务端请求 RDK `/api/iot_payload`，返回归一化后的最近红外读数、
+采集时间、年龄、是否新鲜以及自动入库结果。`mlx_obj` 是目标温度，`mlx_amb` 仅作为环境
+温度展示，两者不能混用。缺少采集时间或超过 `HEALTH_INFRARED_STALE_SECONDS`
+（默认 10 秒）时返回 `stale` 或 `timestamp_unknown`，不会自动写入健康记录。
+
+```json
+{
+  "ok": true,
+  "source_available": true,
+  "stale_after_seconds": 10,
+  "reading": {
+    "reading_id": "IRT-ABC123",
+    "student_id": "S-0201",
+    "device_id": "ir-01",
+    "temperature_c": 36.6,
+    "ambient_c": 24.8,
+    "measured_at": "2026-11-04T10:20:08+08:00",
+    "age_seconds": 2,
+    "connected": true,
+    "valid_temperature": true,
+    "fresh": true,
+    "status": "ready"
+  },
+  "ingest": {
+    "stored": true,
+    "duplicate": false,
+    "reason": "stored",
+    "record": {"id": "R-ABC123", "source": "infrared"}
+  }
+}
+```
+
+### `POST /api/health/device-readings`
+
+供 RDK、STM32 或网关通过 `X-Device-Token` 推送红外读数。服务端要求环境变量
+`HEALTH_DEVICE_TOKEN` 至少 24 位；请求不依赖浏览器管理员会话。
+
+```json
+{
+  "connected": true,
+  "stable": true,
+  "student_id": "S-0201",
+  "device_id": "ir-01",
+  "reading_id": "IR-20261104-0001",
+  "timestamp": "2026-11-04T10:20:08+08:00",
+  "properties": {"mlx_obj": 36.6, "mlx_amb": 24.8}
+}
+```
+
+只有读数有效、时间新鲜、`stable` 不为 `false` 且学生存在于名单时才自动入库。同一
+`reading_id` 会去重。没有 `student_id` 时返回 `reason=unassigned`，页面仍显示实时值，
+但不会猜测学生。成功入库返回 HTTP `201`，重复或仅展示返回 HTTP `200`。
 
 ### `POST /api/health/records`
 

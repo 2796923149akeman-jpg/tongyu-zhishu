@@ -113,7 +113,7 @@ CSV 表头需要包含 `学号, 姓名, 班级`（UTF-8，允许存在其他列�
 
 ### 5.1 公共约定
 
-- 全部接口只允许服务电脑本机访问（`127.0.0.1`、`::1`、`localhost`），与对话页一致；学生姓名与体温属于个人数据，不通过局域网公开。
+- 浏览器读取接口和人工写入接口需要已登录会话，并受健康模块权限限制；学生姓名与体温不匿名公开。设备推送仅对 `POST /api/health/device-readings` 开放，必须携带独立设备令牌，不能用于读取名单或历史记录。
 - 时间使用带时区的 ISO 8601 字符串，业务日期按 `Asia/Shanghai` 计算。
 - 响应 `Cache-Control: no-store`；错误统一返回 `{"ok": false, "error": "..."}`。
 - 运行时数据文件（名单、测温记录）应被 `.gitignore` 忽略，不提交真实学生信息。
@@ -367,3 +367,91 @@ python scripts\verify_repository.py
   scripts/verify_repository.py 修正中文路径下的 UTF-8 解码
   tests/test_health_report.py
 ```
+
+## 10. 红外测温实时对接（2026-11-04）
+
+学生测温页新增“红外测温实时数据”面板，每 2 秒读取
+`GET /api/health/realtime`。Dashboard 会拉取 RDK `/api/iot_payload`，将：
+
+- `properties.mlx_obj` 作为人体目标温度；
+- `properties.mlx_amb` 作为环境温度；
+- `timestamp`、`collected_at`、`measured_at` 或其他兼容时间字段作为设备采集时间。
+
+页面同时显示关联学生、环境温度、采集时间、设备和最近一次自动入库结果。实时面板不访问
+摄像头，也不把环境温度 `mlx_amb` 当作学生体温。
+
+### 10.1 新鲜度与入库规则
+
+默认超过 10 秒未更新即为过期，可通过 `HEALTH_INFRARED_STALE_SECONDS` 调整。满足以下全部
+条件才自动生成健康记录：
+
+1. `connected` 未明确为 `false`；
+2. `stable` 未明确为 `false`；
+3. `mlx_obj` 在 35.0–42.0 ℃；
+4. 设备采集时间存在且未超过新鲜度阈值；
+5. `student_id` 存在于当前学生名单。
+
+记录来源为 `infrared`，同时保存 `device_id`、`reading_id`、`ambient_c`、
+`origin=device` 和去重键。相同 `reading_id` 重复上报只保留一条记录。
+
+缺少 `student_id` 时，面板显示“待关联学生”；管理员可以选择学生后点击“采用当前读数”，
+再按手动登记流程核对保存。缺少采集时间、读数超出范围、设备离线或读数不稳定时，不会自动
+入库，也不会显示为“正常实时数据”。
+
+### 10.2 设备推送接口
+
+设备也可主动调用 `POST /api/health/device-readings`：
+
+```json
+{
+  "connected": true,
+  "stable": true,
+  "student_id": "S-0201",
+  "device_id": "ir-01",
+  "reading_id": "IR-20261104-0001",
+  "timestamp": "2026-11-04T10:20:08+08:00",
+  "properties": {"mlx_obj": 36.6, "mlx_amb": 24.8}
+}
+```
+
+请求头：
+
+```text
+X-Device-Token: <HEALTH_DEVICE_TOKEN>
+```
+
+启动 Dashboard 前配置至少 24 位随机令牌：
+
+```powershell
+$env:HEALTH_DEVICE_TOKEN = "请替换为至少24位的随机设备令牌"
+$env:HEALTH_INFRARED_STALE_SECONDS = "10"
+```
+
+设备令牌只通过请求头传递，不写入 URL、健康记录或日志。没有配置令牌时推送接口返回
+`503`；令牌错误返回 `403`；浏览器页面仍可通过登录会话读取实时状态。
+
+### 10.3 本机快速联调
+
+先启动 Dashboard，再在另一个终端推送一条测试红外读数：
+
+```powershell
+$body = @{
+  connected = $true
+  stable = $true
+  student_id = "S-0201"
+  device_id = "ir-test"
+  reading_id = "IR-DEMO-001"
+  timestamp = (Get-Date).ToString("o")
+  properties = @{ mlx_obj = 36.6; mlx_amb = 24.8 }
+} | ConvertTo-Json -Depth 4
+
+Invoke-RestMethod `
+  -Method Post `
+  -Uri http://127.0.0.1:8088/api/health/device-readings `
+  -Headers @{ "X-Device-Token" = $env:HEALTH_DEVICE_TOKEN } `
+  -ContentType "application/json" `
+  -Body $body
+```
+
+打开 `http://127.0.0.1:8088/health.html`，确认目标温度、环境温度、学生和采集时间更新，
+今日记录表出现来源为“红外测温仪”的记录。等待超过阈值且不再推送时，面板应变为“数据已过期”。

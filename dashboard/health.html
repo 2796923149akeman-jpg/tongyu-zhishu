@@ -83,7 +83,7 @@
             <p class="page-sub" id="pageDate">正在读取系统时间…</p>
           </div>
           <div class="head-tools">
-            <span class="auto-refresh"><span class="live-dot" aria-hidden="true"></span>数据每 30 秒刷新</span>
+            <span class="auto-refresh"><span class="live-dot" aria-hidden="true"></span>红外 2 秒 · 记录 30 秒</span>
             <div class="clock-box">
               <strong id="liveClock">--:--:--</strong>
               <small>Asia/Shanghai</small>
@@ -129,6 +129,33 @@
             <p class="stat-value" id="statRecheck">--<small>人</small></p>
             <p class="stat-note" id="statRecheckNote">体温 ≥ 37.3 ℃ 或复测仍偏高</p>
           </article>
+        </section>
+
+        <section class="card realtime-card" id="infraredRealtime" data-tone="idle" aria-labelledby="infraredRealtimeTitle">
+          <div class="card-head">
+            <div class="card-title">
+              <h2 id="infraredRealtimeTitle">红外测温实时数据</h2>
+              <p>读取 RDK / STM32 的 mlx_obj、mlx_amb 和采集时间；超过 10 秒未更新会标记过期。</p>
+            </div>
+            <span class="chip" id="irChip" data-tone="idle">等待数据</span>
+          </div>
+          <div class="realtime-grid">
+            <div class="realtime-reading" aria-live="polite">
+              <span class="realtime-label">当前目标温度</span>
+              <strong><span id="irTemperature">--</span><small>℃</small></strong>
+              <span class="realtime-age" id="irAge">等待第一帧红外数据</span>
+            </div>
+            <dl class="realtime-facts">
+              <div><dt>关联学生</dt><dd id="irStudent">未关联</dd></div>
+              <div><dt>环境温度</dt><dd id="irAmbient">--</dd></div>
+              <div><dt>采集时间</dt><dd id="irMeasuredAt">--</dd></div>
+              <div><dt>设备</dt><dd id="irDevice">--</dd></div>
+            </dl>
+            <div class="realtime-actions">
+              <button class="btn btn-quiet" id="irUseReading" type="button" disabled>采用当前读数</button>
+              <small id="irMessage" role="status">正在连接实时红外接口。</small>
+            </div>
+          </div>
         </section>
 
         <div class="content-grid">
@@ -359,7 +386,7 @@
         </section>
 
         <footer class="page-foot">
-          <span>页面接口：本页只用演示数据或后续实现的名单/测温接口；未接通时会在顶部明确标注“演示数据”。</span>
+          <span>页面接口：实时红外、学生名单、测温记录和当日日报；接口不可用时会在顶部明确标注“演示数据”。</span>
           <span>时间按 Asia/Shanghai 计算；体温仅作日常筛查记录，不构成医学诊断。</span>
         </footer>
       </div>

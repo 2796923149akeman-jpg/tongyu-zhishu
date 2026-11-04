@@ -97,3 +97,18 @@
 - 事件页和监控页的内联 JavaScript 均通过 `node --check`；`git diff --check` 无空白错误。
 - 本轮验证未连接新的 RDK 硬件，也未使用真实儿童证据图片。真实摄像头触发、
   证据文件产生、普通账号端到端只读和移动设备触控仍需在设备环境中验收。
+## 红外测温实时对接（2026-11-04）
+
+- `dashboard/health_realtime.py` 统一解析 `mlx_obj`、`mlx_amb`、设备编号、学生编号和
+  ISO 8601/Unix 时间戳；`mlx_amb` 只作为环境温度，不进入学生体温字段。
+- `GET /api/health/realtime` 每 2 秒由测温页读取，返回 `ready`、`unassigned`、
+  `stale`、`timestamp_unknown`、`offline`、`invalid_temperature`、`unavailable`
+  或 `unstable` 状态。
+- `POST /api/health/device-readings` 支持设备令牌、新鲜度校验、学生匹配和 `reading_id`
+  去重；只有有效、新鲜、稳定且关联到已知学生的读数才自动写入健康记录。
+- `tests/test_health_realtime.py` 5 项测试覆盖字段归一化、无学生编号、过期、时间未知、
+  非法温度、不稳定和设备离线；`tests/test_health_api.py` 新增设备令牌、自动入库、
+  重复上报去重和实时接口测试。
+- `dashboard/health-report.js` 已通过 `node --check`。
+- 本轮使用模拟 RDK JSON 和隔离临时数据验证软件链路，未连接真实 MLX 红外传感器；
+  实机温度偏差、画面目标定位、稳定帧判定和新旧设备字段差异仍需现场验收。
