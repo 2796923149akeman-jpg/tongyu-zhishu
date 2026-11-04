@@ -294,6 +294,17 @@ class EventApiTests(unittest.TestCase):
         status, body = self.request("/evidence/not-an-image.txt")
         self.assertEqual(status, 404)
         self.assertFalse(body["ok"])
+        payload = self.event_payload()
+        payload["evidence_url"] = "data:image/png;base64,YQ=="
+        status, result = self.request("/api/events", payload, "POST")
+        self.assertEqual(status, 201)
+        self.web.AUTH.create_user("viewer", "test-viewer-password")
+        token, _ = self.web.AUTH.new_session("viewer")
+        self.auth_headers = {"Cookie": "tongyu_session=" + token}
+        self.assertEqual(self.request("/evidence/event-frame.png")[0], 403)
+        event = self.request(f"/api/events/{result['event']['id']}")[1]["event"]
+        self.assertNotIn("evidence_url", event)
+        self.assertNotIn("evidence_captured_at", event)
 
 
 if __name__ == "__main__":

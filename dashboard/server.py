@@ -253,6 +253,21 @@ def event_snapshot_path(event_id: str) -> Path:
     return EVENTS_FILE.parent / "event_snapshots" / f"{key}.jpg"
 
 
+def event_with_visible_evidence(event: dict, can_view: bool) -> dict:
+    event["has_snapshot"] = False
+    if not can_view:
+        event.pop("evidence_url", None)
+        event.pop("evidence_captured_at", None)
+        return event
+    try:
+        modified = event_snapshot_path(event["id"]).stat().st_mtime
+    except OSError:
+        return event
+    event["has_snapshot"] = True
+    event["snapshot_captured_at"] = datetime.fromtimestamp(modified, timezone.utc).isoformat()
+    return event
+
+
 def capture_event_snapshot(event_id: str) -> None:
     request = urllib.request.Request(RDK_BASE + "/snapshot", headers={"Accept": "image/jpeg"})
     with urllib.request.urlopen(request, timeout=1.5) as response:
@@ -1492,6 +1507,7 @@ class Handler(BaseHTTPRequestHandler):
                         result = change_event_status(event_id, item)
                     else:
                         result = append_event_note(event_id, item)
+                    event_with_visible_evidence(result["event"], True)
                     self.send_json(200, {'ok': True, **result})
                     return
                 except EventNotFound as exc:
@@ -1676,6 +1692,9 @@ class Handler(BaseHTTPRequestHandler):
                     pass
 
     def serve_evidence(self, path: str) -> None:
+        if not AUTH.permitted(self.current_session(), "video"):
+            self.send_json(403, {"ok": False, "error": "管理员尚未开放摄像头画面"})
+            return
         name = unquote(path[len("/evidence/"):])
         if not re.fullmatch(
             r"[A-Za-z0-9][A-Za-z0-9._-]{0,159}\.(?:png|jpe?g|webp|gif)",
@@ -1771,7 +1790,7 @@ class Handler(BaseHTTPRequestHandler):
                 result = query_events(parse_qs(urlparse(self.path).query))
                 can_view = AUTH.permitted(self.current_session(), "video")
                 for event in result["events"]:
-                    event["has_snapshot"] = can_view and event_snapshot_path(event["id"]).is_file()
+                    event_with_visible_evidence(event, can_view)
                 self.send_json(200, {"ok": True, **result})
             except (EventValidationError, ValueError) as exc:
                 self.send_json(400, {"ok": False, "error": "invalid event query", "detail": str(exc)})
@@ -1793,9 +1812,7 @@ class Handler(BaseHTTPRequestHandler):
         if event_get:
             try:
                 event = get_event(unquote(event_get.group(1)))
-                event["has_snapshot"] = (
-                    AUTH.permitted(self.current_session(), "video") and event_snapshot_path(event["id"]).is_file()
-                )
+                event_with_visible_evidence(event, AUTH.permitted(self.current_session(), "video"))
                 self.send_json(200, {"ok": True, "event": event})
             except EventNotFound:
                 self.send_json(404, {"ok": False, "error": "event not found"})
