@@ -37,6 +37,7 @@
   const ATTENTION_TONES = { urgent: "bad", watch: "warn", none: "idle" };
   const EVENT_LEVEL_LABELS = { high: "高", medium: "中", low: "低" };
   const EVENT_STATUS_LABELS = { pending: "待处理", handled: "已处置", false_alarm: "误报" };
+  const EVENT_SOURCE_LABELS = { rdk: "行为识别", sensor: "环境传感器", dialogue: "对话分析", device: "设备", manual: "人工登记" };
   const EVENT_STATUS_TONES = { pending: "warn", handled: "ok", false_alarm: "idle" };
 
   /* ---------- 演示数据 ---------- */
@@ -325,6 +326,7 @@
     }));
     demo.events = DEMO_EVENTS.map((item) => ({
       ...item,
+      source: "rdk",
       occurred_at: isoAt(date, item.time),
       handled_at: item.handled_time ? isoAt(date, item.handled_time) : ""
     }));
@@ -1641,7 +1643,7 @@
           item.append(top);
 
           const meta = el("p", "event-meta",
-            `${fmtTime(event.occurred_at)} · ${event.class_name || classLabel(report, event.class_id)}${event.location ? " · " + event.location : ""} · 来源：行为识别`);
+            `${fmtTime(event.occurred_at)} · ${event.class_name || classLabel(report, event.class_id)}${event.location ? " · " + event.location : ""} · 来源：${EVENT_SOURCE_LABELS[event.source] || "未记录"}`);
           item.append(meta);
 
           const statusRow = el("div", "attention-top");

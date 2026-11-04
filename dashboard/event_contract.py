@@ -336,6 +336,7 @@ def event_for_report(event: dict) -> dict:
         "id": event["id"],
         "type": event["event_type"],
         "title": event["summary"],
+        "source": event["source"],
         "level": REPORT_LEVEL[event["level"]],
         "class_id": event.get("class_id") or "",
         "class_name": event.get("class_name") or "",

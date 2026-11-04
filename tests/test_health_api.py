@@ -214,6 +214,7 @@ class HealthApiTests(unittest.TestCase):
         self.assertEqual(data["events"][0]["id"], event_a["event"]["id"])
         self.assertEqual(data["events"][0]["level"], "high")
         self.assertEqual(data["events"][0]["status"], "handled")
+        self.assertEqual(data["events"][0]["source"], "rdk")
         self.assertEqual(data["events"][0]["handler"], "测试老师")
         self.assertEqual(data["health"]["total"], 2)
         self.assertEqual(data["health"]["recheck"], 1)
@@ -246,6 +247,8 @@ class HealthApiTests(unittest.TestCase):
                 self.assertEqual(status, 200)
                 ids = [event["id"] for event in payload["report"]["events"]]
                 self.assertEqual(ids, [] if class_id == "C-21" else [event_id])
+                for event in payload["report"]["events"]:
+                    self.assertEqual(event["source"], "manual")
 
     def test_infrared_device_reading_is_ingested_deduplicated_and_published(self):
         self.import_students()
