@@ -370,7 +370,7 @@ python scripts\verify_repository.py
 
 ## 10. 红外测温实时对接（2026-11-04）
 
-学生测温页新增“红外测温实时数据”面板，每 2 秒读取
+学生测温页的“红外设备”面板每 2 秒读取
 `GET /api/health/realtime`。Dashboard 会拉取 RDK `/api/iot_payload`，将：
 
 - `properties.mlx_obj` 作为人体目标温度；

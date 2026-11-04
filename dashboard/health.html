@@ -134,8 +134,8 @@
         <section class="card realtime-card" id="infraredRealtime" data-tone="idle" aria-labelledby="infraredRealtimeTitle">
           <div class="card-head">
             <div class="card-title">
-              <h2 id="infraredRealtimeTitle">红外测温实时数据</h2>
-              <p>读取 RDK / STM32 的 mlx_obj、mlx_amb 和采集时间；超过 10 秒未更新会标记过期。</p>
+              <h2 id="infraredRealtimeTitle">红外设备</h2>
+              <p>每 2 秒更新 · 超过 10 秒未采样将标为过期</p>
             </div>
             <span class="chip" id="irChip" data-tone="idle">等待数据</span>
           </div>
@@ -151,13 +151,75 @@
               <div><dt>采集时间</dt><dd id="irMeasuredAt">--</dd></div>
               <div><dt>设备</dt><dd id="irDevice">--</dd></div>
             </dl>
-            <div class="realtime-actions">
-              <small id="irMessage" role="status">正在连接实时红外接口。</small>
-            </div>
           </div>
+          <p class="realtime-message" id="irMessage" role="status">正在连接实时红外接口。</p>
         </section>
 
         <div class="content-grid">
+          <section class="card entry-card" aria-labelledby="entryTitle">
+            <div class="card-head">
+              <div class="card-title">
+                <h2 id="entryTitle">测温登记</h2>
+                <p>选学生，核对温度，再保存记录。</p>
+              </div>
+            </div>
+
+            <form id="entryForm" novalidate>
+              <div class="form-grid">
+                <div class="field">
+                  <label for="entryStudent">学生</label>
+                  <select id="entryStudent" required>
+                    <option value="">请选择学生</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label for="entrySource">测量来源</label>
+                  <select id="entrySource" required></select>
+                </div>
+                <div class="field field-wide entry-reading" id="entryReading" data-tone="manual">
+                  <label id="entryTempLabel" for="entryTemp">体温（℃）</label>
+                  <div class="temp-input">
+                    <input id="entryTemp" type="number" inputmode="decimal" min="35" max="42" step="0.1" placeholder="36.5" aria-describedby="entryTempHint" required>
+                    <span>℃</span>
+                  </div>
+                  <div class="quick-temps" id="quickTemps" aria-label="常用体温快速填入"></div>
+                  <span class="hint" id="entryTempHint" hidden></span>
+                </div>
+                <div class="field field-wide">
+                  <label for="entryNote">备注（可选，最多 50 字）</label>
+                  <input id="entryNote" type="text" maxlength="50" placeholder="例如：户外活动后复测">
+                </div>
+                <div class="field field-wide" id="entryRecheckWrap" hidden>
+                  <label for="entryRecheck">复测关系</label>
+                  <select id="entryRecheck">
+                    <option value="">本次为独立测量</option>
+                  </select>
+                  <span class="hint">该学生今日已有偏高体温记录时，可标记本次为复测。</span>
+                </div>
+              </div>
+
+              <div class="form-actions">
+                <button class="btn btn-primary" id="entrySubmit" type="submit">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M5 12.5 9.5 17 19 7.5"/>
+                  </svg>
+                  <span>保存记录</span>
+                </button>
+                <button class="btn btn-quiet" id="entryReset" type="reset">清空</button>
+              </div>
+              <p class="form-message" id="entryMessage" role="status" hidden></p>
+            </form>
+
+            <details class="entry-note">
+              <summary>测温与复测规则</summary>
+              <ul>
+                <li>体温 ≥ 37.3 ℃ 自动标记“需复测”，并在日报中计入复测人数。</li>
+                <li>复测结果低于 37.3 ℃ 后状态回到“已测”，并保留与原记录的复测关系。</li>
+                <li>未登记的名单学生计入“未测温”，不会用其他学生的体温代替。</li>
+              </ul>
+            </details>
+          </section>
+
           <section class="card roster-card" aria-labelledby="rosterTitle">
             <div class="card-head">
               <div class="card-title">
@@ -250,70 +312,6 @@
             <p class="hint" style="margin-top:12px;color:var(--muted-2);font-size:11.5px;">
               同名学生以学号区分；本页只显示状态与体温，不展示家庭联系方式。
             </p>
-          </section>
-
-          <section class="card entry-card" aria-labelledby="entryTitle">
-            <div class="card-head">
-              <div class="card-title">
-                <h2 id="entryTitle">测温登记</h2>
-                <p>选择学生，确认实时红外读数后保存，也可切换测量来源手动登记</p>
-              </div>
-            </div>
-
-            <form id="entryForm" novalidate>
-              <div class="form-grid">
-                <div class="field field-wide">
-                  <label for="entryStudent">学生</label>
-                  <select id="entryStudent" required>
-                    <option value="">请选择学生</option>
-                  </select>
-                </div>
-                <div class="field">
-                  <label id="entryTempLabel" for="entryTemp">体温（℃）</label>
-                  <div class="temp-input">
-                    <input id="entryTemp" type="number" inputmode="decimal" min="35" max="42" step="0.1" placeholder="36.5" aria-describedby="entryTempHint" required>
-                    <span>℃</span>
-                  </div>
-                  <div class="quick-temps" id="quickTemps" aria-label="常用体温快速填入"></div>
-                  <span class="hint" id="entryTempHint" hidden></span>
-                </div>
-                <div class="field">
-                  <label for="entrySource">测量来源</label>
-                  <select id="entrySource" required></select>
-                </div>
-                <div class="field field-wide">
-                  <label for="entryNote">备注（可选，最多 50 字）</label>
-                  <input id="entryNote" type="text" maxlength="50" placeholder="例如：户外活动后复测">
-                </div>
-                <div class="field field-wide" id="entryRecheckWrap" hidden>
-                  <label for="entryRecheck">复测关系</label>
-                  <select id="entryRecheck">
-                    <option value="">本次为独立测量</option>
-                  </select>
-                  <span class="hint">该学生今日已有偏高体温记录时，可标记本次为复测。</span>
-                </div>
-              </div>
-
-              <div class="form-actions">
-                <button class="btn btn-primary" id="entrySubmit" type="submit">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                    <path d="M5 12.5 9.5 17 19 7.5"/>
-                  </svg>
-                  <span>保存记录</span>
-                </button>
-                <button class="btn btn-quiet" id="entryReset" type="reset">清空</button>
-              </div>
-              <p class="form-message" id="entryMessage" role="status" hidden></p>
-            </form>
-
-            <div class="entry-note">
-              <strong>判定规则</strong>
-              <ul>
-                <li>体温 ≥ 37.3 ℃ 自动标记“需复测”，并在日报中计入复测人数。</li>
-                <li>复测结果低于 37.3 ℃ 后状态回到“已测”，并保留与原记录的复测关系。</li>
-                <li>未登记的名单学生计入“未测温”，不会用其他学生的体温代替。</li>
-              </ul>
-            </div>
           </section>
         </div>
 

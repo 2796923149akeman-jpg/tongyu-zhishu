@@ -555,6 +555,7 @@
       entryForm: $("#entryForm"),
       entryStudent: $("#entryStudent"),
       entryTemp: $("#entryTemp"),
+      entryReading: $("#entryReading"),
       entryTempLabel: $("#entryTempLabel"),
       entryTempHint: $("#entryTempHint"),
       entrySource: $("#entrySource"),
@@ -1217,7 +1218,7 @@
       }
       const stateMeta = {
         ready: { tone: "ok", chip: reason === "stored" ? "已自动入库" : "实时正常" },
-        unassigned: { tone: "warn", chip: "待关联学生" },
+        unassigned: { tone: "brand", chip: "待关联学生" },
         unknown_student: { tone: "warn", chip: "学生未匹配" },
         stale: { tone: "bad", chip: "数据已过期" },
         timestamp_unknown: { tone: "warn", chip: "缺少采集时间" },
@@ -1242,8 +1243,8 @@
         timestamp_future: "采集时间超前，请核对 RDK 与服务电脑的时钟。",
         ready: "读数已关联学生，请在登记栏选择该学生并确认保存。",
         offline: "红外设备报告未连接。",
-        invalid_temperature: "mlx_obj 不在 35.0–42.0 ℃ 范围内，不能作为人体测温记录。",
-        unavailable: "接口暂时没有提供 mlx_obj 目标温度。",
+        invalid_temperature: "目标温度超出 35.0–42.0 ℃，请对准学生重新测量。",
+        unavailable: "暂未收到目标温度。",
         unstable: "设备报告读数仍在波动，等待稳定后再自动记录。"
       };
       let message = messages[reason] || messages[reading.status] || "等待下一次红外采样。";
@@ -1325,6 +1326,7 @@
         els.entryTemp.value = "";
       }
       els.entryTemp.readOnly = infrared;
+      els.entryReading.dataset.tone = infrared ? (issue ? "warn" : "ok") : "manual";
       els.entryTemp.placeholder = infrared ? "--" : "36.5";
       els.quickTemps.hidden = infrared;
       els.entryTempHint.hidden = !infrared;
@@ -1540,7 +1542,10 @@
           }
         });
       });
-      if (els.refreshBtn) els.refreshBtn.addEventListener("click", () => reload());
+      if (els.refreshBtn) els.refreshBtn.addEventListener("click", () => {
+        reload();
+        pollInfraredRealtime();
+      });
       if (els.demoRetry) els.demoRetry.addEventListener("click", () => boot());
     }
 

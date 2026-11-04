@@ -1059,12 +1059,86 @@ svg {
 .content-grid {
   display: grid;
   grid-template-columns: minmax(0, 1.62fr) minmax(320px, 1fr);
+  grid-template-areas: "roster entry";
   align-items: start;
   gap: 18px;
 }
 
 .content-grid > .card + .card {
   margin-top: 0;
+}
+
+.roster-card {
+  grid-area: roster;
+}
+
+.entry-card {
+  grid-area: entry;
+  border-top: 3px solid var(--brand);
+}
+
+.entry-card .form-actions .btn-primary {
+  flex: 1;
+}
+
+.entry-reading[data-tone="ok"],
+.entry-reading[data-tone="warn"] {
+  padding: 12px 14px;
+  border-radius: 12px;
+}
+
+.entry-reading[data-tone="ok"] {
+  --reading-color: var(--brand);
+  background: var(--brand-soft);
+}
+
+.entry-reading[data-tone="warn"] {
+  --reading-color: var(--warn);
+  background: var(--warn-soft);
+}
+
+.entry-reading .temp-input input[readonly] {
+  min-height: 46px;
+  padding: 0 42px 0 0;
+  color: var(--reading-color);
+  font-size: 36px;
+  line-height: 1.1;
+  background: transparent;
+  border: 0;
+  appearance: textfield;
+}
+
+.entry-reading .temp-input input[readonly]::-webkit-inner-spin-button,
+.entry-reading .temp-input input[readonly]::-webkit-outer-spin-button {
+  appearance: none;
+}
+
+.entry-reading .temp-input input[readonly]:focus-visible {
+  outline: 2px solid var(--reading-color);
+  outline-offset: 2px;
+}
+
+.entry-reading .temp-input input[readonly] + span {
+  right: 0;
+  padding: 4px 8px;
+  color: var(--reading-color);
+  background: var(--surface);
+  border-radius: 6px;
+}
+
+.entry-reading .hint {
+  color: var(--reading-color, var(--muted));
+}
+
+.entry-card .form-grid {
+  gap: 11px;
+}
+
+@media (min-width: 1121px) and (min-height: 800px) {
+  .entry-card {
+    position: sticky;
+    top: 16px;
+  }
 }
 
 .roster-progress {
@@ -1103,16 +1177,6 @@ svg {
 
 .import-note strong {
   color: var(--ink-2);
-}
-
-.entry-card .form-grid {
-  grid-template-columns: minmax(0, 1fr);
-}
-
-.entry-card .field-row {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 13px;
 }
 
 .temp-input {
@@ -1166,8 +1230,10 @@ svg {
   border-radius: 11px;
 }
 
-.entry-note strong {
+.entry-note summary {
   color: var(--ink-2);
+  font-weight: 600;
+  cursor: pointer;
 }
 
 .entry-note ul {
@@ -1550,6 +1616,10 @@ svg {
   .report-summary {
     grid-template-columns: minmax(0, 1fr);
   }
+
+  .content-grid {
+    grid-template-areas: "entry" "roster";
+  }
 }
 
 @media (max-width: 920px) {
@@ -1686,9 +1756,12 @@ svg {
     min-width: 0;
   }
 
-  .entry-card .field-row,
   .form-grid {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .entry-card .form-grid {
+    grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
   }
 
   .demo-banner {
@@ -1719,6 +1792,18 @@ svg {
   .stat-grid,
   .stat-grid[data-layout="six"] {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  body[data-page="health"] .stat-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  body[data-page="health"] .stat-card {
+    padding: 10px 12px;
+  }
+
+  body[data-page="health"] .stat-note {
+    font-size: 11px;
   }
 
   .head-tools .auto-refresh {
@@ -1782,8 +1867,13 @@ svg {
 }
 
 .realtime-card {
+  padding-block: 14px;
   margin-bottom: 18px;
   border-left: 4px solid var(--idle);
+}
+
+.realtime-card .card-head {
+  margin-bottom: 10px;
 }
 
 .realtime-card[data-tone="ok"] { border-left-color: var(--ok); }
@@ -1793,8 +1883,8 @@ svg {
 
 .realtime-grid {
   display: grid;
-  grid-template-columns: minmax(190px, 0.8fr) minmax(0, 2fr) minmax(170px, 0.8fr);
-  gap: 18px;
+  grid-template-columns: minmax(100px, 0.5fr) minmax(0, 2fr);
+  gap: 14px;
   align-items: center;
 }
 
@@ -1814,7 +1904,7 @@ svg {
 
 .realtime-reading strong {
   color: var(--brand);
-  font-size: 34px;
+  font-size: 29px;
   line-height: 1.15;
   font-variant-numeric: tabular-nums;
 }
@@ -1836,7 +1926,7 @@ svg {
 
 .realtime-facts {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 1px;
   overflow: hidden;
   background: var(--line);
@@ -1863,38 +1953,24 @@ svg {
   overflow-wrap: anywhere;
 }
 
-.realtime-actions {
-  display: grid;
-  justify-items: end;
-  gap: 7px;
-  text-align: right;
-}
-
-.realtime-actions small {
+.realtime-message {
+  margin-top: 8px;
   color: var(--muted);
-  font-size: 10px;
-  line-height: 1.5;
+  font-size: 11.5px;
 }
 
-@media (max-width: 900px) {
-  .realtime-grid { grid-template-columns: minmax(160px, 0.7fr) minmax(0, 1.3fr); }
-  .realtime-actions {
-    grid-column: 1 / -1;
-    grid-template-columns: 1fr auto;
-    justify-items: start;
-    align-items: center;
-    text-align: left;
+@media (max-width: 700px) {
+  .realtime-grid {
+    grid-template-columns: minmax(82px, 0.45fr) minmax(0, 1fr);
+    gap: 10px;
   }
-}
-
-@media (max-width: 620px) {
-  .realtime-grid { grid-template-columns: 1fr; }
   .realtime-reading {
-    padding: 0 0 12px;
-    border-right: 0;
-    border-bottom: 1px solid var(--line);
+    padding-right: 8px;
   }
-  .realtime-facts { grid-template-columns: 1fr; }
-  .realtime-actions { grid-template-columns: 1fr; justify-items: stretch; }
-  .realtime-actions .btn { width: 100%; }
+  .realtime-facts {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .realtime-facts > div {
+    padding: 5px 7px;
+  }
 }
