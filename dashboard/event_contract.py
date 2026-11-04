@@ -238,6 +238,9 @@ def normalize_event(payload: dict, event_id: str | None = None) -> dict:
         if parent_visible_at
         else None
     )
+    share_snapshot = payload.get("share_snapshot", bool(parent_visible_at))
+    if type(share_snapshot) is not bool:
+        raise EventValidationError("share_snapshot must be a boolean")
 
     confidence = payload.get("confidence")
     if confidence in (None, ""):
@@ -307,6 +310,7 @@ def normalize_event(payload: dict, event_id: str | None = None) -> dict:
         "evidence_captured_at": evidence_captured_at,
         "participants": participants,
         "parent_visible_at": parent_visible_at,
+        "share_snapshot": share_snapshot,
         "history": history,
         "updated_at": normalize_iso(payload.get("updated_at") or now_iso(), "updated_at"),
     }

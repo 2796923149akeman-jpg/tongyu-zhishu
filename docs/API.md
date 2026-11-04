@@ -256,19 +256,18 @@ offset=0
 
 ### `POST /api/events/{id}/participants`
 
-管理员按学生姓名关联事件参与人：
+管理员按学生编号关联事件参与人：
 
 ```json
 {
-  "names": "张小明 李小红",
+  "student_ids": ["S-0201", "S-0202"],
+  "share_snapshot": false,
   "handled_by": "值班老师"
 }
 ```
 
-姓名之间可用普通空格、全角空格或连续空格分隔。摔倒事件必须解析出 1 名学生，
-斗殴事件至少解析出 2 名学生。同名学生会拒绝自动选择，要求使用
-`姓名@学号`，例如 `张小明@S-0201`。成功后会写入 `participants`、
-`parent_visible_at`，并在处理记录中追加关联操作。
+摔倒事件需要 1 名学生，斗殴事件至少需要 2 名。截图默认关闭，已存在截图时可设
+`share_snapshot: true`。接口仍接受旧版的 `names` 字段，重名时需用 `姓名@学号`。
 
 ### `POST /api/events/{id}/notes`
 
@@ -592,22 +591,23 @@ offset=0
 
 以上模型和分析设置接口仅限管理员同源访问，写操作需 CSRF。
 
-## 家长账号管理
+## 账号管理
 
-管理员通过 `GET /api/admin/parents` 查看家长账号及学生绑定，通过
-`POST /api/admin/parents` 创建账号或更新绑定。创建新账号时必须提供密码；
-已有家长账号只更新 `student_ids` 时可以不提供密码。
+浏览器注册后的账号角色为 `pending`。管理员通过 `GET /api/admin/accounts`
+查看账号列表，通过 `POST /api/admin/accounts` 分配 `parent`、`merchant`、
+`viewer` 或恢复为 `pending`。写请求需要 CSRF。家长账号必须绑定学生，可设置
+`access` 中的 `events`、`snapshots`、`reports`、`dialogues` 四项开关。
 
 ```json
 {
   "username": "parent-one",
-  "password": "至少六位密码",
+  "role": "parent",
   "student_ids": ["S-0201", "S-0202"]
 }
 ```
 
-家长角色不能访问全园监控、异常事件总表、对话、测温、日报或个人视频。服务端会拒绝
-所有非 `/welcome`、非 `/family-events`、非 `/api/family/*` 路径；不能只依赖前端隐藏。
+`POST /api/admin/student-nickname` 接收 `student_id` 和 `nickname`，传空字符串恢复显示名单姓名。
+家长访问范围由家长接口及账户权限控制，商家账号仅能访问环境传感器页及其读数接口。
 
 ### `GET /api/family/events`
 
@@ -628,7 +628,7 @@ offset=0
       "summary": "检测到疑似斗殴",
       "status": "pending",
       "participants": [
-        {"student_id": "S-0201", "student_name": "张小明", "input_name": "张小明"}
+        {"student_id": "S-0201", "student_name": "小满"}
       ],
       "parent_visible_at": "2026-11-04T10:01:00+08:00",
       "has_snapshot": true,
@@ -646,8 +646,7 @@ offset=0
 
 ### `GET /api/family/events/{id}/snapshot`
 
-读取该事件的告警截图。接口会再次校验事件参与学生，家长无法通过修改 URL 查看其他
-孩子的截图。没有截图时返回 `404`。
+读取该事件的告警截图。接口校验学生绑定、账号截图权限和事件截图授权。无可用截图时返回 `404`。
 
 ## 通用错误
 

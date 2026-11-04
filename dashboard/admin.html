@@ -1,9 +1,67 @@
 <!doctype html>
 <html lang="zh-CN">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>演示展示设置 · 童域智枢</title></head>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>账号管理 · 童域智枢</title></head>
 <body class="access-screen" data-access-page="admin"><main class="access-panel">
   <div class="access-panel-head"><strong class="access-logo">童域智枢</strong><a class="access-secondary" href="/welcome">返回模块入口</a></div>
-  <h1>演示展示设置</h1><p class="access-note">设置适用于全部注册演示账号。管理员仍可查看全部内容；更改会在查看者页面自动生效。</p>
+  <h1>账号管理</h1>
+  <section class="access-box">
+    <h2>已注册账号</h2>
+    <p class="access-note">用户自行注册后进入待分配状态。为家长选择孩子并设置权限，为商家开放环境传感器。</p>
+    <div class="access-actions">
+      <button class="access-secondary" id="refreshAccounts" type="button">刷新列表</button>
+      <p id="accountListStatus" class="access-note" role="status">正在读取账号…</p>
+    </div>
+    <div class="access-table-wrap">
+      <table class="access-table">
+        <thead><tr><th scope="col">账号名</th><th scope="col">角色</th><th scope="col">绑定孩子</th><th scope="col">操作</th></tr></thead>
+        <tbody id="accountList"></tbody>
+      </table>
+    </div>
+  </section>
+  <dialog class="access-box access-dialog" id="accountDialog" aria-labelledby="accountEditTitle">
+    <h2 id="accountEditTitle">分配角色</h2>
+    <form id="roleForm">
+      <fieldset id="roleFields">
+        <label class="access-field">角色
+          <select id="accountRole">
+            <option value="pending">待分配</option>
+            <option value="parent">家长</option>
+            <option value="merchant">商家</option>
+            <option value="viewer">演示账号</option>
+          </select>
+        </label>
+        <section id="parentFields" hidden>
+          <label class="access-field" for="parentStudents">绑定孩子（可多选）</label>
+          <select id="parentStudents" multiple size="6" aria-describedby="parentSelectHint"></select>
+          <p class="access-note" id="parentSelectHint">电脑端可按住 Ctrl 多选。通过班级和编号区分同昵称学生。</p>
+          <label class="access-switch"><span>绑定孩子的安全事件</span><input id="parent-events" type="checkbox" checked></label>
+          <label class="access-switch"><span>经老师确认开放的安全事件截图</span><input id="parent-snapshots" type="checkbox"></label>
+          <label class="access-switch"><span>绑定孩子的个人日报</span><input id="parent-reports" type="checkbox" checked></label>
+          <label class="access-switch"><span>在个人日报中显示已关联对话</span><input id="parent-dialogues" type="checkbox"></label>
+        </section>
+        <div class="access-actions">
+          <button class="access-primary" id="accountSave" type="submit">保存角色与权限</button>
+          <button class="access-secondary" id="accountCancel" type="button">取消</button>
+        </div>
+      </fieldset>
+      <p class="access-feedback" id="accountEditStatus" role="status"></p>
+    </form>
+  </dialog>
+  <details class="access-box">
+    <summary>学生昵称</summary>
+    <p class="access-note">昵称用于绑定孩子、关联对话和事件。留空时使用名单姓名。</p>
+    <form id="nicknameForm">
+      <label class="access-field">学生 <select id="nicknameStudent" required></select></label>
+      <label class="access-field">昵称 <input id="studentNickname" maxlength="20" autocomplete="off"></label>
+      <div class="access-actions">
+        <button class="access-primary" type="submit">保存昵称</button>
+        <p class="access-feedback" id="nicknameStatus" role="status"></p>
+      </div>
+    </form>
+  </details>
+  <details class="access-box">
+  <summary>演示账号展示设置</summary>
+  <p class="access-note">以下设置适用于演示账号。</p>
   <form id="policyForm">
     <section class="access-box"><h2>开放哪些模块</h2><p class="access-note">关闭后，演示用户的导航和模块入口将隐藏，该模块的数据接口也会关闭。</p>
       <label class="access-switch"><span>实时监控<small>温度、空气质量、设备与行为状态</small></span><input id="allow-monitor" type="checkbox"></label>
@@ -18,35 +76,5 @@
     </section>
     <div class="access-actions"><button class="access-primary" id="policySave" type="submit">保存展示设置</button><p class="access-feedback" id="policyFeedback" role="status" aria-live="polite"></p></div>
   </form>
-  <section class="access-box">
-    <h2>家长账号</h2>
-    <p class="access-note">为每个家庭绑定孩子，并分别选择开放内容。截图可能包含其他学生，请核对画面后授权。</p>
-    <form id="parentForm">
-      <label>账号<input id="parentUsername" autocomplete="off" required></label>
-      <label>初始密码<input id="parentPassword" type="password" autocomplete="new-password" placeholder="修改绑定时可留空"></label>
-      <label for="parentStudents">绑定学生</label>
-      <select id="parentStudents" multiple size="7" required></select>
-      <label class="access-switch"><span>绑定孩子的安全事件</span><input id="parent-events" type="checkbox" checked></label>
-      <label class="access-switch"><span>安全事件截图</span><input id="parent-snapshots" type="checkbox"></label>
-      <label class="access-switch"><span>绑定孩子的个人日报</span><input id="parent-reports" type="checkbox" checked></label>
-      <label class="access-switch"><span>在个人日报中显示已关联对话</span><input id="parent-dialogues" type="checkbox"></label>
-      <div class="access-actions">
-        <button class="access-primary" id="parentSave" type="submit">创建/更新家长账号</button>
-        <p class="access-feedback" id="parentFeedback" role="status" aria-live="polite"></p>
-      </div>
-    </form>
-    <div id="parentList" aria-live="polite"></div>
-  </section>
-  <section class="access-box">
-    <h2>商家账号</h2>
-    <p class="access-note">仅开放环境传感器读数。</p>
-    <form id="merchantForm">
-      <label>账号<input id="merchantUsername" autocomplete="off" required></label>
-      <label>初始密码<input id="merchantPassword" type="password" autocomplete="new-password" minlength="6" required></label>
-      <div class="access-actions">
-        <button class="access-primary" type="submit">创建商家账号</button>
-        <p class="access-feedback" id="merchantFeedback" role="status"></p>
-      </div>
-    </form>
-  </section>
+  </details>
 </main></body></html>

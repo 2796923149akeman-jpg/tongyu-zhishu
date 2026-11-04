@@ -444,19 +444,19 @@ def query_events(params: dict) -> dict:
     }
 
 
-def family_event_view(event: dict, allowed_student_ids: set[str] | None, *, snapshots=True) -> dict | None:
+def family_event_view(event: dict, allowed_student_ids: set[str] | None, nicknames: dict, *, snapshots=True) -> dict | None:
     if (event["event_type"] not in ("fall", "fight") or not event.get("parent_visible_at")
             or event.get("status") == "false_alarm"):
         return None
     participants = [
-        dict(item)
+        {"student_id": item["student_id"], "student_name": nicknames.get(item["student_id"]) or item["student_name"]}
         for item in event.get("participants", [])
         if allowed_student_ids is None or item.get("student_id") in allowed_student_ids
     ]
     if allowed_student_ids is not None and not participants:
         return None
     snapshot_time = None
-    if snapshots:
+    if snapshots and event.get("share_snapshot"):
         try:
             path = stored_snapshot_path(event)
             if path.is_file():
@@ -489,15 +489,17 @@ def family_event_view(event: dict, allowed_student_ids: set[str] | None, *, snap
     }
 
 
-def family_events_payload(session: dict) -> dict:
-    user = AUTH.public_user(session)
-    if not user:
-        raise PermissionError("login required")
+def student_nicknames() -> dict:
+    return {item["id"]: item["nickname"] for item in health_student_snapshot() if item.get("nickname")}
+
+
+def family_events_payload(user: dict) -> dict:
     allowed = None if user["role"] == "admin" else set(user.get("student_ids", []))
     snapshots = user["role"] == "admin" or user["access"]["snapshots"]
+    nicknames = student_nicknames()
     events = []
     for event in events_snapshot():
-        visible = family_event_view(event, allowed, snapshots=snapshots)
+        visible = family_event_view(event, allowed, nicknames, snapshots=snapshots)
         if visible is not None:
             events.append(visible)
     events.sort(key=lambda item: item["occurred_at"], reverse=True)
@@ -508,16 +510,13 @@ def family_events_payload(session: dict) -> dict:
     }
 
 
-def family_event_detail(session: dict, event_id: str) -> tuple[dict, dict]:
-    user = AUTH.public_user(session)
-    if not user:
-        raise PermissionError("login required")
+def family_event_detail(user: dict, event_id: str) -> tuple[dict, dict]:
     allowed = None if user["role"] == "admin" else set(user.get("student_ids", []))
     event = next((item for item in events_snapshot() if item["id"] == event_id), None)
     if event is None:
         raise EventNotFound("event not found")
     snapshots = user["role"] == "admin" or user["access"]["snapshots"]
-    visible = family_event_view(event, allowed, snapshots=snapshots)
+    visible = family_event_view(event, allowed, student_nicknames(), snapshots=snapshots)
     if visible is None:
         raise EventNotFound("event not found")
     return event, visible
@@ -577,6 +576,7 @@ def change_event_status(event_id: str, payload: dict) -> dict:
         event["status"] = target
         if target == "false_alarm":
             event["parent_visible_at"] = None
+            event["share_snapshot"] = False
         event["handled_at"] = None if target == "pending" else now
         event["handled_by"] = "" if target == "pending" else (handled_by or "值班老师")
         event["history"].append({
@@ -656,7 +656,7 @@ def resolve_event_participants(names_value: str) -> list[dict]:
         participants.append({
             "student_id": student["id"],
             "student_name": student["name"],
-            "input_name": token,
+            "input_name": token[:20],
         })
     if errors:
         raise EventValidationError("；".join(errors))
@@ -666,10 +666,23 @@ def resolve_event_participants(names_value: str) -> list[dict]:
 def assign_event_participants(event_id: str, payload: dict) -> dict:
     if not isinstance(payload, dict):
         raise EventValidationError("request must be an object")
-    names = payload.get("names")
-    if not isinstance(names, str):
-        raise EventValidationError("names must be a string")
-    participants = resolve_event_participants(names)
+    students = {item["id"]: item for item in health_student_snapshot()}
+    if "student_ids" in payload:
+        ids = validate_bound_students(payload["student_ids"], students)
+        if not 1 <= len(ids) <= MAX_PARTICIPANTS:
+            raise EventValidationError(f"请选择 1–{MAX_PARTICIPANTS} 名学生")
+        participants = [
+            {"student_id": sid, "student_name": students[sid]["name"], "input_name": ""}
+            for sid in dict.fromkeys(ids)
+        ]
+    else:
+        names = payload.get("names")
+        if not isinstance(names, str):
+            raise EventValidationError("names must be a string")
+        participants = resolve_event_participants(names)
+    share_snapshot = payload.get("share_snapshot", False)
+    if type(share_snapshot) is not bool:
+        raise EventValidationError("share_snapshot must be a boolean")
     handled_by = text_value(payload.get("handled_by"), "handled_by", 80, default="值班老师")
     with EVENTS_LOCK:
         index = next((i for i, item in enumerate(EVENTS) if item.get("id") == event_id), None)
@@ -684,7 +697,8 @@ def assign_event_participants(event_id: str, payload: dict) -> dict:
             raise EventValidationError("fight event requires at least two students")
         if event["event_type"] not in ("fall", "fight") and not participants:
             raise EventValidationError("event requires at least one student")
-        students = {item["id"]: item for item in health_student_snapshot()}
+        if share_snapshot and (event["event_type"] not in ("fall", "fight") or not stored_snapshot_path(event).is_file()):
+            raise EventValidationError("当前事件没有可开放的截图")
         class_ids = {
             students[item["student_id"]].get("class_id", "")
             for item in participants
@@ -703,6 +717,7 @@ def assign_event_participants(event_id: str, payload: dict) -> dict:
         now = now_iso()
         event["participants"] = participants
         event["parent_visible_at"] = now
+        event["share_snapshot"] = share_snapshot
         event["updated_at"] = now
         labels = "、".join(item["student_name"] for item in participants)
         event["history"].append({
@@ -796,13 +811,17 @@ def load_health_students() -> list[dict]:
             class_id = text_value(raw.get("class_id"), "class_id", 64, required=True)
             class_name = text_value(raw.get("class_name"), "class_name", 80, default="")
             active = raw.get("active", True)
-            result.append({
+            student = {
                 "id": student_id,
                 "name": name,
                 "class_id": class_id,
                 "class_name": class_name or class_id,
                 "active": active if isinstance(active, bool) else True,
-            })
+            }
+            nickname = raw.get("nickname")
+            if isinstance(nickname, str) and 1 <= len(nickname.strip()) <= 20:
+                student["nickname"] = nickname.strip()
+            result.append(student)
         except (ValueError, TypeError):
             continue
     return result
@@ -902,6 +921,29 @@ def health_students_payload() -> dict:
     }
 
 
+def update_student_nickname(student_id, nickname) -> dict:
+    nickname = text_value(nickname, "昵称", 20)
+    with HEALTH_LOCK:
+        index = next((i for i, student in enumerate(HEALTH_STUDENTS) if student["id"] == student_id), None)
+        if index is None:
+            raise ValueError("学生不在当前名单")
+        student = {**HEALTH_STUDENTS[index], "nickname": nickname}
+        updated = HEALTH_STUDENTS.copy()
+        updated[index] = student
+        atomic_write_json(HEALTH_STUDENTS_FILE, updated)
+        HEALTH_STUDENTS[index] = student
+        return student
+
+
+def validate_bound_students(bound, students: dict) -> list[str]:
+    if not isinstance(bound, list) or any(not isinstance(item, str) for item in bound):
+        raise ValueError("请选择名单中的学生")
+    bound = [item.strip() for item in bound]
+    if any(item not in students or not students[item].get("active", True) for item in bound):
+        raise ValueError("学生不在当前有效名单")
+    return bound
+
+
 def create_or_update_parent(payload: dict) -> dict:
     if not isinstance(payload, dict):
         raise ValueError("request must be an object")
@@ -911,19 +953,7 @@ def create_or_update_parent(payload: dict) -> dict:
     if not isinstance(username, str):
         raise ValueError("username is required")
     username = unicodedata.normalize("NFKC", username).strip()
-    if not isinstance(bound, list):
-        raise ValueError("student_ids must be a list")
-    if any(not isinstance(item, str) for item in bound):
-        raise ValueError("student_ids must contain strings")
-    bound = [item.strip() for item in bound]
-    known = {
-        item["id"]
-        for item in health_student_snapshot()
-        if item.get("active", True)
-    }
-    unknown = [item for item in bound if item not in known]
-    if unknown:
-        raise ValueError(f"unknown student_ids: {', '.join(map(str, unknown))}")
+    bound = validate_bound_students(bound, {item["id"]: item for item in health_student_snapshot()})
     existing = next(
         (
             item for item in AUTH.list_parents()
@@ -1250,9 +1280,10 @@ def family_daily_report(params: dict, user: dict) -> dict:
                 dialogues.append({"role": message["role"], "text": message["text"], "at": timestamp})
     events = []
     if user["access"]["events"]:
+        nicknames = student_nicknames()
         for event in events_snapshot():
             if date_key(event["occurred_at"]) == date:
-                visible = family_event_view(event, {student_id}, snapshots=user["access"]["snapshots"])
+                visible = family_event_view(event, {student_id}, nicknames, snapshots=user["access"]["snapshots"])
                 if visible is not None:
                     events.append(visible)
     return {
@@ -1670,7 +1701,7 @@ class Handler(BaseHTTPRequestHandler):
         policy = AUTH.get_policy() if user else None
         permissions = ({"modules": dict.fromkeys(MODULES, True), "video": True, "dialogue_raw": True}
                        if user and user["role"] == "admin" else policy)
-        if user and user["role"] in ("parent", "merchant"):
+        if user and user["role"] in ("parent", "merchant", "pending"):
             permissions = {
                 "modules": dict.fromkeys(MODULES, False),
                 "video": False,
@@ -1720,6 +1751,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self.deny(path, 403, "此内容未向该家长账号开放")
         if user["role"] == "merchant" and path not in ("/welcome", "/sensors.html", "/api/merchant/sensors"):
             return self.deny(path, 403, "商家账号仅可查看环境传感器数据")
+        if user["role"] == "pending" and path != "/welcome":
+            return self.deny(path, 403, "请等待管理员分配账号角色")
         if admin and user["role"] != "admin":
             return self.deny(path, 403, "此操作仅限管理员")
         module = route_module(path)
@@ -1787,7 +1820,7 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_json(429, {"ok": False, "error": "注册过于频繁，请稍后再试"})
                 return
             try:
-                AUTH.create_user(username, password)  # Browser input cannot select a role.
+                AUTH.create_user(username, password, role="pending")
             except ValueError as exc:
                 self.send_json(400, {"ok": False, "error": str(exc)})
                 return
@@ -1853,6 +1886,24 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/admin/merchants":
                 AUTH.create_user(item.get("username"), item.get("password"), role="merchant")
                 self.send_json(201, {"ok": True})
+                return
+            if path in ("/api/admin/accounts", "/api/admin/student-nickname"):
+                try:
+                    if path == "/api/admin/accounts":
+                        role = item.get("role")
+                        bound = None
+                        if role == "parent":
+                            students = {student["id"]: student for student in health_student_snapshot()}
+                            bound = validate_bound_students(item.get("student_ids"), students)
+                        account = AUTH.assign_role(item.get("username"), role, bound, item.get("access"))
+                        self.send_json(200, {"ok": True, "account": account})
+                    else:
+                        if not isinstance(item.get("nickname"), str):
+                            raise ValueError("请输入昵称或留空使用姓名")
+                        student = update_student_nickname(item.get("student_id"), item["nickname"])
+                        self.send_json(200, {"ok": True, "student": student})
+                except ValueError as exc:
+                    self.send_json(400, {"ok": False, "error": str(exc)})
                 return
             if path == "/api/dialogue/student":
                 message_id = item.get("id")
@@ -2159,6 +2210,7 @@ class Handler(BaseHTTPRequestHandler):
             '/admin.html',
             '/api/admin/policy',
             '/api/admin/parents',
+            '/api/admin/accounts',
             '/api/dialogue/model',
             '/api/analysis/config',
         )
@@ -2173,7 +2225,7 @@ class Handler(BaseHTTPRequestHandler):
                 if user["role"] != "parent":
                     self.send_json(403, {"ok": False, "error": "parent account required"})
                 elif path == "/api/family/students":
-                    students = [{"id": student["id"], "name": student["name"]}
+                    students = [{"id": student["id"], "name": student.get("nickname") or student["name"]}
                                 for student in health_student_snapshot() if student["id"] in user["student_ids"]]
                     self.send_json(200, {"students": students})
                 else:
@@ -2185,17 +2237,17 @@ class Handler(BaseHTTPRequestHandler):
                     except ValueError as exc:
                         self.send_json(400, {"ok": False, "error": str(exc)})
                 return
+            if user["role"] == "parent" and not user["access"]["events"]:
+                self.send_json(403, {"ok": False, "error": "该账号未开放安全事件"})
+                return
             if path == "/api/family/events":
-                try:
-                    self.send_json(200, {"ok": True, **family_events_payload(self.current_session())})
-                except PermissionError:
-                    self.send_json(403, {"ok": False, "error": "parent account required"})
+                self.send_json(200, {"ok": True, **family_events_payload(user)})
                 return
             snapshot_match = re.fullmatch(r"/api/family/events/([^/]+)/snapshot", path)
             if snapshot_match:
                 event_id = unquote(snapshot_match.group(1))
                 try:
-                    event, visible = family_event_detail(self.current_session(), event_id)
+                    event, visible = family_event_detail(user, event_id)
                     if not visible["has_snapshot"]:
                         raise EventNotFound("snapshot not found")
                     with stored_snapshot_path(event).open("rb") as stream:
@@ -2211,10 +2263,7 @@ class Handler(BaseHTTPRequestHandler):
             event_match = re.fullmatch(r"/api/family/events/([^/]+)", path)
             if event_match:
                 try:
-                    _, event = family_event_detail(
-                        self.current_session(),
-                        unquote(event_match.group(1)),
-                    )
+                    _, event = family_event_detail(user, unquote(event_match.group(1)))
                     self.send_json(200, {"ok": True, "event": event})
                 except EventNotFound:
                     self.send_json(404, {"ok": False, "error": "event not found"})
@@ -2238,6 +2287,9 @@ class Handler(BaseHTTPRequestHandler):
             return
         if path == '/api/admin/parents':
             self.send_json(200, {'parents': AUTH.list_parents()})
+            return
+        if path == "/api/admin/accounts":
+            self.send_json(200, {"accounts": AUTH.list_accounts()})
             return
         if path in PAGE_ROUTES:
             if path == "/family-events.html":

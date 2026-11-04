@@ -18,6 +18,7 @@ MODULES = ("monitor", "events", "chat", "health", "reports")
 DEFAULT_POLICY = {"modules": dict.fromkeys(MODULES, True), "video": False, "dialogue_raw": False}
 COOKIE_NAME = "tongyu_session"
 DEFAULT_PARENT_ACCESS = {"events": True, "snapshots": True, "reports": True, "dialogues": False}
+ASSIGNABLE_ROLES = ("pending", "parent", "merchant", "viewer")
 
 
 def parent_access(value):
@@ -111,7 +112,7 @@ class AccessStore:
 
     def create_user(self, username, password, *, role="viewer", bound_student_ids=None, access=None):
         username, password = credentials(username, password)
-        if role not in ("viewer", "admin", "parent", "merchant"):
+        if role not in (*ASSIGNABLE_ROLES, "admin"):
             raise ValueError("Invalid role")
         bound_student_ids = student_ids(bound_student_ids) if role == "parent" else []
         with self.lock:
@@ -147,11 +148,43 @@ class AccessStore:
             user = self.users.get(session.get("username"))
             if not user:
                 return None
-            result = {k: user[k] for k in ("username", "role")}
-            if user["role"] == "parent":
-                result["student_ids"] = list(user.get("student_ids", []))
-                result["access"] = parent_access(user.get("access"))
-            return result
+            return self._public_account(user)
+
+    @staticmethod
+    def _public_account(user):
+        result = {k: user[k] for k in ("username", "role")}
+        if user["role"] == "parent":
+            result["student_ids"] = list(user.get("student_ids", []))
+            result["access"] = parent_access(user.get("access"))
+        return result
+
+    def list_accounts(self):
+        with self.lock:
+            return [self._public_account(self.users[key]) for key in sorted(self.users)]
+
+    def assign_role(self, username, role, bound=None, access=None):
+        if not isinstance(username, str) or role not in ASSIGNABLE_ROLES:
+            raise ValueError("请选择账号和有效角色")
+        key = unicodedata.normalize("NFKC", username).strip().casefold()
+        with self.lock:
+            current = self.users.get(key)
+            if not current or current["role"] == "admin":
+                raise ValueError("请选择已注册的非管理员账号")
+            updated = {**current, "role": role, "student_ids": []}
+            updated.pop("access", None)
+            if role == "parent":
+                updated["student_ids"] = student_ids(bound)
+                if not updated["student_ids"]:
+                    raise ValueError("请至少绑定一名学生")
+                if access is None:
+                    access = current.get("access") if current["role"] == "parent" else {
+                        **DEFAULT_PARENT_ACCESS, "snapshots": False,
+                    }
+                updated["access"] = parent_access(access)
+            users = {**self.users, key: updated}
+            self._save(users, self.policy)
+            self.users = users
+            return self._public_account(updated)
 
     def permitted(self, session, key):
         user = self.public_user(session)
@@ -159,7 +192,7 @@ class AccessStore:
             return False
         if user["role"] == "admin":
             return True
-        if user["role"] in ("parent", "merchant"):
+        if user["role"] != "viewer":
             return False
         with self.lock:
             return bool(self.policy["modules"].get(key, self.policy.get(key, False)))

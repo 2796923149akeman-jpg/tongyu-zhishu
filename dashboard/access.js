@@ -4,6 +4,9 @@
   const state = window.TongyuBootstrap || {user: null};
   const nativeFetch = window.fetch.bind(window);
   const routes = {monitor: ['/index.html', '实时监控', '设备状态与传感器数据'], events: ['/events.html', '异常事件', '事件筛选与处置演示'], chat: ['/chat.html', '对话与情绪', '会话回顾与情绪线索'], health: ['/health.html', '学生测温', '名单与测温记录演示'], reports: ['/reports.html', '当日日报', '当日记录汇总演示']};
+  const roleLabels = {admin: '管理员', pending: '待分配', parent: '家长', merchant: '商家', viewer: '演示账号'};
+  const roleHomes = {admin: '/admin', pending: '/welcome', parent: '/family-events.html', merchant: '/sensors.html'};
+  window.TongyuStudentLabel = student => `${student.nickname || student.name} · ${student.class_name || student.class_id} · ${student.id}`;
   let checking = false;
   function exitToLogin() {
     document.body?.replaceChildren();
@@ -30,9 +33,8 @@
   function safeNext(user) {
     const next = new URLSearchParams(location.search).get('next');
     const allowed = ['/welcome', '/family-events.html', '/', '/admin', '/admin.html', '/events', '/chat', ...Object.values(routes).map(r => r[0])];
-    const home = user?.role === 'admin' ? '/admin' : user?.role === 'parent' ? '/family-events.html' : '/welcome';
-    if (user?.role === 'parent') return next === '/family-events.html' ? next : home;
-    if (user?.role === 'merchant') return '/sensors.html';
+    const home = roleHomes[user?.role] || '/welcome';
+    if (['pending', 'parent', 'merchant'].includes(user?.role)) return home;
     if (user?.role !== 'admin' && ['/admin', '/admin.html'].includes(next)) return home;
     return allowed.includes(next) ? next : home;
   }
@@ -41,7 +43,11 @@
     checking = true;
     try {
       const latest = await json('/api/auth/session');
-      if (!latest.user || latest.user.username !== state.user?.username || latest.user.role !== state.user?.role) return exitToLogin();
+      if (!latest.user || latest.user.username !== state.user?.username) return exitToLogin();
+      if (latest.user.role !== state.user.role) {
+        document.body.style.visibility = 'hidden';
+        return location.replace(roleHomes[latest.user.role] || '/welcome');
+      }
       if (JSON.stringify(latest.user) !== JSON.stringify(state.user)) {
         document.body.style.visibility = 'hidden';
         return location.reload();
@@ -52,10 +58,10 @@
   }
   function accountBar() {
     const bar = document.createElement('div'); bar.className = 'account-bar';
-    const roleLabel = {admin: '管理员', parent: '家长', merchant: '商家'}[state.user.role] || '演示账号';
+    const roleLabel = roleLabels[state.user.role];
     const who = document.createElement('span'); who.textContent = `${state.user.username} · ${roleLabel}`; bar.append(who);
     const home = document.createElement('a'); home.href = '/welcome'; home.textContent = '模块入口'; bar.append(home);
-    if (state.user.role === 'admin') { const link = document.createElement('a'); link.href = '/admin'; link.textContent = '展示设置'; bar.append(link); }
+    if (state.user.role === 'admin') { const link = document.createElement('a'); link.href = '/admin'; link.textContent = '账号管理'; bar.append(link); }
     if (state.user.role === 'parent') { const link = document.createElement('a'); link.href = '/family-events.html'; link.textContent = '家长工作台'; bar.append(link); }
     if (state.user.role === 'merchant') { const link = document.createElement('a'); link.href = '/sensors.html'; link.textContent = '环境传感器'; bar.append(link); }
     const logout = document.createElement('button'); logout.type = 'button'; logout.textContent = '退出登录';
@@ -75,8 +81,8 @@
       $('registerTab').setAttribute('aria-selected', String(mode === 'register'));
       $('confirmField').hidden = mode !== 'register'; $('accountConfirm').required = mode === 'register';
       $('accountPassword').autocomplete = mode === 'register' ? 'new-password' : 'current-password';
-      $('accessTitle').textContent = mode === 'register' ? '注册演示账号' : '欢迎登录';
-      $('accessSubtitle').textContent = mode === 'register' ? '创建账号后即可登录，查看已开放的内容。' : '首次使用？先注册一个演示账号。';
+      $('accessTitle').textContent = mode === 'register' ? '注册账号' : '欢迎登录';
+      $('accessSubtitle').textContent = mode === 'register' ? '注册后可登录，管理员分配角色后即可查看对应内容。' : '首次使用？请先注册账号。';
       $('accountSubmit').textContent = mode === 'register' ? '注册账号' : '登录'; $('accountFeedback').textContent = '';
       $('accountPassword').value = ''; $('accountConfirm').value = '';
     }
@@ -98,7 +104,7 @@
       try {
         const data = await json('/api/auth/' + submittedMode, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({username: $('accountUsername').value.trim(), password: $('accountPassword').value})});
         if (submittedMode === 'login') { location.replace(safeNext(data.user)); return; }
-        setMode('login'); feedback.dataset.success = 'true'; feedback.textContent = '注册成功，请输入密码登录。'; $('accountPassword').focus();
+        setMode('login'); feedback.dataset.success = 'true'; feedback.textContent = '注册成功。登录后可查看分配状态。'; $('accountPassword').focus();
       } catch (error) { feedback.textContent = error.message; }
       finally { $('accountSubmit').disabled = false; $('accountSubmit').textContent = mode === 'register' ? '注册账号' : '登录'; }
     });
@@ -119,126 +125,154 @@
       finally { button.disabled = false; }
     });
 
-    const parentForm = document.getElementById('parentForm');
-    const parentUsername = document.getElementById('parentUsername');
-    const parentPassword = document.getElementById('parentPassword');
-    const parentStudents = document.getElementById('parentStudents');
-    const parentFeedback = document.getElementById('parentFeedback');
-    const parentList = document.getElementById('parentList');
-    const parentPermissions = ['events', 'snapshots', 'reports', 'dialogues'];
+    const byId = id => document.getElementById(id);
+    const rows = byId('accountList');
+    const listStatus = byId('accountListStatus');
+    const dialog = byId('accountDialog');
+    const role = byId('accountRole');
+    const fields = byId('roleFields');
+    const parentFields = byId('parentFields');
+    const parentStudents = byId('parentStudents');
+    const editStatus = byId('accountEditStatus');
+    const nicknameStudent = byId('nicknameStudent');
+    const nicknameInput = byId('studentNickname');
+    const nicknameStatus = byId('nicknameStatus');
+    const parentDefaults = {events: true, snapshots: false, reports: true, dialogues: false};
+    let accounts = [];
     let students = [];
-    let parents = [];
+    let editing = null;
 
-    function renderParentStudents(selected = []) {
-      const chosen = new Set(selected);
-      parentStudents.replaceChildren();
-      for (const student of students) {
-        const option = new Option(`${student.name} · ${student.id} · ${student.class_name || student.class_id}`, student.id);
-        option.selected = chosen.has(student.id);
-        parentStudents.append(option);
-      }
+    function selectOptions(selected = []) {
+      return students.filter(student => student.active !== false).map(student =>
+        new Option(window.TongyuStudentLabel(student), student.id, false, selected.includes(student.id)));
     }
 
-    function renderParents() {
-      parentList.replaceChildren();
-      if (!parents.length) {
-        const empty = document.createElement('p');
-        empty.className = 'access-note';
-        empty.textContent = '尚未创建家长账号。';
-        parentList.append(empty);
-        return;
+    function updateRoleFields() {
+      parentFields.hidden = role.value !== 'parent';
+      parentStudents.required = role.value === 'parent';
+    }
+
+    function editAccount(account) {
+      editing = account;
+      byId('accountEditTitle').textContent = '管理账号 · ' + account.username;
+      role.value = account.role;
+      parentStudents.replaceChildren(...selectOptions(account.student_ids || []));
+      for (const [key, enabled] of Object.entries(account.access || parentDefaults)) {
+        byId('parent-' + key).checked = enabled;
       }
-      for (const parent of parents) {
-        const row = document.createElement('div');
-        row.className = 'access-switch';
-        const text = document.createElement('span');
-        text.textContent = `${parent.username} · ${parent.student_ids.join('、')}`;
-        const edit = document.createElement('button');
-        edit.type = 'button';
-        edit.textContent = '修改绑定与权限';
-        edit.addEventListener('click', () => {
-          parentUsername.value = parent.username;
-          parentPassword.value = '';
-          renderParentStudents(parent.student_ids);
-          for (const key of parentPermissions) document.getElementById('parent-' + key).checked = parent.access[key];
-          parentFeedback.textContent = '修改绑定不需要重填密码。';
+      editStatus.textContent = '';
+      updateRoleFields();
+      dialog.showModal();
+    }
+
+    function renderAccounts() {
+      const studentById = new Map(students.map(student => [student.id, student]));
+      const ordered = [...accounts].sort((a, b) => Number(b.role === 'pending') - Number(a.role === 'pending'));
+      rows.replaceChildren(...ordered.map(account => {
+        const row = document.createElement('tr');
+        const children = (account.student_ids || []).map(id => {
+          const student = studentById.get(id);
+          return student ? window.TongyuStudentLabel(student) : id;
         });
-        row.append(text, edit);
-        parentList.append(row);
-      }
+        for (const value of [account.username, roleLabels[account.role], children.join('、') || '—']) {
+          row.insertCell().textContent = value;
+        }
+        const actions = row.insertCell();
+        if (account.role !== 'admin') {
+          const button = document.createElement('button');
+          button.type = 'button';
+          button.className = 'access-secondary';
+          button.textContent = account.role === 'pending' ? '分配角色' : '修改';
+          button.addEventListener('click', () => editAccount(account));
+          actions.append(button);
+        }
+        return row;
+      }));
     }
 
-    async function loadParents() {
+    function fillNicknameEditor() {
+      const selection = nicknameStudent.value;
+      nicknameStudent.replaceChildren(...selectOptions());
+      if (selection) nicknameStudent.value = selection;
+      nicknameInput.value = students.find(student => student.id === nicknameStudent.value)?.nickname || '';
+      byId('nicknameForm').querySelector('button').disabled = !nicknameStudent.value;
+    }
+
+    async function loadAccounts() {
+      const refresh = byId('refreshAccounts');
+      refresh.disabled = true;
+      listStatus.textContent = '正在读取账号…';
       try {
-        const [studentData, parentData] = await Promise.all([
-          json('/api/health/students'),
-          json('/api/admin/parents'),
+        const [studentData, accountData] = await Promise.all([
+          json('/api/health/students'), json('/api/admin/accounts'),
         ]);
-        students = Array.isArray(studentData.students) ? studentData.students : [];
-        parents = Array.isArray(parentData.parents) ? parentData.parents : [];
-        renderParentStudents();
-        renderParents();
+        students = studentData.students;
+        accounts = accountData.accounts;
+        renderAccounts();
+        fillNicknameEditor();
+        listStatus.textContent = '共 ' + accounts.length + ' 个账号';
       } catch (error) {
-        parentFeedback.dataset.success = 'false';
-        parentFeedback.textContent = `家长账号加载失败：${error.message}`;
+        listStatus.textContent = '账号列表加载失败：' + error.message;
+      } finally {
+        refresh.disabled = false;
       }
     }
 
-    parentForm.addEventListener('submit', async event => {
+    role.addEventListener('change', updateRoleFields);
+    byId('accountCancel').addEventListener('click', () => dialog.close());
+    dialog.addEventListener('cancel', event => { if (fields.disabled) event.preventDefault(); });
+    byId('roleForm').addEventListener('submit', async event => {
       event.preventDefault();
-      const button = document.getElementById('parentSave');
-      const studentIds = [...parentStudents.selectedOptions].map(option => option.value);
-      parentFeedback.dataset.success = 'false';
-      if (!studentIds.length) {
-        parentFeedback.textContent = '请至少选择一名学生。';
-        return;
+      const payload = {username: editing.username, role: role.value};
+      if (payload.role === 'parent') {
+        payload.student_ids = [...parentStudents.selectedOptions].map(option => option.value);
+        payload.access = Object.fromEntries(Object.keys(parentDefaults).map(key => [key, byId('parent-' + key).checked]));
       }
-      button.disabled = true;
-      parentFeedback.textContent = '正在保存…';
+      fields.disabled = true;
+      editStatus.textContent = '正在保存…';
       try {
-        const payload = {
-          username: parentUsername.value.trim(),
-          student_ids: studentIds,
-          access: Object.fromEntries(parentPermissions.map(key => [key, document.getElementById('parent-' + key).checked])),
-        };
-        if (parentPassword.value) payload.password = parentPassword.value;
-        await json('/api/admin/parents', {
-          method: 'POST',
-          headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify(payload),
-        });
-        parentFeedback.dataset.success = 'true';
-        parentFeedback.textContent = '家长账号和绑定已保存。';
-        parentForm.reset();
-        await loadParents();
+        const {account} = await json('/api/admin/accounts', {method: 'POST', headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify(payload)});
+        accounts = accounts.map(item => item.username === account.username ? account : item);
+        dialog.close();
+        renderAccounts();
+        listStatus.textContent = account.username + ' 已设为' + roleLabels[account.role] + '。';
       } catch (error) {
-        parentFeedback.textContent = `保存失败：${error.message}`;
+        editStatus.textContent = error.message;
       } finally {
-        button.disabled = false;
+        fields.disabled = false;
       }
     });
-    loadParents();
-    const merchantForm = document.getElementById('merchantForm');
-    merchantForm.addEventListener('submit', async event => {
+
+    nicknameStudent.addEventListener('change', () => {
+      nicknameInput.value = students.find(student => student.id === nicknameStudent.value)?.nickname || '';
+      nicknameStatus.textContent = '';
+    });
+    byId('nicknameForm').addEventListener('submit', async event => {
       event.preventDefault();
-      const feedback = document.getElementById('merchantFeedback');
-      const button = merchantForm.querySelector('button');
+      const button = event.currentTarget.querySelector('button');
       button.disabled = true;
-      feedback.textContent = '正在创建…';
+      nicknameStudent.disabled = true;
+      nicknameInput.disabled = true;
+      nicknameStatus.dataset.success = 'false';
       try {
-        await json('/api/admin/merchants', {method: 'POST', headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({username: document.getElementById('merchantUsername').value,
-            password: document.getElementById('merchantPassword').value})});
-        merchantForm.reset();
-        feedback.dataset.success = 'true';
-        feedback.textContent = '商家账号已创建。';
+        const {student} = await json('/api/admin/student-nickname', {method: 'POST', headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({student_id: nicknameStudent.value, nickname: nicknameInput.value})});
+        students = students.map(item => item.id === student.id ? student : item);
+        fillNicknameEditor();
+        renderAccounts();
+        nicknameStatus.dataset.success = 'true';
+        nicknameStatus.textContent = '昵称已保存。';
       } catch (error) {
-        feedback.dataset.success = 'false';
-        feedback.textContent = error.message;
+        nicknameStatus.textContent = error.message;
       } finally {
         button.disabled = false;
+        nicknameStudent.disabled = false;
+        nicknameInput.disabled = false;
       }
     });
+    byId('refreshAccounts').addEventListener('click', loadAccounts);
+    loadAccounts();
   }
   document.addEventListener('DOMContentLoaded', () => {
     const page = document.body.dataset.accessPage;
@@ -273,6 +307,11 @@
         document.getElementById('moduleCards').append(card);
       }
       document.getElementById('noModules').hidden = count > 0 || Boolean(restricted);
+      if (state.user.role === 'pending') {
+        document.querySelector('h1').textContent = '等待分配角色';
+        document.getElementById('welcomeNote').textContent = '账号已注册。管理员分配角色后，此页面会自动更新。';
+        document.getElementById('noModules').hidden = true;
+      }
     }
     if (page === 'admin') adminPage();
     setInterval(checkSession, 5000);

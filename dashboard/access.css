@@ -28,6 +28,17 @@
 .access-panel-head { display: flex; justify-content: space-between; gap: 16px; align-items: center; flex-wrap: wrap; }
 .access-box { margin: 24px 0; padding: 24px; background: white; border: 1px solid #dae4df; border-radius: 14px; }
 .access-box h2 { margin: 0 0 6px; font-size: 18px; }
+.access-box summary { cursor: pointer; font-weight: 600; }
+.access-table-wrap { overflow-x: auto; }
+.access-table { width: 100%; border-collapse: collapse; text-align: left; }
+.access-table th, .access-table td { padding: 9px 10px; border-bottom: 1px solid #eef2f0; }
+.access-table th { white-space: nowrap; }
+.access-table button { padding: 5px 10px; min-height: 34px; white-space: nowrap; }
+.access-dialog { width: min(540px, calc(100% - 24px)); margin: auto; max-height: calc(100dvh - 24px); overflow: auto; }
+.access-dialog::backdrop { background: #142e2d66; }
+.access-dialog fieldset { min-width: 0; border: 0; padding: 0; margin: 8px 0 0; }
+.access-dialog .access-actions { margin-top: 14px; }
+.access-box select { width: 100%; border: 1px solid #cbd9d3; border-radius: 8px; padding: 6px 9px; font: inherit; background: #fff; color: inherit; }
 .access-switch { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 16px 0; border-bottom: 1px solid #eef2f0; cursor: pointer; }
 .access-switch small { display: block; color: #6a7e77; font-size: 12px; }
 .access-switch input { flex: 0 0 auto; width: 23px; height: 23px; accent-color: #176b67; cursor: pointer; }

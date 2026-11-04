@@ -468,7 +468,7 @@
         const data = await requestJson('/api/health/students');
         if (!studentDialog.open || studentForm.dataset.messageId !== message.id) return;
         for (const student of data.students.filter(item => item.active !== false)) {
-          dialogueStudent.add(new Option(`${student.name} · ${student.class_name} · ${student.id}`, student.id));
+          dialogueStudent.add(new Option(window.TongyuStudentLabel(student), student.id));
         }
         if (message.family_student_id) dialogueStudent.value = message.family_student_id;
         studentState.textContent = '';

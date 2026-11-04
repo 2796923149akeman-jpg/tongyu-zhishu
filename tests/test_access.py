@@ -71,6 +71,8 @@ class AccessTests(unittest.TestCase):
     def register_viewer(self):
         self.request('/api/auth/session')
         self.assertEqual(self.request('/api/auth/register', {'username': 'teacher', 'password': 'teacher-fixture', 'role': 'admin'})[0], 201)
+        self.login()
+        self.assertEqual(self.request('/api/admin/accounts', {'username': 'teacher', 'role': 'viewer'})[0], 200)
         self.login('teacher', 'teacher-fixture')
 
     def test_team_apis_obey_roles_csrf_and_module_switches(self):
@@ -171,17 +173,51 @@ class AccessTests(unittest.TestCase):
         reloaded = self.web.AccessStore(self.web.AUTH.path)
         self.assertEqual(reloaded.users['parent-one']['student_ids'], ['S-0201', 'S-0202'])
 
-    def test_admin_page_contains_parent_provisioning_controls(self):
+    def test_admin_can_assign_and_change_registered_account_roles(self):
+        self.request('/api/auth/session')
+        self.assertEqual(self.request('/api/auth/register', {
+            'username': 'family-user', 'password': 'family-fixture', 'role': 'merchant',
+        })[0], 201)
+        self.login('family-user', 'family-fixture')
+        registered = {'Cookie': self.cookie, 'X-CSRF-Token': self.csrf}
+        self.assertEqual(self.request('/api/auth/session')[1]['user']['role'], 'pending')
+        for route in ('/api/admin/accounts', '/api/health/students', '/api/rdk/sensors', '/api/family/students'):
+            self.assertEqual(self.request(route)[0], 403, route)
+        self.assertEqual(self.request('/api/admin/accounts', {'username': 'family-user', 'role': 'merchant'})[0], 403)
+
+        self.cookie = self.csrf = ''
+        self.login()
+        listing = self.request('/api/admin/accounts')[1]['accounts']
+        self.assertIn({'username': 'family-user', 'role': 'pending'}, listing)
+        self.assertNotIn('password_hash', json.dumps(listing))
+        self.assertEqual(self.request('/api/admin/accounts', {'username': 'owner', 'role': 'merchant'})[0], 400)
+        self.assertEqual(self.request('/api/health/import', {
+            'students': [{'id': 'S-0201', 'name': '张小明', 'class_id': 'C-02'}],
+        })[0], 200)
+        self.assertEqual(self.request('/api/admin/student-nickname', {'student_id': 'S-0201', 'nickname': '小满'})[0], 200)
+        assignment = {'username': 'family-user', 'role': 'parent', 'student_ids': ['S-0201']}
+        self.assertEqual(self.request('/api/admin/accounts', {**assignment, 'student_ids': ['UNKNOWN']})[0], 400)
+        self.assertEqual(self.request('/api/admin/accounts', assignment)[0], 200)
+        status, data, _ = self.request('/api/family/students', headers=registered, remember=False)
+        self.assertEqual((status, data['students']), (200, [{'id': 'S-0201', 'name': '小满'}]))
+        self.assertEqual(self.web.load_health_students()[0]['nickname'], '小满')
+
+        self.assertEqual(self.request('/api/admin/accounts', {'username': 'family-user', 'role': 'merchant'})[0], 200)
+        self.assertEqual(self.request('/api/family/students', headers=registered, remember=False)[0], 403)
+        self.assertEqual(self.request('/sensors.html', headers=registered, remember=False)[0], 200)
+        self.assertEqual(self.web.AUTH.users['family-user']['student_ids'], [])
+
+    def test_admin_page_contains_account_assignment_controls(self):
         page = (ROOT / "dashboard" / "admin.html").read_text(encoding="utf-8")
         for element_id in (
-            "parentForm",
-            "parentUsername",
-            "parentPassword",
+            "accountList",
+            "accountRole",
+            "roleForm",
             "parentStudents",
-            "parentSave",
+            "nicknameForm",
         ):
             self.assertIn(f'id="{element_id}"', page)
-        self.assertIn("家长账号", page)
+        self.assertIn("已注册账号", page)
 
     def test_admin_initialization_is_never_available_to_browser(self):
         self.web.AUTH = self.web.AccessStore(Path(self.temp.name) / 'empty.json', secure=False)

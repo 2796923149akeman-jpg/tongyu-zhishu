@@ -316,12 +316,29 @@ class FamilyEventApiTests(unittest.TestCase):
             with self.assertRaises(OSError):
                 self.web.assign_event_participants(event["id"], {"names": "张小明"})
         self.assertEqual(self.request(route, self.parent_one)[0], 404)
-        self.web.assign_event_participants(event["id"], {"names": "张小明"})
+        self.web.assign_event_participants(event["id"], {"student_ids": ["S-0201"], "share_snapshot": True})
         self.assertEqual(self.request(route, self.parent_one)[0], 200)
         self.assertEqual(self.request(route + "/snapshot", self.parent_one)[2], image)
         self.web.change_event_status(event["id"], {"status": "false_alarm"})
         self.web.change_event_status(event["id"], {"status": "pending"})
         self.assertEqual(self.request(route, self.parent_one)[0], 404)
+
+    def test_snapshot_requires_event_permission_and_uses_stable_student_ids(self):
+        self.web.update_student_nickname("S-0201", "小满")
+        self.web.update_student_nickname("S-0301", "小满")
+        path = self.web.event_snapshot_path(self.fall["id"])
+        path.parent.mkdir(parents=True)
+        image = b"\xff\xd8new-snapshot\xff\xd9"
+        path.write_bytes(image)
+        route = "/api/family/events/" + self.fall["id"]
+        self.web.assign_event_participants(self.fall["id"], {"student_ids": ["S-0201"]})
+        payload = json.loads(self.request(route, self.parent_one)[2])
+        self.assertEqual(payload["event"]["participants"], [{"student_id": "S-0201", "student_name": "小满"}])
+        self.assertEqual(self.request(route + "/snapshot", self.parent_one)[0], 404)
+        self.assertEqual(self.request(route, self.parent_two)[0], 404)
+        self.web.assign_event_participants(self.fall["id"], {"student_ids": ["S-0201"], "share_snapshot": True})
+        self.assertEqual(self.request(route + "/snapshot", self.parent_one)[2], image)
+        self.assertEqual(self.request(route + "/snapshot", self.parent_two)[0], 404)
 
 
 if __name__ == "__main__":
