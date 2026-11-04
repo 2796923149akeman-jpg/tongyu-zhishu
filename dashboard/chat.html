@@ -248,6 +248,20 @@
     </form>
   </dialog>
 
+  <dialog id="studentDialog">
+    <form id="studentForm">
+      <div class="dialog-head"><h2>关联本条对话</h2></div>
+      <div class="settings-grid">
+        <p>请选择这条对话所属的孩子。开放对话权限后，对应家长可在日报中查看本条内容。</p>
+        <label>学生 <select id="dialogueStudent"></select></label>
+        <p id="studentSaveState" role="status"></p>
+        <div class="dialog-actions">
+          <button id="studentCancel" class="button" type="button">取消</button>
+          <button class="button primary" type="submit">保存关联</button>
+        </div>
+      </div>
+    </form>
+  </dialog>
   <script>
     const $ = id => document.getElementById(id);
     const elements = {
@@ -402,6 +416,14 @@
           if (item.role === 'user') { const [text, className] = attentionChip(emotion.attention); if (text) { const chip = createChip(text, className); chip.title = emotion.attention_reason || ''; emotionRow.append(chip); } }
         } else emotionRow.append(createChip('等待情绪分析'));
         body.append(head, bubble, emotionRow);
+        if (canManageRecords) {
+          const assign = document.createElement('button');
+          assign.type = 'button';
+          assign.className = 'button';
+          assign.textContent = item.family_student_id ? `已关联 ${item.family_student_id} · 修改` : '关联学生';
+          assign.addEventListener('click', () => openStudentDialog(item));
+          body.append(assign);
+        }
         if (config.show_session_id) { const session = document.createElement('div'); session.className = 'session'; session.textContent = `会话 ${item.session_id || '未知'}`; body.append(session); }
         row.append(avatar, body); fragment.append(row);
       }
@@ -431,6 +453,45 @@
       const response = await fetch(url, {cache: 'no-store', signal: AbortSignal.timeout(30000), ...options}); const data = await response.json();
       if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`); return data;
     }
+    const studentDialog = $('studentDialog');
+    const studentForm = $('studentForm');
+    const dialogueStudent = $('dialogueStudent');
+    const studentSave = studentForm.querySelector('[type=submit]');
+    const studentState = $('studentSaveState');
+    async function openStudentDialog(message) {
+      studentForm.dataset.messageId = message.id;
+      dialogueStudent.replaceChildren(new Option('不向家长分享', ''));
+      studentSave.disabled = true;
+      studentState.textContent = '正在读取名单…';
+      studentDialog.showModal();
+      try {
+        const data = await requestJson('/api/health/students');
+        if (!studentDialog.open || studentForm.dataset.messageId !== message.id) return;
+        for (const student of data.students.filter(item => item.active !== false)) {
+          dialogueStudent.add(new Option(`${student.name} · ${student.class_name} · ${student.id}`, student.id));
+        }
+        if (message.family_student_id) dialogueStudent.value = message.family_student_id;
+        studentState.textContent = '';
+        studentSave.disabled = false;
+      } catch (error) {
+        studentState.textContent = error.message;
+      }
+    }
+    $('studentCancel').addEventListener('click', () => studentDialog.close());
+    studentForm.addEventListener('submit', async event => {
+      event.preventDefault();
+      studentSave.disabled = true;
+      try {
+        await requestJson('/api/dialogue/student', {method: 'POST', headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({id: studentForm.dataset.messageId, student_id: dialogueStudent.value})});
+        studentDialog.close();
+        await poll();
+      } catch (error) {
+        studentState.textContent = error.message;
+      } finally {
+        studentSave.disabled = false;
+      }
+    });
     async function loadConfig() { const data = await requestJson('/api/dialogue/config'); applyConfig(data.config); }
     async function loadAnalysisConfig() { const data = await requestJson('/api/analysis/config'); applyAnalysisConfig(data.config); }
     async function loadDialogueModel() { const data = await requestJson('/api/dialogue/model'); applyDialogueModel(data.model); }

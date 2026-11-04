@@ -1799,6 +1799,53 @@
       }
     }
 
+    function renderTemperatureTrend(points) {
+      const section = $("#temperatureTrend");
+      const chart = $("#temperatureChart");
+      const empty = $("#temperatureTrendEmpty");
+      if (!section || !chart || !empty) return;
+      section.hidden = !points.length;
+      chart.replaceChildren();
+      const measured = points.filter(point => Number.isFinite(point.mean_c));
+      empty.hidden = measured.length > 0;
+      chart.style.display = measured.length ? "" : "none";
+      if (!measured.length) return;
+
+      const minimum = Math.floor(Math.min(...measured.map(point => point.mean_c)) - 0.2);
+      const maximum = Math.ceil(Math.max(...measured.map(point => point.mean_c)) + 0.2);
+      const y = value => 155 - 115 * (value - minimum) / (maximum - minimum);
+      const x = index => 70 + index * 84;
+      function draw(tag, attributes, label = "") {
+        const element = document.createElementNS("http://www.w3.org/2000/svg", tag);
+        for (const [key, value] of Object.entries(attributes)) element.setAttribute(key, value);
+        if (label) element.textContent = label;
+        chart.append(element);
+      }
+
+      for (const value of [minimum, (minimum + maximum) / 2, maximum]) {
+        draw("line", {x1: 60, x2: 585, y1: y(value), y2: y(value), stroke: "#cbd5e1"});
+        draw("text", {x: 52, y: y(value) + 5, "text-anchor": "end"}, `${value}℃`);
+      }
+      let previous = null;
+      points.forEach((point, index) => {
+        const column = x(index);
+        draw("text", {x: column, y: 181, "text-anchor": "middle"}, point.date.slice(5));
+        if (!Number.isFinite(point.mean_c)) {
+          previous = null;
+          return;
+        }
+        const height = y(point.mean_c);
+        if (previous) draw("line", {x1: previous.x, y1: previous.y, x2: column, y2: height, stroke: "#17695f", "stroke-width": 2});
+        draw("circle", {cx: column, cy: height, r: 4, fill: "#17695f"});
+        draw("text", {x: column, y: height - 9, "text-anchor": "middle"}, point.mean_c.toFixed(2));
+        draw("text", {x: column, y: 201, "text-anchor": "middle"}, `${point.count} 人`);
+        previous = {x: column, y: height};
+      });
+      chart.setAttribute("aria-label", "学生平均体温折线图。" + points.map(point =>
+        Number.isFinite(point.mean_c) ? `${point.date} ${point.mean_c} ℃，${point.count} 人` : `${point.date} 无记录`
+      ).join("；"));
+    }
+
     function renderReport(report) {
       const isEmpty = report.events.length === 0 && report.dialogues.length === 0 && report.health.total === 0;
       if (els.body) els.body.hidden = isEmpty;
@@ -1824,6 +1871,7 @@
       renderClasses(report);
       renderSummary(report);
       renderDetails(report);
+      renderTemperatureTrend(report.health.temperature_trend || []);
 
       if (els.chip) {
         els.chip.dataset.tone = app.mode === "demo" ? "warn" : "ok";
@@ -1847,6 +1895,7 @@
           measured: Number(health.measured || 0),
           pending: Number(health.pending || 0),
           recheck: Number(health.recheck || 0),
+          temperature_trend: Array.isArray(health.temperature_trend) ? health.temperature_trend : [],
           classes: classes.map((klass) => ({
             id: klass.id || "",
             name: klass.name || className(klass.id),
@@ -1922,19 +1971,24 @@
     async function loadReport() {
       if (state.busy) return;
       state.busy = true;
+      const date = state.date;
+      const classId = state.classId;
       if (els.refresh) els.refresh.disabled = true;
+      if (els.print) els.print.disabled = true;
       try {
         let report;
-        if (app.mode === "live") {
-          const query = new URLSearchParams({ date: state.date });
-          if (state.classId) query.set("class_id", state.classId);
+        if (app.mode !== "demo") {
+          const query = new URLSearchParams({ date });
+          if (classId) query.set("class_id", classId);
           const payload = await requestJSON(`${API.daily}?${query.toString()}`);
-          report = normalizeReport(payload, state.date);
+          report = normalizeReport(payload, date);
+          if (date === state.date && classId === state.classId) setMode("live");
         } else {
-          report = buildDemoReport(state.date, state.classId);
+          report = buildDemoReport(date, classId);
         }
-        renderReport(report);
+        if (date === state.date && classId === state.classId) renderReport(report);
       } catch (error) {
+        if (date !== state.date || classId !== state.classId) return;
         setMode("error", describeError(error));
         toast(`日报加载失败：${describeError(error)}`, "bad");
         renderReport({
@@ -1948,6 +2002,8 @@
       } finally {
         state.busy = false;
         if (els.refresh) els.refresh.disabled = false;
+        if (els.print) els.print.disabled = false;
+        if (date !== state.date || classId !== state.classId) loadReport();
       }
     }
 

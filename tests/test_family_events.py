@@ -8,6 +8,7 @@ import unittest
 import urllib.error
 import urllib.request
 from pathlib import Path
+from unittest.mock import patch
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -44,6 +45,7 @@ class FamilyEventApiTests(unittest.TestCase):
             {"id": "S-0301", "name": "王小明", "class_id": "C-11", "class_name": "中一班", "active": True},
         ]
         self.web.HEALTH_RECORDS[:] = []
+        self.web.MESSAGES.clear()
         self.web.reload_events()
         self.web.AUTH.create_user(
             "parent-one",
@@ -134,8 +136,12 @@ class FamilyEventApiTests(unittest.TestCase):
         self.thread.join()
         self.temp.cleanup()
 
-    def request(self, path, headers=None):
-        request = urllib.request.Request(self.base + path, headers=headers or {})
+    def request(self, path, headers=None, payload=None):
+        headers = dict(headers or {})
+        if payload is not None:
+            headers["Content-Type"] = "application/json"
+        request = urllib.request.Request(self.base + path, headers=headers,
+                                         data=None if payload is None else json.dumps(payload).encode())
         try:
             with urllib.request.urlopen(request, timeout=5) as response:
                 return response.status, response.headers, response.read()
@@ -220,6 +226,102 @@ class FamilyEventApiTests(unittest.TestCase):
         self.assertIn('id="eventList"', text)
         self.assertIn("/api/family/events", text)
         self.assertIn("/snapshot", text)
+
+
+    def test_family_report_only_contains_the_requested_bound_child(self):
+        self.web.HEALTH_RECORDS[:] = [
+            {"student_id": student_id, "measured_at": "2026-11-04T09:00:00+08:00", "temperature_c": temperature}
+            for student_id, temperature in [("S-0201", 36.4), ("S-0202", 36.8), ("S-0301", 37.0)]
+        ]
+        self.web.MESSAGES.extend([
+            {"id": "first", "role": "user", "text": "本人已关联",
+             "created_at": "2026-11-04T09:30:00+08:00"},
+            {"role": "user", "text": "未明确开放", "student_id": "S-0201",
+             "created_at": "2026-11-04T09:30:00+08:00"},
+            {"role": "user", "text": "另一个孩子", "family_student_id": "S-0202",
+             "created_at": "2026-11-04T09:30:00+08:00"},
+        ])
+        path = "/api/family/daily?date=2026-11-04&student_id="
+        tag = {"id": "first", "student_id": "S-0201"}
+        self.assertEqual(self.request("/api/dialogue/student", self.parent_one, tag)[0], 403)
+        self.web.AUTH.create_user("teacher", "teacher-password", role="admin")
+        admin = self.auth_headers("teacher", "teacher-password")
+        self.assertEqual(self.request("/api/dialogue/student", admin, tag)[0], 200)
+        self.assertEqual(self.request(path + "S-0301", self.parent_one)[0], 403)
+        self.assertEqual(self.request("/api/reports/daily", self.parent_one)[0], 403)
+        _, _, body = self.request(path + "S-0201", self.parent_one)
+        self.assertEqual(json.loads(body)["report"]["dialogues"], [])
+        access = {"events": True, "snapshots": False, "reports": True, "dialogues": True}
+        self.web.AUTH.update_parent_bindings("parent-one", ["S-0201", "S-0202"], access)
+        _, _, body = self.request(path + "S-0201", self.parent_one)
+        report = json.loads(body)["report"]
+        self.assertEqual([item["temperature_c"] for item in report["readings"]], [36.4])
+        self.assertEqual([item["text"] for item in report["dialogues"]], ["本人已关联"])
+        self.assertEqual({event["id"] for event in report["events"]}, {self.fall["id"], self.fight["id"]})
+        access["reports"] = False
+        self.web.AUTH.update_parent_bindings("parent-one", ["S-0201"], access)
+        self.assertEqual(self.request(path + "S-0201", self.parent_one)[0], 403)
+
+    def test_disabling_snapshots_revokes_direct_image_access(self):
+        path = self.web.event_snapshot_path(self.fall["id"])
+        path.parent.mkdir(parents=True)
+        path.write_bytes(b"\xff\xd8\xff\xd9")
+        self.web.AUTH.update_parent_bindings("parent-one", ["S-0201"],
+                                             {"events": True, "snapshots": False, "reports": True, "dialogues": False})
+        route = "/api/family/events/" + self.fall["id"]
+        self.assertFalse(json.loads(self.request(route, self.parent_one)[2])["event"]["has_snapshot"])
+        self.assertEqual(self.request(route + "/snapshot", self.parent_one)[0], 404)
+
+    def test_merchant_receives_only_allowlisted_sensor_fields(self):
+        self.web.AUTH.create_user("merchant", "merchant-password", role="merchant")
+        merchant = self.auth_headers("merchant", "merchant-password")
+        data = {"properties": {"sht_t": "24.5", "mlx_obj": 36.5, "student_id": "S-0201",
+                               "sht_h": "NaN"}, "video_url": "private"}
+        with patch.object(self.web, "read_rdk_json", return_value=data):
+            status, _, body = self.request("/api/merchant/sensors", merchant)
+        self.assertEqual(status, 200)
+        self.assertEqual(json.loads(body)["readings"], {"sht_t": 24.5})
+        self.assertEqual(self.request("/sensors.html", merchant)[0], 200)
+        for route in ("/api/rdk/sensors", "/api/rdk/video_feed", "/api/dialogue/messages",
+                      "/api/health/records", "/api/family/events", "/api/reports/daily"):
+            self.assertEqual(self.request(route, merchant)[0], 403, route)
+
+    def test_temperature_trend_uses_latest_per_child_and_keeps_gaps(self):
+        records = [
+            {"student_id": "S-0201", "measured_at": "2026-11-02T08:00:00+08:00", "temperature_c": 35.5},
+            {"student_id": "S-0201", "measured_at": "2026-11-02T10:00:00+08:00", "temperature_c": 36.5},
+            {"student_id": "S-0301", "measured_at": "2026-11-02T10:00:00+08:00", "temperature_c": 39.0},
+            {"student_id": "S-0201", "measured_at": "2026-11-04T10:00:00+08:00", "temperature_c": 37.5},
+        ]
+        result = self.web.temperature_trend("2026-11-04", records, {"S-0201"})
+        self.assertEqual([point["mean_c"] for point in result[-3:]], [36.5, None, 37.5])
+        self.assertEqual([point["count"] for point in result[-3:]], [1, 0, 1])
+
+    def test_legacy_student_links_are_kept_for_teacher_review(self):
+        event = dict(self.unassigned)
+        del event["participants"]
+        event["students"] = [{"id": "S-0201", "name": "张小明"}]
+        self.web.EVIDENCE_DIR = self.web.EVENTS_FILE.parent / "evidence"
+        self.web.EVIDENCE_DIR.mkdir()
+        filename = event["id"] + ".jpg"
+        image = b"\xff\xd8legacy\xff\xd9"
+        (self.web.EVIDENCE_DIR / filename).write_bytes(image)
+        event["evidence_url"] = "/evidence/" + filename
+        self.web.atomic_write_json(self.web.EVENTS_FILE, [event])
+        self.web.reload_events()
+        self.assertEqual(self.web.get_event(event["id"])["participants"][0]["student_id"], "S-0201")
+        route = "/api/family/events/" + event["id"]
+        self.assertEqual(self.request(route, self.parent_one)[0], 404)
+        with patch.object(self.web, "atomic_write_json", side_effect=OSError("write failed")):
+            with self.assertRaises(OSError):
+                self.web.assign_event_participants(event["id"], {"names": "张小明"})
+        self.assertEqual(self.request(route, self.parent_one)[0], 404)
+        self.web.assign_event_participants(event["id"], {"names": "张小明"})
+        self.assertEqual(self.request(route, self.parent_one)[0], 200)
+        self.assertEqual(self.request(route + "/snapshot", self.parent_one)[2], image)
+        self.web.change_event_status(event["id"], {"status": "false_alarm"})
+        self.web.change_event_status(event["id"], {"status": "pending"})
+        self.assertEqual(self.request(route, self.parent_one)[0], 404)
 
 
 if __name__ == "__main__":

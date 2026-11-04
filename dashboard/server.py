@@ -17,6 +17,7 @@ import re
 import tempfile
 import threading
 import time
+import unicodedata
 import uuid
 from collections import deque
 from datetime import datetime, timedelta, timezone
@@ -122,6 +123,7 @@ PAGE_ROUTES = {
     "/chat": ("chat.html", "chat"), "/chat.html": ("chat.html", "chat"),
     "/health.html": ("health.html", "health"), "/reports.html": ("reports.html", "reports"),
     "/family-events.html": ("family-events.html", None),
+    "/sensors.html": ("sensors.html", None),
     "/admin": ("admin.html", "admin"), "/admin.html": ("admin.html", "admin"),
     "/welcome": ("welcome.html", None),
 }
@@ -139,14 +141,6 @@ def route_module(path):
     if path == "/api/config":
         return "monitor"
     return None
-
-
-def parent_path_allowed(path: str) -> bool:
-    return (
-        path == "/welcome"
-        or path == "/family-events.html"
-        or path.startswith("/api/family/")
-    )
 
 
 def public_messages(items, raw):
@@ -243,6 +237,14 @@ def load_events() -> list[dict]:
     loaded = []
     for raw in data[-EVENTS_LIMIT:]:
         try:
+            if isinstance(raw, dict) and "participants" not in raw and isinstance(raw.get("students"), list):
+                raw = {**raw, "participants": [
+                    {"student_id": item.get("id"), "student_name": item.get("name")}
+                    for item in raw["students"][-MAX_PARTICIPANTS:]
+                    if isinstance(item, dict) and isinstance(item.get("id"), str)
+                    and re.fullmatch(r"[A-Za-z0-9-]{3,20}", item["id"])
+                    and isinstance(item.get("name"), str) and item["name"].strip()
+                ]}
             event = normalize_event(raw)
         except EventValidationError:
             continue
@@ -256,12 +258,31 @@ def save_events() -> None:
     atomic_write_json(EVENTS_FILE, EVENTS)
 
 
+def replace_event(index: int, event: dict) -> None:
+    # Call under EVENTS_LOCK so a failed write cannot change family visibility.
+    updated = EVENTS.copy()
+    updated[index] = event
+    atomic_write_json(EVENTS_FILE, updated)
+    EVENTS[index] = event
+
+
 SNAPSHOT_LIMIT = 2 * 1024 * 1024
 
 
 def event_snapshot_path(event_id: str) -> Path:
     key = hashlib.sha256(event_id.encode("utf-8")).hexdigest()
     return EVENTS_FILE.parent / "event_snapshots" / f"{key}.jpg"
+
+
+def stored_snapshot_path(event: dict) -> Path:
+    path = event_snapshot_path(event["id"])
+    name = event["id"] + ".jpg"
+    if (not path.is_file() and event.get("evidence_url") == "/evidence/" + name
+            and re.fullmatch(r"[A-Za-z0-9_-]{1,100}\.jpg", name)):
+        legacy = EVIDENCE_DIR / name
+        if legacy.resolve().parent == EVIDENCE_DIR.resolve():
+            return legacy
+    return path
 
 
 def event_with_visible_evidence(event: dict, can_view: bool) -> dict:
@@ -271,7 +292,7 @@ def event_with_visible_evidence(event: dict, can_view: bool) -> dict:
         event.pop("evidence_captured_at", None)
         return event
     try:
-        modified = event_snapshot_path(event["id"]).stat().st_mtime
+        modified = stored_snapshot_path(event).stat().st_mtime
     except OSError:
         return event
     event["has_snapshot"] = True
@@ -281,10 +302,15 @@ def event_with_visible_evidence(event: dict, can_view: bool) -> dict:
 
 def capture_event_snapshot(event_id: str) -> None:
     request = urllib.request.Request(RDK_BASE + "/snapshot", headers={"Accept": "image/jpeg"})
-    with urllib.request.urlopen(request, timeout=1.5) as response:
-        if response.headers.get_content_type() != "image/jpeg":
-            return
-        image = response.read(SNAPSHOT_LIMIT + 1)
+    try:
+        with urllib.request.urlopen(request, timeout=1.5) as response:
+            if response.headers.get_content_type() != "image/jpeg":
+                return
+            image = response.read(SNAPSHOT_LIMIT + 1)
+    except urllib.error.HTTPError as exc:
+        if exc.code not in (404, 405):
+            raise
+        image = capture_legacy_snapshot()
     if len(image) > SNAPSHOT_LIMIT or not image.startswith(b"\xff\xd8") or not image.endswith(b"\xff\xd9"):
         return
     path = event_snapshot_path(event_id)
@@ -299,6 +325,27 @@ def capture_event_snapshot(event_id: str) -> None:
             temporary.replace(path)
         finally:
             temporary.unlink(missing_ok=True)
+
+
+def capture_legacy_snapshot() -> bytes:
+    request = urllib.request.Request(RDK_BASE + "/video_feed", headers={"Accept": "multipart/x-mixed-replace"})
+    deadline = time.monotonic() + 1.5
+    with urllib.request.urlopen(request, timeout=1.5) as response:
+        buffer = bytearray()
+        while len(buffer) <= SNAPSHOT_LIMIT and time.monotonic() < deadline:
+            chunk = response.read1(16 * 1024)
+            if not chunk:
+                break
+            previous_size = len(buffer)
+            buffer.extend(chunk)
+            start = buffer.find(b"\xff\xd8")
+            if start == -1:
+                del buffer[:-1]
+                continue
+            end = buffer.find(b"\xff\xd9", max(start + 2, previous_size - 1))
+            if end != -1:
+                return bytes(buffer[start:end + 2])
+    return b""
 
 
 def reload_events() -> list[dict]:
@@ -397,8 +444,9 @@ def query_events(params: dict) -> dict:
     }
 
 
-def family_event_view(event: dict, allowed_student_ids: set[str] | None) -> dict | None:
-    if not event.get("parent_visible_at") or event.get("status") == "false_alarm":
+def family_event_view(event: dict, allowed_student_ids: set[str] | None, *, snapshots=True) -> dict | None:
+    if (event["event_type"] not in ("fall", "fight") or not event.get("parent_visible_at")
+            or event.get("status") == "false_alarm"):
         return None
     participants = [
         dict(item)
@@ -407,15 +455,14 @@ def family_event_view(event: dict, allowed_student_ids: set[str] | None) -> dict
     ]
     if allowed_student_ids is not None and not participants:
         return None
-    snapshot_path = event_snapshot_path(event["id"])
     snapshot_time = None
-    try:
-        snapshot_time = datetime.fromtimestamp(
-            snapshot_path.stat().st_mtime,
-            timezone.utc,
-        ).isoformat()
-    except OSError:
-        pass
+    if snapshots:
+        try:
+            path = stored_snapshot_path(event)
+            if path.is_file():
+                snapshot_time = datetime.fromtimestamp(path.stat().st_mtime, timezone.utc).isoformat()
+        except OSError:
+            pass
     return {
         "id": event["id"],
         "event_type": event["event_type"],
@@ -425,21 +472,19 @@ def family_event_view(event: dict, allowed_student_ids: set[str] | None) -> dict
             "系统检测到疑似摔倒"
             if event["event_type"] == "fall"
             else "系统检测到疑似斗殴"
-            if event["event_type"] == "fight"
-            else event["summary"]
         ),
         "detail": (
             "系统检测到疑似摔倒，老师已收到告警并正在核实处置。"
             if event["event_type"] == "fall"
             else "系统检测到疑似肢体冲突，老师已收到告警并正在核实处置。"
         ),
-        "location": event.get("location") or "",
-        "class_name": event.get("class_name") or "",
+        "location": "",
+        "class_name": "",
         "status": event["status"],
         "handled_at": event.get("handled_at"),
         "participants": participants,
         "parent_visible_at": event["parent_visible_at"],
-        "has_snapshot": snapshot_path.is_file(),
+        "has_snapshot": snapshot_time is not None,
         "snapshot_captured_at": snapshot_time,
     }
 
@@ -449,9 +494,10 @@ def family_events_payload(session: dict) -> dict:
     if not user:
         raise PermissionError("login required")
     allowed = None if user["role"] == "admin" else set(user.get("student_ids", []))
+    snapshots = user["role"] == "admin" or user["access"]["snapshots"]
     events = []
     for event in events_snapshot():
-        visible = family_event_view(event, allowed)
+        visible = family_event_view(event, allowed, snapshots=snapshots)
         if visible is not None:
             events.append(visible)
     events.sort(key=lambda item: item["occurred_at"], reverse=True)
@@ -462,7 +508,7 @@ def family_events_payload(session: dict) -> dict:
     }
 
 
-def family_event_detail(session: dict, event_id: str) -> dict:
+def family_event_detail(session: dict, event_id: str) -> tuple[dict, dict]:
     user = AUTH.public_user(session)
     if not user:
         raise PermissionError("login required")
@@ -470,10 +516,11 @@ def family_event_detail(session: dict, event_id: str) -> dict:
     event = next((item for item in events_snapshot() if item["id"] == event_id), None)
     if event is None:
         raise EventNotFound("event not found")
-    visible = family_event_view(event, allowed)
+    snapshots = user["role"] == "admin" or user["access"]["snapshots"]
+    visible = family_event_view(event, allowed, snapshots=snapshots)
     if visible is None:
         raise EventNotFound("event not found")
-    return visible
+    return event, visible
 
 
 def create_event(payload: dict) -> tuple[dict, int]:
@@ -512,9 +559,10 @@ def change_event_status(event_id: str, payload: dict) -> dict:
     note = text_value(payload.get("note"), "note", 200, default="")
     handled_by = text_value(payload.get("handled_by"), "handled_by", 80, default="")
     with EVENTS_LOCK:
-        event = next((item for item in EVENTS if item.get("id") == event_id), None)
-        if event is None:
+        index = next((i for i, item in enumerate(EVENTS) if item.get("id") == event_id), None)
+        if index is None:
             raise EventNotFound("event not found")
+        event = copy_event(EVENTS[index])
         validate_status_transition(event["status"], target)
         if event["status"] == target:
             return {"event": copy_event(event), "changed": False}
@@ -527,6 +575,8 @@ def change_event_status(event_id: str, payload: dict) -> dict:
         if note:
             event["note"] = note
         event["status"] = target
+        if target == "false_alarm":
+            event["parent_visible_at"] = None
         event["handled_at"] = None if target == "pending" else now
         event["handled_by"] = "" if target == "pending" else (handled_by or "值班老师")
         event["history"].append({
@@ -537,7 +587,7 @@ def change_event_status(event_id: str, payload: dict) -> dict:
         })
         event["history"] = event["history"][-100:]
         event["updated_at"] = now
-        save_events()
+        replace_event(index, event)
         return {"event": copy_event(event), "changed": True}
 
 
@@ -620,10 +670,14 @@ def assign_event_participants(event_id: str, payload: dict) -> dict:
     if not isinstance(names, str):
         raise EventValidationError("names must be a string")
     participants = resolve_event_participants(names)
+    handled_by = text_value(payload.get("handled_by"), "handled_by", 80, default="值班老师")
     with EVENTS_LOCK:
-        event = next((item for item in EVENTS if item.get("id") == event_id), None)
-        if event is None:
+        index = next((i for i, item in enumerate(EVENTS) if item.get("id") == event_id), None)
+        if index is None:
             raise EventNotFound("event not found")
+        event = copy_event(EVENTS[index])
+        if event["status"] == "false_alarm":
+            raise EventValidationError("请先重新打开误报事件，再关联学生")
         if event["event_type"] == "fall" and len(participants) != 1:
             raise EventValidationError("fall event requires exactly one student")
         if event["event_type"] == "fight" and len(participants) < 2:
@@ -651,12 +705,6 @@ def assign_event_participants(event_id: str, payload: dict) -> dict:
         event["parent_visible_at"] = now
         event["updated_at"] = now
         labels = "、".join(item["student_name"] for item in participants)
-        handled_by = text_value(
-            payload.get("handled_by"),
-            "handled_by",
-            80,
-            default="值班老师",
-        )
         event["history"].append({
             "at": now,
             "action": "关联事件学生",
@@ -664,7 +712,7 @@ def assign_event_participants(event_id: str, payload: dict) -> dict:
             "note": f"已关联：{labels}；家长账号可查看该事件。",
         })
         event["history"] = event["history"][-100:]
-        save_events()
+        replace_event(index, event)
         return {"event": copy_event(event), "changed": True}
 
 
@@ -862,6 +910,7 @@ def create_or_update_parent(payload: dict) -> dict:
     bound = payload.get("student_ids")
     if not isinstance(username, str):
         raise ValueError("username is required")
+    username = unicodedata.normalize("NFKC", username).strip()
     if not isinstance(bound, list):
         raise ValueError("student_ids must be a list")
     if any(not isinstance(item, str) for item in bound):
@@ -883,7 +932,7 @@ def create_or_update_parent(payload: dict) -> dict:
         None,
     )
     if existing:
-        return AUTH.update_parent_bindings(existing["username"], bound)
+        return AUTH.update_parent_bindings(existing["username"], bound, payload.get("access"))
     if not isinstance(password, str):
         raise ValueError("password is required for a new parent account")
     AUTH.create_user(
@@ -891,6 +940,7 @@ def create_or_update_parent(payload: dict) -> dict:
         password,
         role="parent",
         bound_student_ids=bound,
+        access=payload.get("access"),
     )
     return next(
         item for item in AUTH.list_parents()
@@ -905,10 +955,12 @@ def person_types_payload() -> dict:
 def validate_date(value: str | None) -> str:
     value = (value or "").strip() or local_today()
     try:
-        datetime.strptime(value, "%Y-%m-%d")
+        day = datetime.strptime(value, "%Y-%m-%d").date()
+        if day.year < 2:
+            raise ValueError("date out of range")
     except ValueError as exc:
         raise ValueError("invalid date") from exc
-    return value
+    return day.isoformat()
 
 
 def query_health_records(params: dict) -> dict:
@@ -1173,6 +1225,59 @@ def dialogue_attention_items(date: str, class_id: str, students: dict[str, dict]
     return result
 
 
+def family_daily_report(params: dict, user: dict) -> dict:
+    date = validate_date((params.get("date") or [None])[-1])
+    student_id = (params.get("student_id") or [""])[-1]
+    if student_id not in user["student_ids"]:
+        raise PermissionError("只能查询绑定学生的日报")
+    readings = [
+        {"measured_at": record["measured_at"], "temperature_c": record["temperature_c"]}
+        for record in health_record_snapshot()
+        if record["student_id"] == student_id and date_key(record["measured_at"]) == date
+    ]
+    dialogues = []
+    if user["access"]["dialogues"]:
+        with MESSAGES_LOCK:
+            messages = list(MESSAGES)
+        for message in messages:
+            if message.get("family_student_id") != student_id:
+                continue
+            try:
+                timestamp = normalize_iso(message.get("created_at") or message.get("received_at"))
+            except ValueError:
+                continue
+            if date_key(timestamp) == date and message.get("role") in ("user", "assistant") and isinstance(message.get("text"), str):
+                dialogues.append({"role": message["role"], "text": message["text"], "at": timestamp})
+    events = []
+    if user["access"]["events"]:
+        for event in events_snapshot():
+            if date_key(event["occurred_at"]) == date:
+                visible = family_event_view(event, {student_id}, snapshots=user["access"]["snapshots"])
+                if visible is not None:
+                    events.append(visible)
+    return {
+        "date": date,
+        "readings": sorted(readings, key=lambda item: item["measured_at"]),
+        "dialogues": sorted(dialogues, key=lambda item: item["at"]),
+        "events": sorted(events, key=lambda item: item["occurred_at"]),
+    }
+
+
+def temperature_trend(date: str, records: list[dict], student_ids: set[str]) -> list[dict]:
+    end = datetime.fromisoformat(date).date()
+    days = {(end - timedelta(days=offset)).isoformat(): {} for offset in range(6, -1, -1)}
+    for record in sorted(records, key=lambda item: item["measured_at"]):
+        if record["student_id"] in student_ids:
+            day = days.get(date_key(record["measured_at"]))
+            if day is not None:
+                day[record["student_id"]] = record["temperature_c"]
+    return [
+        {"date": day, "mean_c": round(sum(values.values()) / len(values), 2) if values else None,
+         "count": len(values)}
+        for day, values in days.items()
+    ]
+
+
 def build_daily_report(params: dict) -> dict:
     date = validate_date((params.get("date") or [None])[-1])
     class_id = ((params.get("class_id") or [""])[-1]).strip()
@@ -1182,9 +1287,9 @@ def build_daily_report(params: dict) -> dict:
     active_students = [item for item in students if item.get("active", True)]
     if class_id:
         active_students = [item for item in active_students if item.get("class_id") == class_id]
-    records = {item["id"]: item for item in health_record_snapshot()}
+    records = health_record_snapshot()
     records_by_student = {}
-    for record in records.values():
+    for record in records:
         if date_key(record["measured_at"]) == date:
             records_by_student.setdefault(record["student_id"], []).append(record)
     for items in records_by_student.values():
@@ -1246,6 +1351,7 @@ def build_daily_report(params: dict) -> dict:
                 "pending": pending,
                 "recheck": recheck,
                 "classes": classes,
+                "temperature_trend": temperature_trend(date, records, {item["id"] for item in active_students}),
             },
         }
     }
@@ -1470,6 +1576,35 @@ def read_rdk_json(path: str) -> dict:
         return json.loads(response.read().decode("utf-8"))
 
 
+def merchant_sensors() -> dict:
+    data = read_rdk_json("/api/iot_payload")
+    if not isinstance(data, dict):
+        raise ValueError("invalid sensor payload")
+    sensor = data.get("sensor")
+    sensor = sensor if isinstance(sensor, dict) else data
+    properties = data.get("properties", sensor.get("properties", sensor))
+    properties = properties if isinstance(properties, dict) else data
+    readings = {}
+    for key in ("eco2", "tvoc", "sht_t", "sht_h", "mlx_amb"):
+        try:
+            raw = data.get(key, properties.get(key))
+            if type(raw) not in (str, int, float):
+                continue
+            value = float(raw)
+            if math.isfinite(value):
+                readings[key] = value
+        except (ValueError, OverflowError):
+            pass
+    timestamp = None
+    raw = data.get("timestamp") or properties.get("timestamp")
+    if isinstance(raw, str):
+        try:
+            timestamp = normalize_iso(raw)
+        except ValueError:
+            pass
+    return {"readings": readings, "timestamp": timestamp}
+
+
 class Handler(BaseHTTPRequestHandler):
     server_version = "TongyuDashboard/1.0"
 
@@ -1535,7 +1670,7 @@ class Handler(BaseHTTPRequestHandler):
         policy = AUTH.get_policy() if user else None
         permissions = ({"modules": dict.fromkeys(MODULES, True), "video": True, "dialogue_raw": True}
                        if user and user["role"] == "admin" else policy)
-        if user and user["role"] == "parent":
+        if user and user["role"] in ("parent", "merchant"):
             permissions = {
                 "modules": dict.fromkeys(MODULES, False),
                 "video": False,
@@ -1575,8 +1710,16 @@ class Handler(BaseHTTPRequestHandler):
             return self.deny(path, 401, "请先登录")
         if not self.same_origin():
             return self.deny(path, 403, "请求来源不匹配")
-        if user["role"] == "parent" and not parent_path_allowed(path):
-            return self.deny(path, 403, "家长账号只能查看绑定孩子的安全事件")
+        if user["role"] == "parent":
+            allowed = {"/welcome", "/family-events.html", "/api/family/students"}
+            if user["access"]["reports"]:
+                allowed.add("/api/family/daily")
+            if user["access"]["events"] and (path == "/api/family/events" or path.startswith("/api/family/events/")):
+                allowed.add(path)
+            if path not in allowed:
+                return self.deny(path, 403, "此内容未向该家长账号开放")
+        if user["role"] == "merchant" and path not in ("/welcome", "/sensors.html", "/api/merchant/sensors"):
+            return self.deny(path, 403, "商家账号仅可查看环境传感器数据")
         if admin and user["role"] != "admin":
             return self.deny(path, 403, "此操作仅限管理员")
         module = route_module(path)
@@ -1706,6 +1849,34 @@ class Handler(BaseHTTPRequestHandler):
                     self.send_json(200, {'ok': True, 'parent': parent})
                 except (ValueError, TypeError) as exc:
                     self.send_json(400, {'ok': False, 'error': str(exc)})
+                return
+            if path == "/api/admin/merchants":
+                AUTH.create_user(item.get("username"), item.get("password"), role="merchant")
+                self.send_json(201, {"ok": True})
+                return
+            if path == "/api/dialogue/student":
+                message_id = item.get("id")
+                student_id = item.get("student_id")
+                if not isinstance(message_id, str) or not isinstance(student_id, str):
+                    self.send_json(400, {"ok": False, "error": "请选择消息与学生"})
+                    return
+                students = {student["id"]: student for student in health_student_snapshot() if student.get("active", True)}
+                if student_id and student_id not in students:
+                    self.send_json(400, {"ok": False, "error": "学生不在当前名单"})
+                    return
+                with MESSAGES_LOCK:
+                    if not any(message.get("id") == message_id for message in MESSAGES):
+                        self.send_json(404, {"ok": False, "error": "消息不存在"})
+                        return
+                    updated = [
+                        {**message, "family_student_id": student_id, "student_id": student_id,
+                         "class_id": students.get(student_id, {}).get("class_id", "")}
+                        if message.get("id") == message_id else message for message in MESSAGES
+                    ]
+                    atomic_write_json(DIALOGUE_DATA_FILE, updated)
+                    MESSAGES.clear()
+                    MESSAGES.extend(updated)
+                self.send_json(200, {"ok": True})
                 return
             if path == '/api/dialogue/delete':
                 try:
@@ -1998,6 +2169,22 @@ class Handler(BaseHTTPRequestHandler):
             if not user or user["role"] not in ("parent", "admin"):
                 self.send_json(403, {"ok": False, "error": "parent account required"})
                 return
+            if path in ("/api/family/students", "/api/family/daily"):
+                if user["role"] != "parent":
+                    self.send_json(403, {"ok": False, "error": "parent account required"})
+                elif path == "/api/family/students":
+                    students = [{"id": student["id"], "name": student["name"]}
+                                for student in health_student_snapshot() if student["id"] in user["student_ids"]]
+                    self.send_json(200, {"students": students})
+                else:
+                    try:
+                        report = family_daily_report(parse_qs(urlparse(self.path).query), user)
+                        self.send_json(200, {"report": report})
+                    except PermissionError as exc:
+                        self.send_json(403, {"ok": False, "error": str(exc)})
+                    except ValueError as exc:
+                        self.send_json(400, {"ok": False, "error": str(exc)})
+                return
             if path == "/api/family/events":
                 try:
                     self.send_json(200, {"ok": True, **family_events_payload(self.current_session())})
@@ -2008,8 +2195,13 @@ class Handler(BaseHTTPRequestHandler):
             if snapshot_match:
                 event_id = unquote(snapshot_match.group(1))
                 try:
-                    family_event_detail(self.current_session(), event_id)
-                    image = event_snapshot_path(event_id).read_bytes()
+                    event, visible = family_event_detail(self.current_session(), event_id)
+                    if not visible["has_snapshot"]:
+                        raise EventNotFound("snapshot not found")
+                    with stored_snapshot_path(event).open("rb") as stream:
+                        image = stream.read(SNAPSHOT_LIMIT + 1)
+                    if len(image) > SNAPSHOT_LIMIT:
+                        raise EventNotFound("snapshot too large")
                     self.send_bytes(200, "image/jpeg", image)
                 except EventNotFound:
                     self.send_json(404, {"ok": False, "error": "event not found"})
@@ -2019,7 +2211,7 @@ class Handler(BaseHTTPRequestHandler):
             event_match = re.fullmatch(r"/api/family/events/([^/]+)", path)
             if event_match:
                 try:
-                    event = family_event_detail(
+                    _, event = family_event_detail(
                         self.current_session(),
                         unquote(event_match.group(1)),
                     )
@@ -2028,6 +2220,18 @@ class Handler(BaseHTTPRequestHandler):
                     self.send_json(404, {"ok": False, "error": "event not found"})
                 return
             self.send_json(404, {"ok": False, "error": "not found"})
+            return
+        if path in ("/sensors.html", "/api/merchant/sensors"):
+            if AUTH.public_user(self.current_session())["role"] not in ("merchant", "admin"):
+                self.deny(path, 403, "此内容仅向商家与管理员开放")
+                return
+            if path == "/sensors.html":
+                self.serve_html("sensors.html")
+            else:
+                try:
+                    self.send_json(200, merchant_sensors())
+                except (OSError, ValueError, HTTPException):
+                    self.send_json(502, {"ok": False, "error": "传感器暂时无法连接"})
             return
         if path == '/api/admin/policy':
             self.send_json(200, {'policy': AUTH.get_policy()})
@@ -2084,7 +2288,10 @@ class Handler(BaseHTTPRequestHandler):
                 return
             try:
                 event = get_event(unquote(snapshot_get.group(1)))
-                image = event_snapshot_path(event["id"]).read_bytes()
+                with stored_snapshot_path(event).open("rb") as stream:
+                    image = stream.read(SNAPSHOT_LIMIT + 1)
+                if len(image) > SNAPSHOT_LIMIT:
+                    raise EventNotFound("snapshot too large")
             except (EventNotFound, OSError):
                 self.send_json(404, {"ok": False, "error": "没有可用抓拍"})
                 return

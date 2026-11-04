@@ -20,17 +20,33 @@
   </form>
   <section class="access-box">
     <h2>家长账号</h2>
-    <p class="access-note">家长只能查看绑定孩子已关联的安全事件，不能进入全园监控、测温或对话页面。</p>
+    <p class="access-note">为每个家庭绑定孩子，并分别选择开放内容。截图可能包含其他学生，请核对画面后授权。</p>
     <form id="parentForm">
       <label>账号<input id="parentUsername" autocomplete="off" required></label>
       <label>初始密码<input id="parentPassword" type="password" autocomplete="new-password" placeholder="修改绑定时可留空"></label>
       <label for="parentStudents">绑定学生</label>
       <select id="parentStudents" multiple size="7" required></select>
+      <label class="access-switch"><span>绑定孩子的安全事件</span><input id="parent-events" type="checkbox" checked></label>
+      <label class="access-switch"><span>安全事件截图</span><input id="parent-snapshots" type="checkbox"></label>
+      <label class="access-switch"><span>绑定孩子的个人日报</span><input id="parent-reports" type="checkbox" checked></label>
+      <label class="access-switch"><span>在个人日报中显示已关联对话</span><input id="parent-dialogues" type="checkbox"></label>
       <div class="access-actions">
         <button class="access-primary" id="parentSave" type="submit">创建/更新家长账号</button>
         <p class="access-feedback" id="parentFeedback" role="status" aria-live="polite"></p>
       </div>
     </form>
     <div id="parentList" aria-live="polite"></div>
+  </section>
+  <section class="access-box">
+    <h2>商家账号</h2>
+    <p class="access-note">仅开放环境传感器读数。</p>
+    <form id="merchantForm">
+      <label>账号<input id="merchantUsername" autocomplete="off" required></label>
+      <label>初始密码<input id="merchantPassword" type="password" autocomplete="new-password" minlength="6" required></label>
+      <div class="access-actions">
+        <button class="access-primary" type="submit">创建商家账号</button>
+        <p class="access-feedback" id="merchantFeedback" role="status"></p>
+      </div>
+    </form>
   </section>
 </main></body></html>

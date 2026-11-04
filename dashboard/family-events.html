@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light">
   <meta name="description" content="绑定的孩子在园安全异常事件">
-  <title>孩子异常事件 · 童域智枢</title>
+  <title>家长工作台 · 童域智枢</title>
   <link rel="icon" href="data:,">
   <style>
     :root {
@@ -169,18 +169,31 @@
     <div class="main-inner">
       <section class="hero">
         <div>
-          <p class="eyebrow">家园安全通知</p>
-          <h1>孩子异常事件</h1>
-          <p>仅显示老师已确认关联、且包含您绑定孩子的摔倒或斗殴事件。</p>
+          <p class="eyebrow">家园沟通</p>
+          <h1>家长工作台</h1>
+          <p>查看绑定孩子的在园记录。</p>
         </div>
-        <span class="chip" id="syncChip" data-tone="idle">正在同步</span>
       </section>
+      <section class="access-box" id="dailySection" hidden>
+        <h2>孩子日报</h2>
+        <form id="dailyForm">
+          <fieldset>
+            <label>孩子 <select id="dailyStudent" required></select></label>
+            <label>日期 <input id="dailyDate" type="date" required></label>
+            <button class="access-primary" type="submit">查询日报</button>
+          </fieldset>
+        </form>
+        <div id="dailyResult" aria-live="polite"></div>
+      </section>
+      <section id="familyEvents" hidden>
+      <div class="hero"><h2>孩子异常事件</h2><span class="chip" id="syncChip">正在同步</span></div>
       <p class="notice">安全事件截图可能包含未成年人画面，请仅在监护用途内查看，不要转发或公开。页面每 5 秒自动同步。</p>
       <section class="event-list" id="eventList" aria-live="polite"></section>
       <div class="empty" id="emptyState" hidden>
         <strong>暂无需要家长查看的安全事件</strong>
         <p>老师关联学生后，相关事件会自动出现在这里。</p>
       </div>
+      </section>
     </div>
   </main>
   <div class="toast" id="toast" role="status" hidden></div>
@@ -248,7 +261,7 @@
         head.append(type, status, title);
         const meta = document.createElement("p");
         meta.className = "meta";
-        meta.textContent = `${formatTime(event.occurred_at)} · ${event.location || "位置未记录"}`;
+        meta.textContent = formatTime(event.occurred_at);
         const people = document.createElement("div");
         people.className = "people";
         for (const person of event.participants || []) {
@@ -309,6 +322,9 @@
           chip.dataset.tone = "ok";
           setText(chip, `已同步 ${events.length} 条`);
         } catch (error) {
+          signature = "";
+          list.replaceChildren();
+          empty.hidden = true;
           chip.dataset.tone = "bad";
           setText(chip, "同步失败");
           showToast(`事件同步失败：${error.message}`);
@@ -317,11 +333,83 @@
         }
       }
 
-      document.addEventListener("visibilitychange", () => {
-        if (!document.hidden) loadEvents();
-      });
-      loadEvents();
-      setInterval(loadEvents, 5000);
+      async function readJson(url) {
+        const response = await fetch(url, { cache: "no-store" });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || "读取失败");
+        return data;
+      }
+
+      function addDailyList(container, title, items) {
+        const heading = document.createElement("h4");
+        heading.textContent = title;
+        const list = document.createElement("ul");
+        for (const item of items.length ? items : ["当日暂无记录"]) {
+          const row = document.createElement("li");
+          row.textContent = item;
+          list.append(row);
+        }
+        container.append(heading, list);
+      }
+
+      async function setupDaily(access) {
+        const student = $("#dailyStudent");
+        const date = $("#dailyDate");
+        const form = $("#dailyForm");
+        const controls = form.querySelector("fieldset");
+        const result = $("#dailyResult");
+        $("#dailySection").hidden = false;
+        date.value = new Intl.DateTimeFormat("sv-SE", {timeZone: "Asia/Shanghai"}).format(new Date());
+        controls.disabled = true;
+        try {
+          const data = await readJson("/api/family/students");
+          for (const item of data.students) student.add(new Option(item.name, item.id));
+          if (!data.students.length) {
+            result.textContent = "暂无可查询的孩子，请联系管理员。";
+            return;
+          }
+          controls.disabled = false;
+        } catch (error) {
+          result.textContent = error.message;
+          return;
+        }
+        form.addEventListener("input", () => result.replaceChildren());
+        form.addEventListener("submit", async event => {
+          event.preventDefault();
+          controls.disabled = true;
+          result.textContent = "正在生成日报…";
+          try {
+            const query = new URLSearchParams({student_id: student.value, date: date.value});
+            const {report} = await readJson("/api/family/daily?" + query);
+            const heading = document.createElement("h3");
+            heading.textContent = `${student.selectedOptions[0].textContent} · ${report.date}`;
+            result.replaceChildren(heading);
+            addDailyList(result, "测温记录", report.readings.map(item =>
+              `${formatTime(item.measured_at)} · ${item.temperature_c.toFixed(1)} ℃`));
+            if (access.events) addDailyList(result, "安全事件", report.events.map(item =>
+              `${formatTime(item.occurred_at)} · ${item.summary} · ${labels[item.status]}`));
+            if (access.dialogues) addDailyList(result, "已关联对话", report.dialogues.map(item =>
+              `${formatTime(item.at)} · ${item.role === "user" ? "孩子" : "机器人"} · ${item.text}`));
+          } catch (error) {
+            result.textContent = error.message;
+          } finally {
+            controls.disabled = false;
+          }
+        });
+        form.requestSubmit();
+      }
+
+      const user = window.TongyuBootstrap.user;
+      const access = user.role === "admin" ? {events: true} : user.access;
+      if (access.reports) setupDaily(access);
+      if (access.events) {
+        $("#familyEvents").hidden = false;
+        document.addEventListener("visibilitychange", () => {
+          if (!document.hidden) loadEvents();
+        });
+        loadEvents();
+        setInterval(loadEvents, 5000);
+      }
     })();
   </script>
 </body>

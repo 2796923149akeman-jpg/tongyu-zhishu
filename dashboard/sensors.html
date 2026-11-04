@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>环境传感器 · 童域智枢</title>
+</head>
+<body class="access-screen">
+  <main class="access-panel">
+    <h1>环境传感器</h1>
+    <p class="access-note" id="status" role="status">正在读取传感器…</p>
+    <dl class="access-box" id="readings"></dl>
+    <button class="access-primary" type="button" id="refresh">刷新读数</button>
+  </main>
+  <script>
+    (() => {
+      const status = document.getElementById("status");
+      const readings = document.getElementById("readings");
+      const refresh = document.getElementById("refresh");
+      const fields = {
+        sht_t: ["室温", "℃"], sht_h: ["湿度", "%"], eco2: ["eCO₂", "ppm"],
+        tvoc: ["TVOC", "ppb"], mlx_amb: ["红外环境温度", "℃"]
+      };
+      async function load() {
+        refresh.disabled = true;
+        try {
+          const response = await fetch("/api/merchant/sensors", {cache: "no-store"});
+          const data = await response.json();
+          if (!response.ok) throw new Error(data.error || "传感器暂时无法连接");
+          const rows = [];
+          for (const [key, [label, unit]] of Object.entries(fields)) {
+            const term = document.createElement("dt");
+            const value = document.createElement("dd");
+            term.textContent = label;
+            value.textContent = key in data.readings ? `${data.readings[key]} ${unit}` : "无读数";
+            rows.push(term, value);
+          }
+          readings.replaceChildren(...rows);
+          status.textContent = data.timestamp
+            ? "采集时间 " + new Date(data.timestamp).toLocaleString("zh-CN", {timeZone: "Asia/Shanghai"})
+            : "采集时间未知";
+        } catch (error) {
+          readings.replaceChildren();
+          status.textContent = error.message;
+        } finally {
+          refresh.disabled = false;
+        }
+      }
+      refresh.addEventListener("click", load);
+      load();
+    })();
+  </script>
+</body>
+</html>

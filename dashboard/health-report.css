@@ -1296,6 +1296,15 @@ svg {
   margin-top: 0;
 }
 
+.temperature-trend {
+  margin: 16px 0;
+  padding: 16px;
+  break-inside: avoid;
+}
+.temperature-trend h2 { margin: 0; font-size: 17px; }
+.temperature-trend p { font-size: 13px; }
+.temperature-trend svg { display: block; width: 100%; max-width: 760px; color: #172230; }
+.temperature-trend svg text { fill: currentColor; font-size: 14px; }
 .report-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));

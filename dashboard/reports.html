@@ -168,6 +168,12 @@
             </article>
           </section>
 
+          <section class="panel temperature-trend" id="temperatureTrend" hidden aria-labelledby="temperatureTrendTitle">
+            <h2 id="temperatureTrendTitle">近 7 天体温趋势</h2>
+            <p>每名学生每天取最后一次登记值。点旁标注平均体温与样本人数，空白日期表示无记录。</p>
+            <svg id="temperatureChart" viewBox="0 0 640 210" role="img" aria-label="学生平均体温折线图"></svg>
+            <p id="temperatureTrendEmpty" hidden>所选范围内暂无测温记录。</p>
+          </section>
           <div class="report-grid">
             <section class="card" aria-labelledby="eventTitle">
               <div class="card-head">

@@ -17,6 +17,16 @@ import unicodedata
 MODULES = ("monitor", "events", "chat", "health", "reports")
 DEFAULT_POLICY = {"modules": dict.fromkeys(MODULES, True), "video": False, "dialogue_raw": False}
 COOKIE_NAME = "tongyu_session"
+DEFAULT_PARENT_ACCESS = {"events": True, "snapshots": True, "reports": True, "dialogues": False}
+
+
+def parent_access(value):
+    if value is None:
+        return DEFAULT_PARENT_ACCESS.copy()
+    if (not isinstance(value, dict) or value.keys() != DEFAULT_PARENT_ACCESS.keys()
+            or any(type(enabled) is not bool for enabled in value.values())):
+        raise ValueError("家长权限设置格式不正确")
+    return value.copy()
 
 
 def validate_policy(value):
@@ -99,9 +109,9 @@ class AccessStore:
         with self.lock:
             return any(u["role"] == "admin" for u in self.users.values())
 
-    def create_user(self, username, password, *, role="viewer", bound_student_ids=None):
+    def create_user(self, username, password, *, role="viewer", bound_student_ids=None, access=None):
         username, password = credentials(username, password)
-        if role not in ("viewer", "admin", "parent"):
+        if role not in ("viewer", "admin", "parent", "merchant"):
             raise ValueError("Invalid role")
         bound_student_ids = student_ids(bound_student_ids) if role == "parent" else []
         with self.lock:
@@ -114,6 +124,8 @@ class AccessStore:
             users[username.casefold()] = {"username": username, "role": role,
                                          "salt": salt.hex(), "password_hash": password_hash(password, salt),
                                          "student_ids": bound_student_ids}
+            if role == "parent":
+                users[username.casefold()]["access"] = parent_access(access)
             self._save(users, self.policy)
             self.users = users
 
@@ -138,6 +150,7 @@ class AccessStore:
             result = {k: user[k] for k in ("username", "role")}
             if user["role"] == "parent":
                 result["student_ids"] = list(user.get("student_ids", []))
+                result["access"] = parent_access(user.get("access"))
             return result
 
     def permitted(self, session, key):
@@ -146,7 +159,7 @@ class AccessStore:
             return False
         if user["role"] == "admin":
             return True
-        if user["role"] == "parent":
+        if user["role"] in ("parent", "merchant"):
             return False
         with self.lock:
             return bool(self.policy["modules"].get(key, self.policy.get(key, False)))
@@ -158,6 +171,7 @@ class AccessStore:
                     {
                         "username": user["username"],
                         "student_ids": list(user.get("student_ids", [])),
+                        "access": parent_access(user.get("access")),
                     }
                     for user in self.users.values()
                     if user.get("role") == "parent"
@@ -165,18 +179,21 @@ class AccessStore:
                 key=lambda item: item["username"].casefold(),
             )
 
-    def update_parent_bindings(self, username, bound):
+    def update_parent_bindings(self, username, bound, access=None):
         normalized = student_ids(bound)
         with self.lock:
-            key = username.strip().casefold()
+            key = unicodedata.normalize("NFKC", username).strip().casefold()
             user = self.users.get(key)
             if not user or user.get("role") != "parent":
                 raise ValueError("家长账号不存在")
             users = copy.deepcopy(self.users)
             users[key]["student_ids"] = normalized
+            if access is not None:
+                users[key]["access"] = parent_access(access)
             self._save(users, self.policy)
             self.users = users
-            return {"username": users[key]["username"], "student_ids": normalized}
+            return {"username": user["username"], "student_ids": normalized,
+                    "access": parent_access(users[key].get("access"))}
 
     def rate_limited(self, key, limit, *, record=False):
         with self.lock:

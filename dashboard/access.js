@@ -32,6 +32,7 @@
     const allowed = ['/welcome', '/family-events.html', '/', '/admin', '/admin.html', '/events', '/chat', ...Object.values(routes).map(r => r[0])];
     const home = user?.role === 'admin' ? '/admin' : user?.role === 'parent' ? '/family-events.html' : '/welcome';
     if (user?.role === 'parent') return next === '/family-events.html' ? next : home;
+    if (user?.role === 'merchant') return '/sensors.html';
     if (user?.role !== 'admin' && ['/admin', '/admin.html'].includes(next)) return home;
     return allowed.includes(next) ? next : home;
   }
@@ -41,17 +42,22 @@
     try {
       const latest = await json('/api/auth/session');
       if (!latest.user || latest.user.username !== state.user?.username || latest.user.role !== state.user?.role) return exitToLogin();
+      if (JSON.stringify(latest.user) !== JSON.stringify(state.user)) {
+        document.body.style.visibility = 'hidden';
+        return location.reload();
+      }
       if (JSON.stringify(latest.policy) !== JSON.stringify(state.policy)) return location.reload();
     } catch (_) { /* A temporary network outage does not log the user out. */ }
     finally { checking = false; }
   }
   function accountBar() {
     const bar = document.createElement('div'); bar.className = 'account-bar';
-    const roleLabel = state.user.role === 'admin' ? '管理员' : state.user.role === 'parent' ? '家长' : '演示账号';
+    const roleLabel = {admin: '管理员', parent: '家长', merchant: '商家'}[state.user.role] || '演示账号';
     const who = document.createElement('span'); who.textContent = `${state.user.username} · ${roleLabel}`; bar.append(who);
     const home = document.createElement('a'); home.href = '/welcome'; home.textContent = '模块入口'; bar.append(home);
     if (state.user.role === 'admin') { const link = document.createElement('a'); link.href = '/admin'; link.textContent = '展示设置'; bar.append(link); }
-    if (state.user.role === 'parent') { const link = document.createElement('a'); link.href = '/family-events.html'; link.textContent = '孩子异常事件'; bar.append(link); }
+    if (state.user.role === 'parent') { const link = document.createElement('a'); link.href = '/family-events.html'; link.textContent = '家长工作台'; bar.append(link); }
+    if (state.user.role === 'merchant') { const link = document.createElement('a'); link.href = '/sensors.html'; link.textContent = '环境传感器'; bar.append(link); }
     const logout = document.createElement('button'); logout.type = 'button'; logout.textContent = '退出登录';
     logout.addEventListener('click', async () => {
       logout.disabled = true;
@@ -119,6 +125,7 @@
     const parentStudents = document.getElementById('parentStudents');
     const parentFeedback = document.getElementById('parentFeedback');
     const parentList = document.getElementById('parentList');
+    const parentPermissions = ['events', 'snapshots', 'reports', 'dialogues'];
     let students = [];
     let parents = [];
 
@@ -148,11 +155,12 @@
         text.textContent = `${parent.username} · ${parent.student_ids.join('、')}`;
         const edit = document.createElement('button');
         edit.type = 'button';
-        edit.textContent = '修改绑定';
+        edit.textContent = '修改绑定与权限';
         edit.addEventListener('click', () => {
           parentUsername.value = parent.username;
           parentPassword.value = '';
           renderParentStudents(parent.student_ids);
+          for (const key of parentPermissions) document.getElementById('parent-' + key).checked = parent.access[key];
           parentFeedback.textContent = '修改绑定不需要重填密码。';
         });
         row.append(text, edit);
@@ -191,6 +199,7 @@
         const payload = {
           username: parentUsername.value.trim(),
           student_ids: studentIds,
+          access: Object.fromEntries(parentPermissions.map(key => [key, document.getElementById('parent-' + key).checked])),
         };
         if (parentPassword.value) payload.password = parentPassword.value;
         await json('/api/admin/parents', {
@@ -200,7 +209,7 @@
         });
         parentFeedback.dataset.success = 'true';
         parentFeedback.textContent = '家长账号和绑定已保存。';
-        parentPassword.value = '';
+        parentForm.reset();
         await loadParents();
       } catch (error) {
         parentFeedback.textContent = `保存失败：${error.message}`;
@@ -209,6 +218,27 @@
       }
     });
     loadParents();
+    const merchantForm = document.getElementById('merchantForm');
+    merchantForm.addEventListener('submit', async event => {
+      event.preventDefault();
+      const feedback = document.getElementById('merchantFeedback');
+      const button = merchantForm.querySelector('button');
+      button.disabled = true;
+      feedback.textContent = '正在创建…';
+      try {
+        await json('/api/admin/merchants', {method: 'POST', headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({username: document.getElementById('merchantUsername').value,
+            password: document.getElementById('merchantPassword').value})});
+        merchantForm.reset();
+        feedback.dataset.success = 'true';
+        feedback.textContent = '商家账号已创建。';
+      } catch (error) {
+        feedback.dataset.success = 'false';
+        feedback.textContent = error.message;
+      } finally {
+        button.disabled = false;
+      }
+    });
   }
   document.addEventListener('DOMContentLoaded', () => {
     const page = document.body.dataset.accessPage;
@@ -235,7 +265,14 @@
         const card = document.createElement('a'); card.href = path; card.className = 'access-module'; card.textContent = name;
         const small = document.createElement('span'); small.textContent = note; card.append(small); document.getElementById('moduleCards').append(card); count++;
       }
-      document.getElementById('noModules').hidden = count > 0;
+      const restricted = {parent: ['/family-events.html', '家长工作台'], merchant: ['/sensors.html', '环境传感器']}[state.user.role];
+      if (restricted) {
+        const card = document.createElement('a');
+        [card.href, card.textContent] = restricted;
+        card.className = 'access-module';
+        document.getElementById('moduleCards').append(card);
+      }
+      document.getElementById('noModules').hidden = count > 0 || Boolean(restricted);
     }
     if (page === 'admin') adminPage();
     setInterval(checkSession, 5000);
