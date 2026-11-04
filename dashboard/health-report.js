@@ -903,12 +903,12 @@
         const issue = infraredEntryIssue();
         if (issue) return { error: issue };
       }
-      if (raw === "" || Number.isNaN(number)) {
+      if (raw === "" || !Number.isFinite(number)) {
         els.entryTemp.setAttribute("aria-invalid", "true");
         els.entryTemp.focus();
         return { error: "请输入体温数值，例如 36.5。" };
       }
-      if (number < MIN_TEMP || number > MAX_TEMP) {
+      if (!infrared && (number < MIN_TEMP || number > MAX_TEMP)) {
         els.entryTemp.setAttribute("aria-invalid", "true");
         els.entryTemp.focus();
         return { error: `体温需要在 ${MIN_TEMP}–${MAX_TEMP} ℃ 之间；超范围数值不会被保存。` };
@@ -1287,7 +1287,7 @@
     function canUseInfraredReading() {
       const reading = state.realtime?.reading;
       return canRecord && app.mode === "live" && infraredReadAt !== null && reading?.fresh === true
-        && reading.connected === true && reading.valid_temperature && !state.realtime?.ingest?.duplicate
+        && reading.connected === true && Number.isFinite(reading.temperature_c) && !state.realtime?.ingest?.duplicate
         && (!reading.student_id || Boolean(studentById(reading.student_id)))
         && reading.age_seconds + (performance.now() - infraredReadAt) / 1000 < reading.stale_after_seconds;
     }

@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import hashlib
 import hmac
+import math
 import os
 import queue
 import re
@@ -578,11 +579,14 @@ def load_health_records() -> list[dict]:
             record_id = text_value(raw.get("id"), "id", 80, required=True)
             student_id = text_value(raw.get("student_id"), "student_id", 20, required=True)
             measured_at = normalize_iso(raw.get("measured_at"), "measured_at")
-            temperature = float(raw.get("temperature_c"))
-            if not 35 <= temperature <= 42:
+            raw_temperature = raw.get("temperature_c")
+            if isinstance(raw_temperature, bool):
                 continue
+            temperature = float(raw_temperature)
             source = text_value(raw.get("source"), "source", 20, required=True)
             if source not in HEALTH_SOURCES:
+                continue
+            if not math.isfinite(temperature) or (source != "infrared" and not 35 <= temperature <= 42):
                 continue
             note = text_value(raw.get("note"), "note", 50, default="")
             recheck_of = text_value(raw.get("recheck_of"), "recheck_of", 80, default="") or None
@@ -614,7 +618,7 @@ def load_health_records() -> list[dict]:
                 "dedupe_key": dedupe_key,
                 "ambient_c": ambient,
             })
-        except (ValueError, TypeError):
+        except (ValueError, TypeError, OverflowError):
             continue
     return result
 
@@ -701,15 +705,20 @@ def create_health_record(payload: dict) -> dict:
     student = students.get(student_id)
     if student is None:
         raise LookupError("student not found")
+    raw_temperature = payload.get("temperature_c")
+    if isinstance(raw_temperature, bool):
+        raise ValueError("invalid temperature")
     try:
-        temperature = float(payload.get("temperature_c"))
-    except (TypeError, ValueError) as exc:
+        temperature = float(raw_temperature)
+    except (TypeError, ValueError, OverflowError) as exc:
         raise ValueError("invalid temperature") from exc
-    if not 35 <= temperature <= 42:
-        raise ValueError("temperature must be between 35.0 and 42.0")
+    if not math.isfinite(temperature):
+        raise ValueError("invalid temperature")
     source = text_value(payload.get("source"), "source", 20, required=True)
     if source not in HEALTH_SOURCES:
         raise ValueError("invalid source")
+    if source != "infrared" and not 35 <= temperature <= 42:
+        raise ValueError("temperature must be between 35.0 and 42.0")
     note = text_value(payload.get("note"), "note", 50, default="")
     recheck_of = text_value(payload.get("recheck_of"), "recheck_of", 80, default="") or None
     with HEALTH_LOCK:
@@ -801,11 +810,15 @@ def live_infrared_payload() -> dict:
     sensor_error = None
     try:
         raw = read_rdk_json("/api/iot_payload")
-        reading = normalize_infrared_payload(raw, stale_after_seconds=HEALTH_INFRARED_STALE_SECONDS)
+        reading = normalize_infrared_payload(
+            raw, stale_after_seconds=HEALTH_INFRARED_STALE_SECONDS, allow_raw_temperature=True,
+        )
     except (OSError, ValueError, HTTPException):
         sensor_error = "RDK 传感器接口暂时不可用"
     if cached:
-        cached = refresh_infrared_status(cached, stale_after_seconds=HEALTH_INFRARED_STALE_SECONDS)
+        cached = refresh_infrared_status(
+            cached, stale_after_seconds=HEALTH_INFRARED_STALE_SECONDS, allow_raw_temperature=True,
+        )
         if not reading or (cached["fresh"] and (
             not reading["fresh"] or cached["measured_at"] >= reading["measured_at"]
         )):

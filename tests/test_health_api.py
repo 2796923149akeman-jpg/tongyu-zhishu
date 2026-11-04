@@ -315,6 +315,47 @@ class HealthApiTests(unittest.TestCase):
         self.assertEqual(fallback["reading"]["temperature_c"], 36.6)
         self.assertEqual(fallback["reading"]["status"], "unassigned")
 
+    def test_out_of_range_infrared_can_be_confirmed_and_reloaded(self):
+        self.import_students()
+        reading = {
+            "connected": True,
+            "stable": True,
+            "student_id": "S-0201",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "properties": {"mlx_obj": 22.5},
+        }
+        with patch.object(self.web, "read_rdk_json", return_value=reading):
+            status, realtime = self.request("/api/health/realtime")
+        self.assertEqual(status, 200)
+        self.assertEqual(realtime["reading"]["temperature_c"], 22.5)
+        self.assertTrue(realtime["reading"]["fresh"])
+        self.assertFalse(realtime["ingest"]["stored"])
+
+        headers = {"X-Device-Token": self.web.HEALTH_DEVICE_TOKEN}
+        status, pushed = self.request(
+            "/api/health/device-readings", reading, "POST", headers, authenticated=False,
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(pushed["reason"], "invalid_temperature")
+        self.assertFalse(pushed["stored"])
+        self.assertEqual(self.add_record("S-0201", 22.5)[0], 400)
+
+        status, saved = self.request(
+            "/api/health/records",
+            {"student_id": "S-0201", "source": "infrared", "temperature_c": 22.5},
+            "POST",
+        )
+        self.assertEqual(status, 201)
+        self.assertEqual(saved["record"]["temperature_c"], 22.5)
+        self.assertEqual(self.web.load_health_records(), [saved["record"]])
+        for invalid in (True, "NaN", "Infinity"):
+            status, _ = self.request(
+                "/api/health/records",
+                {"student_id": "S-0201", "source": "infrared", "temperature_c": invalid},
+                "POST",
+            )
+            self.assertEqual(status, 400)
+
     def test_realtime_get_is_read_only_and_push_rejects_unverified_samples(self):
         self.import_students()
         reading = {

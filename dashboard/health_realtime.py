@@ -140,6 +140,7 @@ def normalize_infrared_payload(
     *,
     now: datetime | None = None,
     stale_after_seconds: float = DEFAULT_STALE_SECONDS,
+    allow_raw_temperature: bool = False,
 ) -> dict:
     """Return a display-safe reading; this function never assigns a student."""
     if not isinstance(payload, dict):
@@ -173,7 +174,7 @@ def normalize_infrared_payload(
         status = "offline"
     elif temperature is None:
         status = "unavailable"
-    elif not valid_temperature:
+    elif not valid_temperature and not allow_raw_temperature:
         status = "invalid_temperature"
     elif measured_dt is None:
         status = "timestamp_unknown"
@@ -210,6 +211,7 @@ def refresh_infrared_status(
     *,
     now: datetime | None = None,
     stale_after_seconds: float = DEFAULT_STALE_SECONDS,
+    allow_raw_temperature: bool = False,
 ) -> dict:
     if not isinstance(reading, dict):
         raise ValueError("reading must be an object")
@@ -223,7 +225,7 @@ def refresh_infrared_status(
         refreshed["status"] = "offline"
     elif refreshed.get("temperature_c") is None:
         refreshed["status"] = "unavailable"
-    elif not refreshed.get("valid_temperature"):
+    elif not refreshed.get("valid_temperature") and not allow_raw_temperature:
         refreshed["status"] = "invalid_temperature"
     elif measured_dt is None:
         refreshed["status"] = "timestamp_unknown"
