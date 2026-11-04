@@ -29,9 +29,10 @@
   }
   function safeNext(user) {
     const next = new URLSearchParams(location.search).get('next');
-    const allowed = ['/welcome', '/', '/admin', '/admin.html', '/events', '/chat', ...Object.values(routes).map(r => r[0])];
-    const home = user?.role === 'admin' ? '/admin' : '/welcome';
+    const allowed = ['/welcome', '/', '/admin', '/admin.html', '/parent', '/parent.html', '/events', '/chat', ...Object.values(routes).map(r => r[0])];
+    const home = user?.role === 'admin' ? '/admin' : (user?.role === 'parent' ? '/parent' : '/welcome');
     if (user?.role !== 'admin' && ['/admin', '/admin.html'].includes(next)) return home;
+    if (user?.role === 'parent' && !['/parent', '/parent.html'].includes(next)) return home;
     return allowed.includes(next) ? next : home;
   }
   async function checkSession() {
@@ -46,8 +47,12 @@
   }
   function accountBar() {
     const bar = document.createElement('div'); bar.className = 'account-bar';
-    const who = document.createElement('span'); who.textContent = `${state.user.username} · ${state.user.role === 'admin' ? '管理员' : '演示账号'}`; bar.append(who);
-    const home = document.createElement('a'); home.href = '/welcome'; home.textContent = '模块入口'; bar.append(home);
+    const roleLabel = state.user.role === 'admin' ? '管理员' : (state.user.role === 'parent' ? '家长' : '演示账号');
+    const who = document.createElement('span'); who.textContent = `${state.user.username} · ${roleLabel}`; bar.append(who);
+    const home = document.createElement('a');
+    home.href = state.user.role === 'parent' ? '/parent' : '/welcome';
+    home.textContent = state.user.role === 'parent' ? '返回孩子事件' : '模块入口';
+    bar.append(home);
     if (state.user.role === 'admin') { const link = document.createElement('a'); link.href = '/admin'; link.textContent = '展示设置'; bar.append(link); }
     const logout = document.createElement('button'); logout.type = 'button'; logout.textContent = '退出登录';
     logout.addEventListener('click', async () => {
@@ -109,6 +114,63 @@
       catch (error) { feedback.dataset.success = 'false'; feedback.textContent = error.message; }
       finally { button.disabled = false; }
     });
+    parentSection();
+  }
+  function parentSection() {
+    const box = document.getElementById('parentStudents');
+    const list = document.getElementById('parentList');
+    const username = document.getElementById('parentUsername');
+    const password = document.getElementById('parentPassword');
+    const button = document.getElementById('parentCreate');
+    const feedback = document.getElementById('parentFeedback');
+    async function loadStudents() {
+      try {
+        const data = await json('/api/health/students');
+        box.replaceChildren();
+        const students = (data.students || []).filter(item => item.active !== false);
+        if (students.length === 0) { box.replaceChildren(); const note = document.createElement('p'); note.className = 'access-note'; note.textContent = '学生名单为空，请先到学生测温页导入名单。'; box.append(note); return; }
+        for (const student of students) {
+          const label = document.createElement('label');
+          const input = document.createElement('input'); input.type = 'checkbox'; input.value = student.id;
+          const span = document.createElement('span'); span.textContent = student.name;
+          const small = document.createElement('small'); small.textContent = student.class_name || student.class_id || '';
+          label.append(input, span, small); box.append(label);
+        }
+      } catch (error) { box.replaceChildren(); const note = document.createElement('p'); note.className = 'access-note'; note.textContent = '读取学生名单失败：' + error.message; box.append(note); }
+    }
+    async function loadParents() {
+      try {
+        const data = await json('/api/admin/parents');
+        list.replaceChildren();
+        for (const parent of data.parents || []) {
+          const item = document.createElement('li');
+          const who = document.createElement('span'); who.textContent = parent.username + '（家长）';
+          const chips = document.createElement('span');
+          for (const student of parent.students || []) {
+            const chip = document.createElement('span'); chip.className = 'parent-student-chip'; chip.textContent = student.name || student.id; chips.append(chip);
+          }
+          item.append(who, chips); list.append(item);
+        }
+      } catch (error) { /* 列表读取失败不阻塞页面 */ }
+    }
+    button.addEventListener('click', async () => {
+      const ids = [...box.querySelectorAll('input[type="checkbox"]:checked')].map(node => node.value);
+      const name = username.value.trim();
+      const pass = password.value;
+      if (!name || !pass) { feedback.dataset.success = 'false'; feedback.textContent = '请填写用户名和密码。'; return; }
+      if (ids.length === 0) { feedback.dataset.success = 'false'; feedback.textContent = '请至少选择一名学生。'; return; }
+      button.disabled = true; feedback.dataset.success = 'false'; feedback.textContent = '创建中…';
+      try {
+        await json('/api/admin/parents', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({username: name, password: pass, student_ids: ids})});
+        feedback.dataset.success = 'true'; feedback.textContent = '家长账号已创建，可使用该账号登录。';
+        username.value = ''; password.value = '';
+        for (const node of box.querySelectorAll('input[type="checkbox"]:checked')) node.checked = false;
+        await loadParents();
+      } catch (error) { feedback.dataset.success = 'false'; feedback.textContent = error.message; }
+      finally { button.disabled = false; }
+    });
+    loadStudents();
+    loadParents();
   }
   document.addEventListener('DOMContentLoaded', () => {
     const page = document.body.dataset.accessPage;

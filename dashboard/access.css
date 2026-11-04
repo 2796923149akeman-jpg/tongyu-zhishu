@@ -39,5 +39,15 @@
 .account-bar span { max-width: 100%; overflow-wrap: anywhere; }
 .account-bar button, .account-bar a { display: inline-flex; min-height: 34px; padding: 6px 10px; border: 1px solid #ccdcd4; border-radius: 7px; background: #fff; color: #176b67; cursor: pointer; text-decoration: none; font: inherit; }
 .access-privacy-note { color: #687d77; padding: 8px 0; font-size: 12px; }
-@media (max-width: 700px) { .access-layout { grid-template-columns: minmax(0, 1fr); } .access-brand { gap: 12px; padding: 24px; } .access-brand h1 { font-size: 26px; margin: 14px 0 8px; } .access-brand .access-brand-foot, .access-brand p { display: none; } .access-form-wrap { padding: 26px 24px 40px; align-items: flex-start; } .access-card h2 { font-size: 25px; } .access-tabs { margin-top: 20px; } .access-panel { padding: 24px 16px; } .access-box { padding: 18px; } .access-modules { grid-template-columns: minmax(0, 1fr); } .account-bar { justify-content: flex-start; gap: 8px; } }
+.parent-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 16px; margin-top: 10px; }
+.parent-fields .access-field input { min-height: 44px; }
+.parent-students { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px 14px; margin: 8px 0 6px; }
+.parent-students label { display: flex; align-items: center; gap: 9px; padding: 9px 10px; border: 1px solid #e5ece8; border-radius: 9px; cursor: pointer; font-size: 14px; }
+.parent-students input { width: 19px; height: 19px; accent-color: #176b67; cursor: pointer; }
+.parent-students small { color: #6a7e77; font-size: 12px; }
+.parent-list { list-style: none; margin: 16px 0 0; padding: 0; }
+.parent-list li { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; padding: 10px 0; border-bottom: 1px solid #eef2f0; font-size: 14px; }
+.parent-list li:last-child { border-bottom: 0; }
+.parent-list .parent-student-chip { padding: 2px 10px; background: #e4f2ef; border: 1px solid #bfe0da; color: #176b67; border-radius: 999px; font-size: 12px; }
+@media (max-width: 700px) { .access-layout { grid-template-columns: minmax(0, 1fr); } .access-brand { gap: 12px; padding: 24px; } .access-brand h1 { font-size: 26px; margin: 14px 0 8px; } .access-brand .access-brand-foot, .access-brand p { display: none; } .access-form-wrap { padding: 26px 24px 40px; align-items: flex-start; } .access-card h2 { font-size: 25px; } .access-tabs { margin-top: 20px; } .access-panel { padding: 24px 16px; } .access-box { padding: 18px; } .access-modules { grid-template-columns: minmax(0, 1fr); } .account-bar { justify-content: flex-start; gap: 8px; } .parent-fields, .parent-students { grid-template-columns: minmax(0, 1fr); } }
 @media print { .account-bar { display: none; } }

@@ -124,6 +124,7 @@ PAGE_ROUTES = {
     "/events": ("events.html", "events"), "/events.html": ("events.html", "events"),
     "/chat": ("chat.html", "chat"), "/chat.html": ("chat.html", "chat"),
     "/health.html": ("health.html", "health"), "/reports.html": ("reports.html", "reports"),
+    "/parent": ("parent.html", None), "/parent.html": ("parent.html", None),
     "/admin": ("admin.html", "admin"), "/admin.html": ("admin.html", "admin"),
     "/welcome": ("welcome.html", None),
 }
@@ -495,6 +496,90 @@ def assign_event_students(event_id: str, payload: dict) -> dict:
         event["updated_at"] = now
         save_events()
         return {"event": copy_event(event)}
+
+
+def parent_events_payload(user: dict) -> dict:
+    """家长可见的事件：只包含关联到自己孩子的事件，且只暴露自己的孩子。"""
+    student_ids = set(user.get("students") or [])
+    students = {item["id"]: item for item in health_student_snapshot()}
+    children = []
+    for student_id in sorted(student_ids):
+        student = students.get(student_id)
+        children.append({"id": student_id, "name": student["name"] if student else student_id})
+    events = []
+    for event in events_snapshot():
+        matched = [
+            student for student in event.get("students", [])
+            if student.get("id") in student_ids
+        ]
+        if not matched:
+            continue
+        public = {
+            key: event.get(key) for key in (
+                "id", "event_type", "level", "status", "occurred_at", "summary",
+                "detail", "location", "class_id", "class_name", "confidence",
+                "handled_at", "handled_by", "note", "evidence_url",
+                "evidence_captured_at", "updated_at",
+            )
+        }
+        public["students"] = matched
+        involved = len(event.get("students", []))
+        public["history"] = [
+            {
+                "at": item.get("at", ""),
+                "action": item.get("action", "记录"),
+                "by": item.get("by", "系统"),
+                "note": f"老师已登记 {involved} 名涉及学生"
+                if item.get("action") == "关联学生" else item.get("note", ""),
+            }
+            for item in event.get("history", [])[-100:]
+        ]
+        events.append(public)
+    events.sort(key=lambda item: item["occurred_at"], reverse=True)
+    return {"children": children, "events": events}
+
+
+def parents_payload() -> dict:
+    students = {item["id"]: item for item in health_student_snapshot()}
+    parents = []
+    for entry in AUTH.list_users():
+        if entry.get("role") != "parent":
+            continue
+        parents.append({
+            "username": entry["username"],
+            "students": [
+                {
+                    "id": student_id,
+                    "name": students.get(student_id, {}).get("name", "") or student_id,
+                }
+                for student_id in entry.get("students", [])
+            ],
+        })
+    return {"parents": sorted(parents, key=lambda item: item["username"])}
+
+
+def create_parent_account(payload: dict) -> dict:
+    if not isinstance(payload, dict):
+        raise ValueError("request must be an object")
+    username = payload.get("username")
+    password = payload.get("password")
+    student_ids = payload.get("student_ids")
+    if not isinstance(student_ids, list) or not student_ids:
+        raise ValueError("请至少选择一名学生")
+    roster = {
+        item["id"] for item in health_student_snapshot() if item.get("active", True)
+    }
+    if len(student_ids) > 20:
+        raise ValueError("最多绑定 20 名学生")
+    if any(not isinstance(item, str) or item not in roster for item in student_ids):
+        raise ValueError("学生编号无效，请从名单中选择")
+    AUTH.create_user(
+        username,
+        password,
+        role="parent",
+        students=list(dict.fromkeys(student_ids)),
+    )
+    return {"ok": True}
 
 
 def record_rdk_alert(data: dict) -> None:
@@ -1431,6 +1516,12 @@ class Handler(BaseHTTPRequestHandler):
             return self.deny(path, 401, "请先登录")
         if not self.same_origin():
             return self.deny(path, 403, "请求来源不匹配")
+        if user["role"] == "parent" and not self.parent_scope(path):
+            if path in PAGE_ROUTES:
+                self.redirect("/parent")
+            else:
+                self.send_json(403, {"ok": False, "error": "此操作仅限老师或管理员"})
+            return False
         if admin and user["role"] != "admin":
             return self.deny(path, 403, "此操作仅限管理员")
         module = route_module(path)
@@ -1439,6 +1530,12 @@ class Handler(BaseHTTPRequestHandler):
         if write and not self.valid_csrf(session):
             return self.deny(path, 403, "页面验证已失效，请刷新后重试")
         return True
+
+    def parent_scope(self, path):
+        return (
+            path in ("/parent", "/parent.html", "/api/parent/events")
+            or path.startswith("/evidence/")
+        )
 
     def valid_csrf(self, session):
         supplied = self.headers.get("X-CSRF-Token", "")
@@ -1553,6 +1650,13 @@ class Handler(BaseHTTPRequestHandler):
                 return
             if path == '/api/admin/policy':
                 self.send_json(200, {'ok': True, 'policy': AUTH.set_policy(item)})
+                return
+            if path == '/api/admin/parents':
+                try:
+                    create_parent_account(item)
+                    self.send_json(201, {'ok': True})
+                except ValueError as exc:
+                    self.send_json(400, {'ok': False, 'error': str(exc)})
                 return
             if path == '/api/rdk/person-types/settings':
                 try:
@@ -1780,6 +1884,21 @@ class Handler(BaseHTTPRequestHandler):
         if candidate.stat().st_size > 10 * 1024 * 1024:
             self.send_json(413, {"ok": False, "error": "evidence image is too large"})
             return
+        user = AUTH.public_user(self.current_session())
+        if user and user["role"] == "parent":
+            # 家长只能查看已关联到自己孩子的事件证据。
+            student_ids = set(user.get("students") or [])
+            allowed = any(
+                event.get("evidence_url") == path
+                and any(
+                    student.get("id") in student_ids
+                    for student in event.get("students", [])
+                )
+                for event in events_snapshot()
+            )
+            if not allowed:
+                self.send_json(403, {"ok": False, "error": "无权查看该证据画面"})
+                return
         content_type = {
             ".png": "image/png",
             ".jpg": "image/jpeg",
@@ -1816,11 +1935,19 @@ class Handler(BaseHTTPRequestHandler):
                                  'initialized': AUTH.initialized,
                                  'policy': AUTH.get_policy() if AUTH.public_user(session) else None})
             return
-        admin = path in ('/admin', '/admin.html', '/api/admin/policy', '/api/dialogue/model', '/api/analysis/config')
+        admin = path in ('/admin', '/admin.html', '/api/admin/policy', '/api/admin/parents', '/api/dialogue/model', '/api/analysis/config')
         if not self.require_session(path, admin=admin):
             return
         if path == '/api/admin/policy':
             self.send_json(200, {'policy': AUTH.get_policy()})
+            return
+        if path == '/api/admin/parents':
+            self.send_json(200, {'ok': True, **parents_payload()})
+            return
+        if path == '/api/parent/events':
+            session = self.current_session()
+            user = AUTH.public_user(session)
+            self.send_json(200, {'ok': True, **parent_events_payload(user)})
             return
         if path in PAGE_ROUTES:
             self.serve_html(PAGE_ROUTES[path][0])

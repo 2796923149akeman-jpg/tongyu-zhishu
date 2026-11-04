@@ -300,6 +300,69 @@ RDK `/alert_status` 从正常状态进入 `fall`/`fight` 并创建新事件后�
 
 参数错误返回 `400`，事件不存在返回 `404`，非法状态转换返回 `409`，持久化失败返回 `500`。
 
+## 家长账号接口
+
+管理员在“展示设置”页为家长创建账号，并绑定学生名单中的孩子。家长登录后只能
+访问 `/parent` 页面与本节接口；访问其他页面会被重定向到 `/parent`，调用其他
+接口返回 `403`。家长可见的事件只包含老师已关联到自己孩子的事件，且 `students`
+只返回本人孩子；“关联学生”处理记录中的其他孩子姓名会被替换为人数。
+
+### `GET /api/admin/parents`（仅管理员）
+
+```json
+{
+  "ok": true,
+  "parents": [
+    {
+      "username": "chen-parent",
+      "students": [{"id": "S-0201", "name": "陈小满"}]
+    }
+  ]
+}
+```
+
+### `POST /api/admin/parents`（仅管理员，校验 CSRF）
+
+```json
+{"username": "chen-parent", "password": "至少 6 位", "student_ids": ["S-0201", "S-0202"]}
+```
+
+`student_ids` 必须来自学生名单（`GET /api/health/students`），1–20 名，重复编号
+自动去重。成功返回 HTTP `201`；用户名重复、学生编号无效等返回 `400`。
+
+### `GET /api/parent/events`（仅家长）
+
+```json
+{
+  "ok": true,
+  "children": [{"id": "S-0201", "name": "陈小满"}],
+  "events": [
+    {
+      "id": "EVT-20261104-ABC123",
+      "event_type": "fall",
+      "level": "urgent",
+      "status": "pending",
+      "occurred_at": "2026-11-04T10:20:08+08:00",
+      "summary": "检测到疑似摔倒",
+      "detail": "RDK /alert_status 返回 alert_type=fall。",
+      "location": "活动室 A",
+      "class_id": "C-02",
+      "class_name": "小二班",
+      "handled_at": null,
+      "handled_by": null,
+      "note": "",
+      "evidence_url": "/evidence/EVT-20261104-ABC123.jpg",
+      "evidence_captured_at": "2026-11-04T10:20:09+08:00",
+      "students": [{"id": "S-0201", "name": "陈小满"}],
+      "history": []
+    }
+  ]
+}
+```
+
+家长查看证据图片仍走 `GET /evidence/{文件名}`，但服务端只放行关联到自己孩子
+事件的证据，其余返回 `403`。详细设计见 [家长账号与家长端](PARENT_ACCOUNTS.md)。
+
 ## 学生名单、测温与日报接口
 
 这些接口读取需登录并开放对应模块；写入仅限管理员并验证 CSRF。运行时数据写入被 Git 忽略的 `dashboard/health_students.json` 和 `dashboard/health_records.json`；默认提供 `C-02 小二班`、`C-11 中一班`、`C-21 大一班` 三个班级，学生需要导入或登记。

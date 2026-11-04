@@ -83,10 +83,24 @@ class AccessStore:
         with self.lock:
             return any(u["role"] == "admin" for u in self.users.values())
 
-    def create_user(self, username, password, *, role="viewer"):
+    def create_user(self, username, password, *, role="viewer", students=None):
         username, password = credentials(username, password)
-        if role not in ("viewer", "admin"):
+        if role not in ("viewer", "admin", "parent"):
             raise ValueError("Invalid role")
+        bound_students = []
+        if role == "parent":
+            if not isinstance(students, list) or not 1 <= len(students) <= 20:
+                raise ValueError("请选择 1–20 名学生")
+            for student_id in students:
+                if not isinstance(student_id, str) or not re.fullmatch(
+                    r"[A-Za-z0-9-]{3,20}", student_id
+                ):
+                    raise ValueError("Invalid student id")
+                if student_id not in bound_students:
+                    bound_students.append(student_id)
+            if not bound_students:
+                raise ValueError("请选择 1–20 名学生")
+            bound_students.sort()
         with self.lock:
             if username.casefold() in self.users:
                 raise ValueError("该用户名不可用，请换一个")
@@ -94,8 +108,13 @@ class AccessStore:
                 raise ValueError("演示账号数量已达上限，请联系管理员")
             salt = secrets.token_bytes(16)
             users = copy.deepcopy(self.users)
-            users[username.casefold()] = {"username": username, "role": role,
-                                         "salt": salt.hex(), "password_hash": password_hash(password, salt)}
+            users[username.casefold()] = {
+                "username": username,
+                "role": role,
+                "students": bound_students,
+                "salt": salt.hex(),
+                "password_hash": password_hash(password, salt),
+            }
             self._save(users, self.policy)
             self.users = users
 
@@ -115,13 +134,24 @@ class AccessStore:
             return None
         with self.lock:
             user = self.users.get(session.get("username"))
-            return {k: user[k] for k in ("username", "role")} if user else None
+            return {
+                "username": user["username"],
+                "role": user["role"],
+                "students": list(user.get("students") or []),
+            } if user else None
+
+    def list_users(self):
+        with self.lock:
+            return copy.deepcopy(list(self.users.values()))
 
     def permitted(self, session, key):
         user = self.public_user(session)
         if not user:
             return False
         if user["role"] == "admin":
+            return True
+        if user["role"] == "parent":
+            # 家长可访问范围由路由单独限定，不受展示模块开关影响。
             return True
         with self.lock:
             return bool(self.policy["modules"].get(key, self.policy.get(key, False)))
