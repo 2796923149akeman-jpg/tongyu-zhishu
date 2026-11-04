@@ -120,7 +120,7 @@
         if (new URL(link.href).pathname === path) link.hidden = !state.permissions.modules[key];
       }
     }
-    if (state.user.role !== 'admin') for (const id of ['settingsButton', 'analysisButton', 'openImport', 'importNoteDetail', 'resolveBtn', 'falseAlarmBtn', 'reopenBtn', 'saveNoteBtn', 'noteInput']) { const node = document.getElementById(id); if (node) node.hidden = true; }
+    if (state.user.role !== 'admin') for (const id of ['settingsButton', 'analysisButton', 'openImport', 'importNoteDetail', 'assignParticipants', 'resolveBtn', 'falseAlarmBtn', 'reopenBtn', 'saveNoteBtn', 'noteInput']) { const node = document.getElementById(id); if (node) node.hidden = true; }
     if (state.user.role !== 'admin') {
       const entry = document.querySelector('.entry-card');
       if (entry) entry.hidden = true;

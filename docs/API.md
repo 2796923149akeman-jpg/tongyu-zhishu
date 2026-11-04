@@ -254,6 +254,22 @@ offset=0
 
 允许 `pending` → `resolved` / `false_alarm`，以及 `resolved` / `false_alarm` → `pending`（重新打开）。状态变更会追加 `history`。
 
+### `POST /api/events/{id}/participants`
+
+管理员按学生姓名关联事件参与人：
+
+```json
+{
+  "names": "张小明 李小红",
+  "handled_by": "值班老师"
+}
+```
+
+姓名之间可用普通空格、全角空格或连续空格分隔。摔倒事件必须解析出 1 名学生，
+斗殴事件至少解析出 2 名学生。同名学生会拒绝自动选择，要求使用
+`姓名@学号`，例如 `张小明@S-0201`。成功后会写入 `participants`、
+`parent_visible_at`，并在处理记录中追加关联操作。
+
 ### `POST /api/events/{id}/notes`
 
 ```json

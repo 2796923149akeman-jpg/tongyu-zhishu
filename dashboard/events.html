@@ -773,6 +773,41 @@
       border: 1px solid #f1dcae;
       border-radius: 8px;
     }
+    .participant-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-bottom: 8px;
+    }
+    .participant-chip {
+      padding: 4px 8px;
+      color: var(--brand);
+      font-size: 10px;
+      background: var(--brand-soft);
+      border: 1px solid #9fcfc9;
+      border-radius: 999px;
+    }
+    .participant-hint {
+      margin-bottom: 7px;
+      color: var(--muted);
+      font-size: 10px;
+      line-height: 1.6;
+    }
+    .participant-input {
+      width: 100%;
+      min-height: 38px;
+      padding: 7px 10px;
+      color: var(--ink);
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 9px;
+      outline: 0;
+      font-size: 12px;
+    }
+    .participant-input:focus {
+      border-color: var(--brand);
+      box-shadow: 0 0 0 3px var(--brand-soft);
+    }
     .detail-back { display: none; margin-bottom: 8px; }
 
     .timeline { display: grid; gap: 0; padding: 0; margin: 0; list-style: none; }
@@ -1203,6 +1238,20 @@
               <div id="eventActions">
                 <section class="detail-block">
                   <div class="block-head">
+                    <h4>关联发生学生</h4>
+                    <span class="counter" id="participantCount">0 人</span>
+                  </div>
+                  <div class="participant-list" id="participantsList"></div>
+                  <p class="participant-hint" id="participantHint">摔倒事件填写 1 名学生；斗殴事件填写至少 2 名，姓名之间用空格分隔。</p>
+                  <input class="participant-input" id="participantNames" type="text" maxlength="240" placeholder="例如：张小明 李小红">
+                  <div class="note-actions">
+                    <button class="btn btn-primary" id="assignParticipants" type="button">确认关联并发送家长</button>
+                  </div>
+                  <p class="action-note" id="participantFeedback"></p>
+                </section>
+
+                <section class="detail-block">
+                  <div class="block-head">
                     <h4>处理备注</h4>
                     <span class="counter" id="noteCount">0 / 200</span>
                   </div>
@@ -1345,6 +1394,12 @@
         evidenceEmpty: $("#evidenceEmpty"),
         eventActions: $("#eventActions"),
         readOnlyNote: $("#readOnlyNote"),
+        participantsList: $("#participantsList"),
+        participantCount: $("#participantCount"),
+        participantHint: $("#participantHint"),
+        participantNames: $("#participantNames"),
+        assignParticipants: $("#assignParticipants"),
+        participantFeedback: $("#participantFeedback"),
         detailBack: $("#detailBack"),
         noteInput: $("#noteInput"),
         noteCount: $("#noteCount"),
@@ -1511,6 +1566,8 @@
           note: config.note || "",
           evidence_url: config.evidence_url || "",
           evidence_captured_at: config.evidence_captured_at || null,
+          participants: Array.isArray(config.participants) ? config.participants : [],
+          parent_visible_at: config.parent_visible_at || null,
           history: Array.isArray(config.history) ? config.history : [
             { at: occurredAt, action: "系统检测", by: "演示数据源", note: "由前端样例生成，非真实设备事件" }
           ]
@@ -1749,6 +1806,14 @@
           note: item.note || "",
           evidence_url: item.evidence_url || "",
           evidence_captured_at: item.evidence_captured_at || null,
+          participants: Array.isArray(item.participants)
+            ? item.participants.map((participant) => ({
+              student_id: String(participant.student_id || ""),
+              student_name: String(participant.student_name || participant.name || ""),
+              input_name: String(participant.input_name || "")
+            }))
+            : [],
+          parent_visible_at: item.parent_visible_at || null,
           history: Array.isArray(item.history)
             ? item.history.map((entry) => ({
               at: entry.at || occurredAt,
@@ -1923,10 +1988,42 @@
         setText(els.noteCount, `${els.noteInput.value.length} / 200`);
       }
 
+      function renderParticipants(event) {
+        els.participantsList.replaceChildren();
+        const participants = Array.isArray(event.participants) ? event.participants : [];
+        setText(els.participantCount, `${participants.length} 人`);
+        for (const participant of participants) {
+          const chip = document.createElement("span");
+          chip.className = "participant-chip";
+          chip.textContent = `${participant.student_name} · ${participant.student_id}`;
+          els.participantsList.append(chip);
+        }
+        if (participants.length === 0) {
+          const empty = document.createElement("span");
+          empty.className = "participant-hint";
+          empty.textContent = "尚未关联学生，家长账号暂时看不到该事件。";
+          els.participantsList.append(empty);
+        }
+        const rule = event.type === "fall"
+          ? "摔倒事件必须填写 1 名学生。"
+          : event.type === "fight"
+            ? "斗殴事件至少填写 2 名学生，姓名之间用空格分隔。"
+            : "填写与事件相关的学生，多个姓名之间用空格分隔。";
+        const sent = event.parent_visible_at
+          ? ` 已于 ${formatDateTime(event.parent_visible_at)} 发送到关联家长账号。`
+          : "";
+        setText(els.participantHint, `${rule} 同名时请使用“姓名@学号”。${sent}`);
+        if (document.activeElement !== els.participantNames) {
+          els.participantNames.value = participants
+            .map((item) => item.student_name || item.student_id)
+            .join(" ");
+        }
+      }
+
       function applyPermissionUi() {
         els.eventActions.hidden = !isAdmin;
         els.readOnlyNote.hidden = isAdmin;
-        for (const button of [els.saveNoteBtn, els.resolveBtn, els.falseAlarmBtn, els.reopenBtn]) {
+        for (const button of [els.saveNoteBtn, els.assignParticipants, els.resolveBtn, els.falseAlarmBtn, els.reopenBtn]) {
           button.disabled = !isAdmin || actionBusy;
         }
       }
@@ -2019,6 +2116,7 @@
         setText(els.detailClass, event.class_name || event.class_id || "未分班");
         setText(els.detailConfidence, Number.isFinite(event.confidence) ? `${Math.round(event.confidence * 100)}%` : "不适用");
         setText(els.detailDescription, event.detail || "暂无补充描述。");
+        renderParticipants(event);
         renderDetailAge(event);
         renderEvidence(event);
         applyPermissionUi();
@@ -2034,6 +2132,7 @@
         els.resolveBtn.disabled = !isAdmin || actionBusy || event.status === "resolved";
         els.falseAlarmBtn.disabled = !isAdmin || actionBusy || event.status === "false_alarm";
         els.reopenBtn.disabled = !isAdmin || actionBusy || event.status === "pending";
+        els.assignParticipants.disabled = !isAdmin || actionBusy || event.status === "false_alarm";
         renderTimeline(event);
       }
 
@@ -2418,6 +2517,68 @@
         showToast(`演示数据：已${labels[nextStatus] || "更新状态"}，不会写入服务器。`);
       }
 
+      async function assignEventParticipants() {
+        if (!isAdmin) {
+          showToast("当前账号为只读权限，无法关联事件学生。");
+          return;
+        }
+        const event = currentEvent();
+        if (!event || actionBusy) return;
+        const names = els.participantNames.value.trim();
+        const values = names ? names.split(/\s+/).filter(Boolean) : [];
+        if (!values.length) {
+          setText(els.participantFeedback, "请填写发生事件的学生姓名。");
+          return;
+        }
+        if (event.type === "fall" && values.length !== 1) {
+          setText(els.participantFeedback, "摔倒事件必须且只能填写 1 名学生。");
+          return;
+        }
+        if (event.type === "fight" && values.length < 2) {
+          setText(els.participantFeedback, "斗殴事件至少需要填写 2 名学生。");
+          return;
+        }
+        setText(els.participantFeedback, "正在关联学生并发送家长...");
+        if (state.mode === "live") {
+          actionBusy = true;
+          renderDetail();
+          try {
+            const data = await postEventJson(
+              `/api/events/${encodeURIComponent(event.id)}/participants`,
+              { names, handled_by: "值班老师" }
+            );
+            if (!data.event) throw new Error("接口没有返回事件");
+            replaceEvent(normalizeApiEvent(data.event));
+            setMode("live", `事件 ${event.id} 已关联学生并发送到家长账号。`);
+            renderAll();
+            setText(els.participantFeedback, "已关联学生，家长账号现在可以查看。");
+            showToast("已关联学生并发送家长。");
+          } catch (error) {
+            setText(els.participantFeedback, `关联失败：${eventErrorReason(error)}`);
+            showToast(`关联失败：${eventErrorReason(error)}`);
+          } finally {
+            actionBusy = false;
+            renderAll();
+          }
+          return;
+        }
+        event.participants = values.map((name, index) => ({
+          student_id: `DEMO-${String(index + 1).padStart(3, "0")}`,
+          student_name: name,
+          input_name: name
+        }));
+        event.parent_visible_at = new Date().toISOString();
+        event.history.push({
+          at: event.parent_visible_at,
+          action: "关联事件学生",
+          by: "演示老师",
+          note: `已关联：${values.join("、")}；演示模式不会真正发送。`
+        });
+        renderAll();
+        setText(els.participantFeedback, "演示数据：已模拟关联学生，不会发送家长。");
+        showToast("演示数据：已模拟关联学生。");
+      }
+
       async function saveNote() {
         if (!isAdmin) {
           showToast("当前账号为只读权限，无法保存处理备注。");
@@ -2569,6 +2730,7 @@
       els.emptyReset.addEventListener("click", resetFilters);
       els.detailBack.addEventListener("click", closeDetailPanel);
       els.noteInput.addEventListener("input", updateNoteCounter);
+      els.assignParticipants.addEventListener("click", assignEventParticipants);
       els.saveNoteBtn.addEventListener("click", saveNote);
       els.resolveBtn.addEventListener("click", () => updateStatus("resolved"));
       els.falseAlarmBtn.addEventListener("click", () => updateStatus("false_alarm"));
