@@ -9,6 +9,7 @@ import urllib.error
 import urllib.request
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from unittest.mock import patch
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -44,6 +45,9 @@ class HealthApiTests(unittest.TestCase):
         self.web.EVENTS_FILE = temp / "events.json"
         self.web.HEALTH_STUDENTS_FILE = temp / "health_students.json"
         self.web.HEALTH_RECORDS_FILE = temp / "health_records.json"
+        self.web.HEALTH_DEVICE_TOKEN = "fixture-device-token-0123456789abcdef"
+        self.web.HEALTH_INFRARED_STALE_SECONDS = 10
+        self.web.HEALTH_LAST_INFRARED = None
         (temp / "xiaozhi-server" / "data").mkdir(parents=True)
         self.web.reload_events()
         self.web.reload_health()
@@ -60,10 +64,19 @@ class HealthApiTests(unittest.TestCase):
         self.thread.join()
         self.temp.cleanup()
 
-    def request(self, path, payload=None, method="GET"):
+    def request(
+        self,
+        path,
+        payload=None,
+        method="GET",
+        extra_headers=None,
+        authenticated=True,
+    ):
         data = json.dumps(payload).encode("utf-8") if payload is not None else None
         headers = {"Content-Type": "application/json"} if data else {}
-        headers.update(self.auth_headers)
+        if authenticated:
+            headers.update(self.auth_headers)
+        headers.update(extra_headers or {})
         request = urllib.request.Request(self.base + path, data=data, headers=headers, method=method)
         try:
             with urllib.request.urlopen(request, timeout=5) as response:
@@ -214,6 +227,93 @@ class HealthApiTests(unittest.TestCase):
 
         status, invalid = self.request("/api/reports/daily?date=not-a-date")
         self.assertEqual(status, 400)
+
+    def test_infrared_device_reading_is_ingested_deduplicated_and_published(self):
+        self.import_students()
+        measured_at = datetime.now(timezone(timedelta(hours=8))).isoformat(timespec="seconds")
+        reading = {
+            "connected": True,
+            "stable": True,
+            "student_id": "S-0201",
+            "device_id": "ir-test-01",
+            "reading_id": "IR-0001",
+            "timestamp": measured_at,
+            "properties": {"mlx_obj": 36.7, "mlx_amb": 24.8},
+        }
+        device_headers = {"X-Device-Token": self.web.HEALTH_DEVICE_TOKEN}
+        status, first = self.request(
+            "/api/health/device-readings",
+            reading,
+            "POST",
+            device_headers,
+            authenticated=False,
+        )
+        self.assertEqual(status, 201)
+        self.assertTrue(first["stored"])
+        self.assertEqual(first["record"]["source"], "infrared")
+        self.assertEqual(first["record"]["origin"], "device")
+        self.assertEqual(first["record"]["device_id"], "ir-test-01")
+        self.assertEqual(first["record"]["ambient_c"], 24.8)
+
+        status, duplicate = self.request(
+            "/api/health/device-readings",
+            reading,
+            "POST",
+            device_headers,
+            authenticated=False,
+        )
+        self.assertEqual(status, 200)
+        self.assertTrue(duplicate["duplicate"])
+        self.assertEqual(duplicate["record"]["id"], first["record"]["id"])
+        self.assertEqual(len(self.web.health_record_snapshot()), 1)
+
+        with patch.object(self.web, "read_rdk_json", return_value=reading):
+            status, realtime = self.request("/api/health/realtime")
+        self.assertEqual(status, 200)
+        self.assertTrue(realtime["source_available"])
+        self.assertEqual(realtime["reading"]["temperature_c"], 36.7)
+        self.assertEqual(realtime["reading"]["student_id"], "S-0201")
+        self.assertTrue(realtime["ingest"]["duplicate"])
+
+    def test_device_ingestion_requires_token_and_keeps_unassigned_reading_live(self):
+        reading = {
+            "connected": True,
+            "timestamp": datetime.now(timezone(timedelta(hours=8))).isoformat(timespec="seconds"),
+            "properties": {"mlx_obj": 36.6},
+        }
+        status, body = self.request(
+            "/api/health/device-readings",
+            reading,
+            "POST",
+            {"X-Device-Token": "wrong-device-token-000000000000"},
+            authenticated=False,
+        )
+        self.assertEqual(status, 403)
+        self.assertFalse(body["ok"])
+
+        status, result = self.request(
+            "/api/health/device-readings",
+            reading,
+            "POST",
+            {"X-Device-Token": self.web.HEALTH_DEVICE_TOKEN},
+            authenticated=False,
+        )
+        self.assertEqual(status, 200)
+        self.assertFalse(result["stored"])
+        self.assertEqual(result["reason"], "unassigned")
+        self.assertEqual(result["reading"]["status"], "unassigned")
+        self.assertEqual(len(self.web.health_record_snapshot()), 0)
+
+        with patch.object(
+            self.web,
+            "read_rdk_json",
+            side_effect=urllib.error.URLError("offline"),
+        ):
+            status, fallback = self.request("/api/health/realtime")
+        self.assertEqual(status, 200)
+        self.assertFalse(fallback["source_available"])
+        self.assertEqual(fallback["reading"]["temperature_c"], 36.6)
+        self.assertEqual(fallback["reading"]["status"], "unassigned")
 
 
 if __name__ == "__main__":
