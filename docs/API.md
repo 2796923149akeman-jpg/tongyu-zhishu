@@ -175,6 +175,14 @@ offset=0
       "dedupe_key": "rdk-fall-20261028-094210",
       "evidence_url": "/evidence/EVT-20261028-ABC123.png",
       "evidence_captured_at": "2026-10-28T09:42:10+08:00",
+      "participants": [
+        {
+          "student_id": "S-0201",
+          "student_name": "张小明",
+          "input_name": "张小明"
+        }
+      ],
+      "parent_visible_at": null,
       "history": [
         {
           "at": "2026-10-28T09:42:10+08:00",
@@ -197,6 +205,10 @@ offset=0
 `data:image/png|jpeg|webp|gif;base64,...` 栅格图片；外部 URL、协议相对路径
 和 SVG data URL 会被拒绝。`evidence_captured_at` 为可选的 ISO 8601 证据采集时间。
 不要把真实儿童照片、可识别身份的画面或大体积 base64 数据提交到 Git。
+
+`participants` 记录事件参与学生，摔倒事件应有 1 名、斗殴事件应有至少 2 名。
+`student_id` 必须来自学生名单；同名情况应通过学号选择。`parent_visible_at`
+表示老师完成学生关联并允许家长查看事件的时间，未完成关联时为空。
 
 证据文件可放在被 Git 忽略的 `dashboard/evidence/` 运行时目录，并通过受登录和
 事件模块及视频权限保护的 `GET /evidence/{文件名}` 读取。只允许
