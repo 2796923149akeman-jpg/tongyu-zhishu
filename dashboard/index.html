@@ -475,6 +475,17 @@
       overflow-wrap: anywhere;
     }
 
+    .banner-action {
+      margin-top: 9px;
+      color: #fff;
+      background: var(--bad);
+      border-color: var(--bad);
+      text-decoration: none;
+    }
+
+    .banner-action[hidden] { display: none; }
+    .banner-action:hover { background: #a92f26; }
+
     .banner-meta {
       display: grid;
       min-width: 116px;
@@ -1422,6 +1433,7 @@
             </div>
             <h2 id="bannerTitle">等待数据</h2>
             <p id="bannerDesc">正在连接 Dashboard 服务，等待第一组设备数据。</p>
+            <a class="btn banner-action" id="bannerAction" href="/events.html?status=pending&amp;level=urgent&amp;date=all&amp;open=1" hidden>查看待处理事件 →</a>
           </div>
           <div class="banner-meta">
             <span class="meta-label" id="bannerTimeLabel">最后接收</span>
@@ -1598,6 +1610,7 @@
         bannerWarning: $("#bannerWarning"),
         bannerTitle: $("#bannerTitle"),
         bannerDesc: $("#bannerDesc"),
+        bannerAction: $("#bannerAction"),
         bannerTimeLabel: $("#bannerTimeLabel"),
         bannerTime: $("#bannerTime"),
         bannerAgo: $("#bannerAgo"),
@@ -2199,6 +2212,7 @@
         setChip(els.bannerChip, copy.chipTone, copy.chip);
         setText(els.bannerTitle, copy.title);
         setText(els.bannerDesc, copy.desc);
+        els.bannerAction.hidden = kind !== "fall" && kind !== "fight";
         if (state.sensors.timestampState === "known" && state.sensors.collectedAt) {
           setText(els.bannerTimeLabel, "传感器采集");
           setText(els.bannerTime, formatTime(state.sensors.collectedAt));

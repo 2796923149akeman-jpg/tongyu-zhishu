@@ -497,6 +497,52 @@
       box-shadow: 0 0 0 3px var(--brand-soft);
     }
 
+    .quick-filters {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin: -3px 0 11px;
+    }
+
+    .quick-chip {
+      min-height: 30px;
+      padding: 0 11px;
+      color: var(--muted);
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      cursor: pointer;
+      font-size: 11px;
+    }
+
+    .quick-chip:hover {
+      color: var(--brand);
+      border-color: #9fcfc9;
+    }
+
+    .quick-chip.is-active {
+      color: var(--brand);
+      background: var(--brand-soft);
+      border-color: #9fcfc9;
+      font-weight: 700;
+    }
+
+    .new-events-notice {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin: 0 0 10px;
+      padding: 8px 10px;
+      color: #7a5a1e;
+      font-size: 11px;
+      background: var(--warn-soft);
+      border: 1px solid #f1dcae;
+      border-radius: 9px;
+    }
+
+    .new-events-notice span:nth-child(2) { flex: 1; }
+    .new-events-notice .btn { min-height: 30px; padding: 0 10px; font-size: 11px; }
+
     .event-list {
       display: grid;
       gap: 8px;
@@ -553,6 +599,15 @@
     .event-meta { margin-top: 3px; color: var(--muted); font-size: 11px; line-height: 1.5; overflow-wrap: anywhere; }
     .event-side { display: flex; flex-direction: column; align-items: flex-end; gap: 5px; }
     .event-time { color: var(--muted); font-size: 10px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+    .new-mark,
+    .overdue-mark {
+      padding: 1px 6px;
+      font-size: 9px;
+      font-weight: 700;
+      border-radius: 999px;
+    }
+    .new-mark { color: var(--brand); background: var(--brand-soft); }
+    .overdue-mark { color: var(--bad); background: var(--bad-soft); }
 
     .empty-state {
       display: grid;
@@ -615,6 +670,13 @@
     .detail-tags { display: flex; gap: 5px; flex-wrap: wrap; margin-bottom: 4px; }
     .detail-title-wrap h3 { font-size: 16px; line-height: 1.45; overflow-wrap: anywhere; }
     .detail-title-wrap p { margin-top: 3px; color: var(--muted); font-size: 11px; overflow-wrap: anywhere; }
+    .detail-age {
+      margin-top: 4px !important;
+      color: var(--muted) !important;
+      font-size: 11px !important;
+      font-variant-numeric: tabular-nums;
+    }
+    .detail-age.is-overdue { color: var(--bad) !important; font-weight: 700; }
 
     .detail-meta {
       display: grid;
@@ -645,6 +707,34 @@
       border-radius: 10px;
     }
 
+    .evidence-box {
+      overflow: hidden;
+      background: #0b1220;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+    }
+    .evidence-box img {
+      display: block;
+      width: 100%;
+      max-height: 260px;
+      object-fit: contain;
+    }
+    .evidence-box p {
+      padding: 7px 10px;
+      color: var(--muted);
+      font-size: 10px;
+      background: var(--surface);
+    }
+    .evidence-empty {
+      padding: 10px;
+      color: var(--muted);
+      font-size: 10px;
+      line-height: 1.6;
+      background: var(--surface-soft);
+      border: 1px dashed var(--line);
+      border-radius: 9px;
+    }
+
     .block-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
     .counter { color: var(--muted-2); font-size: 10px; font-variant-numeric: tabular-nums; }
 
@@ -673,6 +763,17 @@
     .action-row { display: flex; flex-wrap: wrap; gap: 7px; }
     .action-row .btn { min-height: 36px; padding: 0 11px; font-size: 11px; }
     .action-note { margin-top: 6px; color: var(--muted-2); font-size: 10px; line-height: 1.6; }
+    .read-only-note {
+      margin-top: 8px;
+      padding: 8px 10px;
+      color: #7a5a1e;
+      font-size: 10px;
+      line-height: 1.6;
+      background: var(--warn-soft);
+      border: 1px solid #f1dcae;
+      border-radius: 8px;
+    }
+    .detail-back { display: none; margin-bottom: 8px; }
 
     .timeline { display: grid; gap: 0; padding: 0; margin: 0; list-style: none; }
 
@@ -749,6 +850,9 @@
       .workspace-grid { grid-template-columns: minmax(0, 1fr); }
       .detail-card { position: static; }
       .event-list { max-height: 520px; }
+      .detail-back { display: inline-flex; }
+      .workspace-grid:not(.detail-open) .detail-card { display: none; }
+      .workspace-grid.detail-open .list-card { display: none; }
     }
 
     @media (max-width: 920px) {
@@ -949,7 +1053,7 @@
           <article class="summary-card" data-tone="bad">
             <span>待处理</span>
             <strong id="pendingCount">0</strong>
-            <small>其中紧急 <b id="urgentPending">0</b> 条</small>
+            <small>紧急 <b id="urgentPending">0</b> 条 · 超时 <b id="overduePending">0</b> 条</small>
           </article>
           <article class="summary-card" data-tone="brand">
             <span>今日事件</span>
@@ -1018,6 +1122,19 @@
               <button class="btn btn-quiet" id="resetFilters" type="button">清除筛选</button>
             </div>
 
+            <div class="quick-filters" role="group" aria-label="快捷筛选">
+              <button class="quick-chip is-active" type="button" data-quick="today" aria-pressed="true">今日全部</button>
+              <button class="quick-chip" type="button" data-quick="pending" aria-pressed="false">全部待处理</button>
+              <button class="quick-chip" type="button" data-quick="urgent" aria-pressed="false">紧急待处理</button>
+              <button class="quick-chip" type="button" data-quick="overdue" aria-pressed="false">已超时</button>
+            </div>
+
+            <div class="new-events-notice" id="newEventsNotice" role="status" aria-live="polite" hidden>
+              <span class="new-mark">新</span>
+              <span id="newEventsText">收到新事件</span>
+              <button class="btn btn-quiet" id="viewNewEvents" type="button">查看新增</button>
+            </div>
+
             <div class="event-list" id="eventList" aria-label="异常事件列表"></div>
             <div class="empty-state" id="emptyState" hidden>
               <div>
@@ -1045,6 +1162,7 @@
             </div>
 
             <div id="detailContent" hidden>
+              <button class="btn btn-quiet detail-back" id="detailBack" type="button" aria-label="返回事件列表">← 返回事件列表</button>
               <div class="detail-head">
                 <span class="detail-icon" id="detailIcon" data-tone="idle" aria-hidden="true"></span>
                 <div class="detail-title-wrap">
@@ -1054,6 +1172,7 @@
                   </div>
                   <h3 id="detailType">--</h3>
                   <p id="detailSummary">--</p>
+                  <p class="detail-age" id="detailAge" hidden>--</p>
                 </div>
               </div>
 
@@ -1072,26 +1191,38 @@
                 <p class="detail-description" id="detailDescription">--</p>
               </section>
 
-              <section class="detail-block">
-                <div class="block-head">
-                  <h4>处理备注</h4>
-                  <span class="counter" id="noteCount">0 / 200</span>
+              <section class="detail-block" aria-labelledby="evidenceTitle">
+                <h4 id="evidenceTitle">事件证据</h4>
+                <div class="evidence-box" id="evidenceBox" hidden>
+                  <img id="evidenceImage" alt="事件证据画面" hidden>
+                  <p id="evidenceCaption">证据画面</p>
                 </div>
-                <textarea id="noteInput" maxlength="200" rows="3" placeholder="记录现场确认、处置或误报原因（演示）"></textarea>
-                <div class="note-actions">
-                  <button class="btn" id="saveNoteBtn" type="button">保存备注</button>
-                </div>
+                <div class="evidence-empty" id="evidenceEmpty">该事件暂无证据画面，或当前账号无权读取证据。</div>
               </section>
 
-              <section class="detail-block">
-                <h4>状态处置</h4>
-                <div class="action-row">
-                  <button class="btn btn-primary" id="resolveBtn" type="button">标记已处理</button>
-                  <button class="btn btn-danger" id="falseAlarmBtn" type="button">标记误报</button>
-                  <button class="btn" id="reopenBtn" type="button">重新打开</button>
-                </div>
-                <p class="action-note" id="actionNote">正在检查事件接口。</p>
-              </section>
+              <div id="eventActions">
+                <section class="detail-block">
+                  <div class="block-head">
+                    <h4>处理备注</h4>
+                    <span class="counter" id="noteCount">0 / 200</span>
+                  </div>
+                  <textarea id="noteInput" maxlength="200" rows="3" placeholder="记录现场确认、处置或误报原因（演示）"></textarea>
+                  <div class="note-actions">
+                    <button class="btn" id="saveNoteBtn" type="button">保存备注</button>
+                  </div>
+                </section>
+
+                <section class="detail-block">
+                  <h4>状态处置</h4>
+                  <div class="action-row">
+                    <button class="btn btn-primary" id="resolveBtn" type="button">标记已处理</button>
+                    <button class="btn btn-danger" id="falseAlarmBtn" type="button">标记误报</button>
+                    <button class="btn" id="reopenBtn" type="button">重新打开</button>
+                  </div>
+                  <p class="action-note" id="actionNote">正在检查事件接口。</p>
+                </section>
+              </div>
+              <p class="read-only-note" id="readOnlyNote" hidden>当前账号为只读演示账号，可以筛选和查看事件，但不能修改状态或备注。</p>
 
               <section class="detail-block">
                 <h4>处理记录</h4>
@@ -1147,6 +1278,10 @@
         month: "2-digit",
         day: "2-digit"
       });
+      const POLL_EVENTS_MS = 5000;
+      const OVERDUE_MS = 5 * 60 * 1000;
+      const user = window.TongyuBootstrap?.user || null;
+      const isAdmin = user?.role === "admin";
 
       const els = {
         pageDate: $("#pageDate"),
@@ -1161,6 +1296,7 @@
         topModeChip: $("#topModeChip"),
         pendingCount: $("#pendingCount"),
         urgentPending: $("#urgentPending"),
+        overduePending: $("#overduePending"),
         todayCount: $("#todayCount"),
         resolvedCount: $("#resolvedCount"),
         falseAlarmCount: $("#falseAlarmCount"),
@@ -1173,6 +1309,10 @@
         dateFilter: $("#dateFilter"),
         sortFilter: $("#sortFilter"),
         resetFilters: $("#resetFilters"),
+        quickFilters: $(".quick-filters"),
+        newEventsNotice: $("#newEventsNotice"),
+        newEventsText: $("#newEventsText"),
+        viewNewEvents: $("#viewNewEvents"),
         emptyReset: $("#emptyReset"),
         eventList: $("#eventList"),
         emptyState: $("#emptyState"),
@@ -1185,6 +1325,7 @@
         detailTypeChip: $("#detailTypeChip"),
         detailType: $("#detailType"),
         detailSummary: $("#detailSummary"),
+        detailAge: $("#detailAge"),
         detailId: $("#detailId"),
         detailTime: $("#detailTime"),
         detailSource: $("#detailSource"),
@@ -1198,6 +1339,13 @@
         sideModeNote: $("#sideModeNote"),
         actionNote: $("#actionNote"),
         detailDescription: $("#detailDescription"),
+        evidenceBox: $("#evidenceBox"),
+        evidenceImage: $("#evidenceImage"),
+        evidenceCaption: $("#evidenceCaption"),
+        evidenceEmpty: $("#evidenceEmpty"),
+        eventActions: $("#eventActions"),
+        readOnlyNote: $("#readOnlyNote"),
+        detailBack: $("#detailBack"),
         noteInput: $("#noteInput"),
         noteCount: $("#noteCount"),
         saveNoteBtn: $("#saveNoteBtn"),
@@ -1248,12 +1396,16 @@
       const state = {
         events: [],
         selectedId: null,
-        filters: { q: "", status: "", level: "", source: "", date: "today", sort: "newest" },
+        filters: { q: "", status: "", level: "", source: "", date: "today", sort: "newest", overdue: false },
+        newEventIds: new Set(),
         mode: "checking",
-        liveLoaded: false
+        liveLoaded: false,
+        openInitialDetail: false
       };
       let toastTimer = null;
       let actionBusy = false;
+      let refreshBusy = false;
+      let lastPendingMinute = -1;
 
       function setText(element, value) {
         const next = String(value ?? "");
@@ -1285,6 +1437,51 @@
         return Number.isNaN(date.getTime()) ? "" : dateKeyFormatter.format(date);
       }
 
+      function pendingMinutes(event, now = Date.now()) {
+        const occurredAt = new Date(event.occurred_at).getTime();
+        if (Number.isNaN(occurredAt)) return 0;
+        return Math.max(0, Math.floor((now - occurredAt) / 60000));
+      }
+
+      function isOverdue(event, now = Date.now()) {
+        if (event.status !== "pending") return false;
+        const occurredAt = new Date(event.occurred_at).getTime();
+        return Number.isFinite(occurredAt) && now - occurredAt > OVERDUE_MS;
+      }
+
+      function pendingAgeLabel(event) {
+        if (event.status !== "pending") return "";
+        const minutes = pendingMinutes(event);
+        let duration = "不足 1 分钟";
+        if (minutes >= 60) {
+          const hours = Math.floor(minutes / 60);
+          const rest = minutes % 60;
+          duration = `${hours} 小时${rest ? ` ${rest} 分钟` : ""}`;
+        } else if (minutes > 0) {
+          duration = `${minutes} 分钟`;
+        }
+        return isOverdue(event)
+          ? `待处理 ${duration} · 已超过 5 分钟`
+          : `待处理 ${duration}`;
+      }
+
+      function safeEvidenceUrl(value) {
+        if (typeof value !== "string" || !value.trim()) return "";
+        const raw = value.trim();
+        if (raw.length > 500000 || /[\u0000-\u001f\u007f]/.test(raw)) return "";
+        if (/^data:image\/(?:png|jpeg|webp|gif);base64,[a-z0-9+/]+={0,2}$/i.test(raw)) {
+          return raw;
+        }
+        if (!raw.startsWith("/") || raw.startsWith("//") || raw.includes("\\")) return "";
+        try {
+          const url = new URL(raw, location.href);
+          if (url.origin !== location.origin) return "";
+          return `${url.pathname}${url.search}${url.hash}`;
+        } catch (_) {
+          return "";
+        }
+      }
+
       function isoMinutesAgo(minutes) {
         return new Date(Date.now() - minutes * 60000).toISOString();
       }
@@ -1312,6 +1509,8 @@
           handled_at: config.handled_at || null,
           handled_by: config.handled_by || null,
           note: config.note || "",
+          evidence_url: config.evidence_url || "",
+          evidence_captured_at: config.evidence_captured_at || null,
           history: Array.isArray(config.history) ? config.history : [
             { at: occurredAt, action: "系统检测", by: "演示数据源", note: "由前端样例生成，非真实设备事件" }
           ]
@@ -1546,6 +1745,8 @@
           handled_at: item.handled_at || null,
           handled_by: item.handled_by || item.handler || "",
           note: item.note || "",
+          evidence_url: item.evidence_url || "",
+          evidence_captured_at: item.evidence_captured_at || null,
           history: Array.isArray(item.history)
             ? item.history.map((entry) => ({
               at: entry.at || occurredAt,
@@ -1569,6 +1770,7 @@
           if (state.filters.level && item.level !== state.filters.level) return false;
           if (state.filters.source && item.source !== state.filters.source) return false;
           if (state.filters.date === "today" && dateKey(item.occurred_at) !== todayKey) return false;
+          if (state.filters.overdue && !isOverdue(item)) return false;
           if (!keyword) return true;
           const haystack = [
             item.id,
@@ -1593,6 +1795,7 @@
         const pending = state.events.filter((item) => item.status === "pending");
         setText(els.pendingCount, pending.length);
         setText(els.urgentPending, pending.filter((item) => item.level === "urgent").length);
+        setText(els.overduePending, pending.filter((item) => isOverdue(item)).length);
         setText(els.todayCount, state.events.filter((item) => dateKey(item.occurred_at) === todayKey).length);
         setText(els.resolvedCount, state.events.filter((item) => item.status === "resolved").length);
         setText(els.falseAlarmCount, state.events.filter((item) => item.status === "false_alarm").length);
@@ -1624,6 +1827,18 @@
         miniLevel.dataset.tone = level.tone;
         miniLevel.textContent = level.label;
         titleRow.append(title, miniLevel);
+        if (state.newEventIds.has(event.id)) {
+          const newMark = document.createElement("span");
+          newMark.className = "new-mark";
+          newMark.textContent = "新";
+          titleRow.append(newMark);
+        }
+        if (isOverdue(event)) {
+          const overdueMark = document.createElement("span");
+          overdueMark.className = "overdue-mark";
+          overdueMark.textContent = "超时";
+          titleRow.append(overdueMark);
+        }
 
         const meta = document.createElement("p");
         meta.className = "event-meta";
@@ -1650,6 +1865,7 @@
       function renderList() {
         const events = filteredEvents();
         const noun = state.mode === "live" ? "真实事件" : "演示样例";
+        const focusedId = document.activeElement?.closest?.(".event-row")?.dataset.eventId || "";
         setText(els.resultCount, `筛选结果 ${events.length} 条 · 共 ${state.events.length} 条${noun}`);
         els.eventList.replaceChildren();
 
@@ -1662,6 +1878,11 @@
         els.emptyState.hidden = true;
         els.eventList.hidden = false;
         els.eventList.replaceChildren(...events.map(createEventRow));
+        if (focusedId) {
+          [...els.eventList.querySelectorAll(".event-row")]
+            .find((row) => row.dataset.eventId === focusedId)
+            ?.focus({ preventScroll: true });
+        }
       }
 
       function renderTimeline(event) {
@@ -1700,6 +1921,67 @@
         setText(els.noteCount, `${els.noteInput.value.length} / 200`);
       }
 
+      function applyPermissionUi() {
+        els.eventActions.hidden = !isAdmin;
+        els.readOnlyNote.hidden = isAdmin;
+        for (const button of [els.saveNoteBtn, els.resolveBtn, els.falseAlarmBtn, els.reopenBtn]) {
+          button.disabled = !isAdmin || actionBusy;
+        }
+      }
+
+      function renderEvidence(event) {
+        const raw = typeof event.evidence_url === "string" ? event.evidence_url.trim() : "";
+        const evidenceUrl = safeEvidenceUrl(raw);
+        els.evidenceEmpty.textContent = "该事件暂无证据画面，或当前账号无权读取证据。";
+        if (!evidenceUrl) {
+          els.evidenceBox.hidden = true;
+          els.evidenceImage.hidden = true;
+          els.evidenceImage.removeAttribute("src");
+          els.evidenceImage.dataset.raw = "";
+          els.evidenceEmpty.hidden = false;
+          return;
+        }
+
+        if (els.evidenceImage.dataset.raw === raw && els.evidenceImage.dataset.failed === "1") {
+          els.evidenceBox.hidden = true;
+          els.evidenceImage.hidden = true;
+          els.evidenceEmpty.hidden = false;
+          return;
+        }
+        if (els.evidenceImage.dataset.raw !== raw) {
+          els.evidenceImage.dataset.raw = raw;
+          els.evidenceImage.dataset.failed = "";
+          els.evidenceImage.onload = () => {
+            els.evidenceImage.dataset.failed = "";
+          };
+          els.evidenceImage.onerror = () => {
+            els.evidenceImage.dataset.failed = "1";
+            els.evidenceBox.hidden = true;
+            els.evidenceImage.hidden = true;
+            els.evidenceEmpty.hidden = false;
+            els.evidenceEmpty.textContent = "证据画面加载失败，请检查文件是否存在或账号权限。";
+          };
+          els.evidenceImage.src = evidenceUrl;
+          els.evidenceImage.alt = `${event.summary}的证据画面`;
+        }
+        els.evidenceImage.hidden = false;
+        els.evidenceBox.hidden = false;
+        els.evidenceEmpty.hidden = true;
+        setText(
+          els.evidenceCaption,
+          event.evidence_captured_at
+            ? `证据时间：${formatDateTime(event.evidence_captured_at)} · 仅授权人员可见`
+            : "事件证据画面 · 仅授权人员可见"
+        );
+      }
+
+      function renderDetailAge(event) {
+        const label = pendingAgeLabel(event);
+        els.detailAge.hidden = !label;
+        setText(els.detailAge, label);
+        els.detailAge.classList.toggle("is-overdue", Boolean(label) && isOverdue(event));
+      }
+
       function renderDetail() {
         const event = filteredEvents().find((item) => item.id === state.selectedId) || null;
         if (!event) {
@@ -1730,6 +2012,9 @@
         setText(els.detailClass, event.class_name || event.class_id || "未分班");
         setText(els.detailConfidence, Number.isFinite(event.confidence) ? `${Math.round(event.confidence * 100)}%` : "不适用");
         setText(els.detailDescription, event.detail || "暂无补充描述。");
+        renderDetailAge(event);
+        renderEvidence(event);
+        applyPermissionUi();
 
         els.detailIcon.dataset.tone = level.tone;
         els.detailIcon.innerHTML = ICONS[type.icon] || ICONS.info;
@@ -1739,9 +2024,9 @@
           updateNoteCounter();
         }
 
-        els.resolveBtn.disabled = actionBusy || event.status === "resolved";
-        els.falseAlarmBtn.disabled = actionBusy || event.status === "false_alarm";
-        els.reopenBtn.disabled = actionBusy || event.status === "pending";
+        els.resolveBtn.disabled = !isAdmin || actionBusy || event.status === "resolved";
+        els.falseAlarmBtn.disabled = !isAdmin || actionBusy || event.status === "false_alarm";
+        els.reopenBtn.disabled = !isAdmin || actionBusy || event.status === "pending";
         renderTimeline(event);
       }
 
@@ -1751,13 +2036,114 @@
         renderDetail();
       }
 
+      function renderNewEventsNotice() {
+        const newEvents = state.events.filter((item) => state.newEventIds.has(item.id));
+        els.newEventsNotice.hidden = newEvents.length === 0;
+        setText(els.newEventsText, `收到 ${newEvents.length} 条新事件`);
+      }
+
+      function acknowledgeNewEvent(id) {
+        if (!state.newEventIds.delete(id)) return;
+        renderNewEventsNotice();
+      }
+
+      function openDetailPanel() {
+        if (!window.matchMedia("(max-width: 1180px)").matches) return;
+        document.querySelector(".workspace-grid").classList.add("detail-open");
+        document.querySelector(".detail-card").scrollIntoView({ behavior: "smooth", block: "start" });
+        setTimeout(() => els.detailBack.focus({ preventScroll: true }), 220);
+      }
+
+      function closeDetailPanel() {
+        const grid = document.querySelector(".workspace-grid");
+        if (!grid.classList.contains("detail-open")) return;
+        grid.classList.remove("detail-open");
+        document.querySelector(".list-card").scrollIntoView({ behavior: "smooth", block: "start" });
+        const selected = [...els.eventList.querySelectorAll(".event-row")]
+          .find((row) => row.dataset.eventId === state.selectedId);
+        if (selected) setTimeout(() => selected.focus({ preventScroll: true }), 180);
+      }
+
       function selectEvent(id) {
         state.selectedId = id;
+        acknowledgeNewEvent(id);
         renderList();
         renderDetail();
-        if (window.matchMedia("(max-width: 1180px)").matches) {
-          document.querySelector(".detail-card").scrollIntoView({ behavior: "smooth", block: "start" });
+        openDetailPanel();
+      }
+
+      function syncQuickFilters() {
+        const active = state.filters.overdue
+          ? "overdue"
+          : state.filters.status === "pending" && state.filters.level === "urgent"
+            ? "urgent"
+            : state.filters.status === "pending"
+              ? "pending"
+              : !state.filters.status && !state.filters.level && !state.filters.source && state.filters.date === "today"
+                ? "today"
+                : "";
+        for (const button of els.quickFilters.querySelectorAll("[data-quick]")) {
+          const selected = button.dataset.quick === active;
+          button.classList.toggle("is-active", selected);
+          button.setAttribute("aria-pressed", String(selected));
         }
+      }
+
+      function setQuickFilter(name) {
+        els.searchInput.value = "";
+        els.statusFilter.value = name === "today" ? "" : "pending";
+        els.levelFilter.value = name === "urgent" ? "urgent" : "";
+        els.sourceFilter.value = "";
+        els.dateFilter.value = name === "today" ? "today" : "all";
+        els.sortFilter.value = "newest";
+        state.filters.overdue = name === "overdue";
+        applyFilters();
+      }
+
+      function applyInitialQuery() {
+        const params = new URLSearchParams(location.search);
+        const allowed = {
+          status: new Set(["pending", "resolved", "false_alarm"]),
+          level: new Set(["urgent", "watch", "info"]),
+          source: new Set(["rdk", "sensor", "dialogue", "device", "manual"]),
+          date: new Set(["today", "all"]),
+          sort: new Set(["newest", "oldest"])
+        };
+        const pick = (name) => {
+          const value = params.get(name) || "";
+          return allowed[name]?.has(value) ? value : "";
+        };
+        const hasFilter = ["status", "level", "source", "q"].some((name) => params.has(name));
+        els.searchInput.value = (params.get("q") || "").slice(0, 120);
+        els.statusFilter.value = pick("status");
+        els.levelFilter.value = pick("level");
+        els.sourceFilter.value = pick("source");
+        els.dateFilter.value = pick("date") || (hasFilter ? "all" : "today");
+        els.sortFilter.value = pick("sort") || "newest";
+        state.filters.overdue = params.get("overdue") === "1";
+        state.openInitialDetail = params.get("open") === "1";
+      }
+
+      function viewNewEvents() {
+        const candidates = state.events
+          .filter((item) => state.newEventIds.has(item.id))
+          .sort((a, b) => new Date(b.occurred_at).getTime() - new Date(a.occurred_at).getTime());
+        const latest = candidates[0];
+        if (!latest) {
+          renderNewEventsNotice();
+          return;
+        }
+        els.searchInput.value = "";
+        els.statusFilter.value = "";
+        els.levelFilter.value = "";
+        els.sourceFilter.value = "";
+        els.dateFilter.value = "all";
+        els.sortFilter.value = "newest";
+        state.filters.overdue = false;
+        state.selectedId = latest.id;
+        state.newEventIds.clear();
+        applyFilters();
+        selectEvent(latest.id);
       }
 
       function readFilters() {
@@ -1767,7 +2153,8 @@
           level: els.levelFilter.value,
           source: els.sourceFilter.value,
           date: els.dateFilter.value,
-          sort: els.sortFilter.value
+          sort: els.sortFilter.value,
+          overdue: Boolean(state.filters.overdue)
         };
       }
 
@@ -1777,6 +2164,8 @@
         if (!events.some((item) => item.id === state.selectedId)) {
           state.selectedId = events[0]?.id || null;
         }
+        syncQuickFilters();
+        renderNewEventsNotice();
         renderAll();
       }
 
@@ -1787,6 +2176,7 @@
         els.sourceFilter.value = "";
         els.dateFilter.value = "today";
         els.sortFilter.value = "newest";
+        state.filters.overdue = false;
         applyFilters();
       }
 
@@ -1851,6 +2241,11 @@
           setText(els.sideModeNote, "正在检查事件接口");
           els.noteInput.placeholder = "记录现场确认、处置或误报原因";
         }
+        applyPermissionUi();
+        if (!isAdmin) {
+          setText(els.actionNote, "当前账号为只读权限，事件处置由管理员完成。");
+          setText(els.detailDisclaimer, "当前账号只能查看事件；需要修改状态或备注时请联系管理员。");
+        }
       }
 
       function eventErrorReason(error) {
@@ -1900,11 +2295,14 @@
         else state.events.unshift(event);
       }
 
-      async function loadEvents() {
-        if (actionBusy) return;
-        actionBusy = true;
+      async function loadEvents({ background = state.liveLoaded } = {}) {
+        if (refreshBusy || actionBusy) return;
+        refreshBusy = true;
         els.checkApiBtn.disabled = true;
-        setMode("checking");
+        if (!background) setMode("checking");
+        const previousIds = new Set(state.events.map((item) => item.id));
+        const previousSelectedId = state.selectedId;
+        const hadLiveData = state.liveLoaded;
         const controller = new AbortController();
         const timer = setTimeout(() => controller.abort(), 5000);
         try {
@@ -1928,10 +2326,23 @@
           const items = Array.isArray(data?.events)
             ? data.events.map(normalizeApiEvent).filter((item) => item.id)
             : [];
+          if (hadLiveData) {
+            for (const item of items) {
+              if (!previousIds.has(item.id)) state.newEventIds.add(item.id);
+            }
+          }
           state.events = items;
           state.liveLoaded = true;
-          state.selectedId = items[0]?.id || null;
-          setMode("live", `已读取 ${items.length} 条真实事件。状态和备注会写入服务器。`);
+          const incomingIds = new Set(items.map((item) => item.id));
+          state.newEventIds = new Set(
+            [...state.newEventIds].filter((id) => incomingIds.has(id))
+          );
+          state.selectedId = items.some((item) => item.id === previousSelectedId)
+            ? previousSelectedId
+            : (items[0]?.id || null);
+          setMode("live", `已读取 ${items.length} 条真实事件；页面每 5 秒自动刷新。`);
+          els.apiStatus.hidden = true;
+          setText(els.apiStatus, "");
           applyFilters();
         } catch (error) {
           const reason = eventErrorReason(error);
@@ -1943,20 +2354,26 @@
           } else {
             state.events = buildDemoEvents();
             state.selectedId = state.events[0]?.id || null;
+            state.newEventIds.clear();
             setMode("demo", `事件接口不可用：${reason}。当前继续展示演示数据，不会写入服务器。`);
             renderAll();
           }
         } finally {
           clearTimeout(timer);
-          actionBusy = false;
+          refreshBusy = false;
           els.checkApiBtn.disabled = false;
           renderAll();
+          honorInitialDetailRequest();
         }
       }
 
       async function updateStatus(nextStatus) {
+        if (!isAdmin) {
+          showToast("当前账号为只读权限，无法修改事件状态。");
+          return;
+        }
         const event = currentEvent();
-        if (!event || event.status === nextStatus || actionBusy) return;
+        if (!event || event.status === nextStatus || actionBusy || refreshBusy) return;
         const labels = { resolved: "标记已处理", false_alarm: "标记误报", pending: "重新打开" };
         const note = els.noteInput.value.trim().slice(0, 200);
         if (state.mode === "live") {
@@ -1995,8 +2412,12 @@
       }
 
       async function saveNote() {
+        if (!isAdmin) {
+          showToast("当前账号为只读权限，无法保存处理备注。");
+          return;
+        }
         const event = currentEvent();
-        if (!event || actionBusy) return;
+        if (!event || actionBusy || refreshBusy) return;
         const note = els.noteInput.value.trim().slice(0, 200);
         if (note === event.note) {
           showToast("备注没有变化。");
@@ -2035,13 +2456,14 @@
       }
 
       async function checkApi() {
-        return loadEvents();
+        return loadEvents({ background: state.liveLoaded });
       }
 
       function resetDemo() {
         state.events = buildDemoEvents();
         state.selectedId = state.events[0]?.id || null;
         state.liveLoaded = false;
+        state.newEventIds.clear();
         setMode("demo", "已恢复初始演示数据，不会写入服务器。");
         resetFilters();
         els.apiStatus.hidden = true;
@@ -2054,16 +2476,91 @@
         const now = new Date();
         setText(els.liveClock, timeFormatter.format(now));
         setText(els.pageDate, dateFormatter.format(now));
+        const minute = Math.floor(now.getTime() / 60000);
+        if (minute !== lastPendingMinute) {
+          lastPendingMinute = minute;
+          renderSummary();
+          const event = currentEvent();
+          if (event) renderDetailAge(event);
+        }
+      }
+
+      function handleFilterChange() {
+        state.filters.overdue = false;
+        applyFilters();
+      }
+
+      function honorInitialDetailRequest() {
+        if (!state.openInitialDetail || !state.selectedId) return;
+        state.openInitialDetail = false;
+        openDetailPanel();
+      }
+
+      function isTypingTarget(target) {
+        return target instanceof HTMLElement && (
+          target.isContentEditable
+          || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName)
+        );
+      }
+
+      function moveSelection(delta) {
+        const events = filteredEvents();
+        if (events.length === 0) return;
+        const index = events.findIndex((item) => item.id === state.selectedId);
+        const nextIndex = index < 0
+          ? 0
+          : Math.min(events.length - 1, Math.max(0, index + delta));
+        const next = events[nextIndex];
+        if (!next) return;
+        selectEvent(next.id);
+        if (!window.matchMedia("(max-width: 1180px)").matches) {
+          const row = [...els.eventList.querySelectorAll(".event-row")]
+            .find((item) => item.dataset.eventId === next.id);
+          row?.focus({ preventScroll: true });
+          row?.scrollIntoView({ block: "nearest" });
+        }
+      }
+
+      function handleKeyboard(event) {
+        if (event.ctrlKey || event.metaKey || event.altKey) return;
+        if (event.key === "/" && !isTypingTarget(event.target)) {
+          event.preventDefault();
+          els.searchInput.focus();
+          els.searchInput.select();
+          return;
+        }
+        if (event.key === "Escape") {
+          if (document.querySelector(".workspace-grid").classList.contains("detail-open")) {
+            event.preventDefault();
+            closeDetailPanel();
+          } else if (event.target === els.searchInput && els.searchInput.value) {
+            els.searchInput.value = "";
+            applyFilters();
+          }
+          return;
+        }
+        if (isTypingTarget(event.target)) return;
+        if (event.key.toLowerCase() === "j") {
+          event.preventDefault();
+          moveSelection(1);
+        } else if (event.key.toLowerCase() === "k") {
+          event.preventDefault();
+          moveSelection(-1);
+        }
       }
 
       els.searchInput.addEventListener("input", applyFilters);
-      els.statusFilter.addEventListener("change", applyFilters);
-      els.levelFilter.addEventListener("change", applyFilters);
-      els.sourceFilter.addEventListener("change", applyFilters);
-      els.dateFilter.addEventListener("change", applyFilters);
-      els.sortFilter.addEventListener("change", applyFilters);
+      for (const select of [els.statusFilter, els.levelFilter, els.sourceFilter, els.dateFilter, els.sortFilter]) {
+        select.addEventListener("change", handleFilterChange);
+      }
+      els.quickFilters.addEventListener("click", (event) => {
+        const button = event.target.closest("[data-quick]");
+        if (button) setQuickFilter(button.dataset.quick);
+      });
+      els.viewNewEvents.addEventListener("click", viewNewEvents);
       els.resetFilters.addEventListener("click", resetFilters);
       els.emptyReset.addEventListener("click", resetFilters);
+      els.detailBack.addEventListener("click", closeDetailPanel);
       els.noteInput.addEventListener("input", updateNoteCounter);
       els.saveNoteBtn.addEventListener("click", saveNote);
       els.resolveBtn.addEventListener("click", () => updateStatus("resolved"));
@@ -2071,17 +2568,26 @@
       els.reopenBtn.addEventListener("click", () => updateStatus("pending"));
       els.checkApiBtn.addEventListener("click", checkApi);
       els.resetDemoBtn.addEventListener("click", () => {
-        if (state.mode === "live") loadEvents();
+        if (state.mode === "live") loadEvents({ background: true });
         else resetDemo();
+      });
+      document.addEventListener("keydown", handleKeyboard);
+      document.addEventListener("visibilitychange", () => {
+        if (!document.hidden) loadEvents({ background: true });
       });
 
       state.events = buildDemoEvents();
       state.selectedId = state.events[0]?.id || null;
+      applyInitialQuery();
+      readFilters();
       setMode("checking");
       tick();
       renderAll();
       loadEvents();
       setInterval(tick, 1000);
+      setInterval(() => {
+        if (!document.hidden) loadEvents({ background: true });
+      }, POLL_EVENTS_MS);
     })();
   </script>
 </body>

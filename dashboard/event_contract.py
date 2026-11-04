@@ -7,8 +7,10 @@ urgent/watch/info 和 resolved。
 
 from __future__ import annotations
 
+import re
 import uuid
 from datetime import datetime, timedelta, timezone
+from urllib.parse import urlsplit
 
 
 EVENT_LEVELS = ("urgent", "watch", "info")
@@ -48,6 +50,11 @@ ALLOWED_STATUS_TRANSITIONS = {
     "false_alarm": {"pending"},
 }
 MAX_HISTORY = 100
+MAX_EVIDENCE_URL = 500_000
+RASTER_DATA_IMAGE = re.compile(
+    r"^data:image/(?:png|jpeg|webp|gif);base64,[A-Za-z0-9+/]+={0,2}$",
+    re.IGNORECASE,
+)
 
 
 class EventValidationError(ValueError):
@@ -116,6 +123,31 @@ def enum_value(value, aliases: dict, field: str, default: str) -> str:
     return normalized
 
 
+def normalize_evidence_url(value) -> str:
+    """Accept only same-origin paths or non-SVG raster data URLs."""
+    if value in (None, ""):
+        return ""
+    if not isinstance(value, str):
+        raise EventValidationError("evidence_url must be a string")
+    value = value.strip()
+    if not value:
+        return ""
+    if len(value) > MAX_EVIDENCE_URL:
+        raise EventValidationError("evidence_url is too long")
+    if any(ord(character) < 32 or ord(character) == 127 for character in value):
+        raise EventValidationError("evidence_url contains control characters")
+    if value.lower().startswith("data:image/"):
+        if not RASTER_DATA_IMAGE.fullmatch(value):
+            raise EventValidationError("evidence_url must be a raster image data URL")
+        return value
+    if not value.startswith("/") or value.startswith("//"):
+        raise EventValidationError("evidence_url must be a same-origin path")
+    parsed = urlsplit(value)
+    if parsed.scheme or parsed.netloc or "\\" in value:
+        raise EventValidationError("evidence_url must be a same-origin path")
+    return value
+
+
 def normalize_event(payload: dict, event_id: str | None = None) -> dict:
     """把接口、日报或历史文件中的事件规范化为统一结构。"""
     if not isinstance(payload, dict):
@@ -155,6 +187,13 @@ def normalize_event(payload: dict, event_id: str | None = None) -> dict:
     class_id = text_value(payload.get("class_id"), "class_id", 64, default="")
     class_name = text_value(payload.get("class_name"), "class_name", 80, default="")
     dedupe_key = text_value(payload.get("dedupe_key"), "dedupe_key", 160, default="")
+    evidence_url = normalize_evidence_url(payload.get("evidence_url"))
+    evidence_captured_at = payload.get("evidence_captured_at")
+    evidence_captured_at = (
+        normalize_iso(evidence_captured_at, "evidence_captured_at")
+        if evidence_captured_at
+        else None
+    )
 
     confidence = payload.get("confidence")
     if confidence in (None, ""):
@@ -220,6 +259,8 @@ def normalize_event(payload: dict, event_id: str | None = None) -> dict:
         "handled_by": handled_by,
         "note": note,
         "dedupe_key": dedupe_key,
+        "evidence_url": evidence_url,
+        "evidence_captured_at": evidence_captured_at,
         "history": history,
         "updated_at": normalize_iso(payload.get("updated_at") or now_iso(), "updated_at"),
     }
