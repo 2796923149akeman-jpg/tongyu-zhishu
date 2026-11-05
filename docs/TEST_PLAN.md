@@ -68,5 +68,28 @@ CI：`.github/workflows/checks.yml` 在 push/PR 时执行单元测试、仓库�
 
 - 真实硬件链路（摄像头、传感器精度、ESP32 语音）需现场联调；
 - 浏览器端到端自动化（Playwright）尚未接入，目前为静态检查 + 手工验证；
-- 尚未统计代码覆盖率，可在 CI 中增加 `coverage.py` 并上传报告；
 - 情绪模型准确率需要人工标注样例，当前仅有小规模本地评估（见 `docs/EXPERIMENTS.md`）。
+
+## 7. 覆盖率
+
+使用 `coverage.py` 在本地测量（临时目录、隔离测试）：
+
+```powershell
+python -m pip install coverage
+python -m coverage run --source=dashboard -m unittest discover -s tests
+python -m coverage report -m
+```
+
+2026-11-05 结果：
+
+| 模块 | 覆盖率 |
+|---|---:|
+| `access_control.py` | 91% |
+| `event_contract.py` | 88% |
+| `health_realtime.py` | 83% |
+| `person_type.py` | 88% |
+| `server.py` | 79% |
+| **合计** | **80%** |
+
+未覆盖部分主要是异常分支、真实网络/设备路径和可选人物估算的启动分支。
+覆盖率是参考指标，不作为唯一质量标准。

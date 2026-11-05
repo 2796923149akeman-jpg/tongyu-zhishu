@@ -1,4 +1,4 @@
-﻿# 验证记录
+# 验证记录
 
 最近更新：2026-11-04。
 
@@ -178,3 +178,16 @@
   `/snapshot`，成功显示证据，失败保留事件并记录原因；需要管理员会话和 CSRF。
 - 事件页在失败状态显示“重新抓拍证据”按钮，成功后自动刷新证据区域。
 - `tests/test_events.py` 覆盖自动成功、超时状态、重试成功和重试失败；完整回归 112 项通过。
+
+## 工程规范整改（2026-11-05）
+
+- 新增根目录 MIT `LICENSE`、`docs/SUPPLY_CHAIN.md`，补齐第三方版本、许可证与修改范围；
+- 新增 `CONTRIBUTING.md`、`docs/CODE_STYLE.md`、`.editorconfig`、`pyproject.toml`、
+  `.pre-commit-config.yaml`，提交前执行 ruff 与通用文件检查；
+- 新增 Issue/PR 模板、`docs/GIT_WORKFLOW.md` 和 `docs/ISSUES_DRAFT.md`；
+- CI 增加 ruff lint 任务，保留单元测试和仓库自检；
+- 补充架构、设计模式、安全、测试计划、环境、配置、用户手册、团队 KPI、
+  重构量化、实验设计和部署说明，并加入一键演示脚本 `scripts/demo.ps1`；
+- 本地覆盖率测量：合计 80%（`server.py` 79%、`access_control.py` 91%、
+  `event_contract.py` 88%），命令见 `docs/TEST_PLAN.md`；
+- 当前完整回归：112 项测试通过，`verify_repository.py` 0 错误，ruff 0 错误。
