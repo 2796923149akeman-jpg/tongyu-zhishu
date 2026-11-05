@@ -14,7 +14,7 @@
 | `DASHBOARD_PORT` | `8088` | 网页与 API 端口 |
 | `DASHBOARD_AUTH_FILE` | `dashboard/auth_config.json` | 账号与展示设置文件（已忽略） |
 | `DASHBOARD_COOKIE_SECURE` | `1` | 会话 Cookie 是否加 `Secure`；仅本地 HTTP 演示可设 `0` |
-| `RDK_BASE` | `http://192.168.43.54:5000` | RDK 上游地址（无尾斜杠） |
+| `RDK_BASE` | `http://192.168.43.54:5000` | 团队真机联调地址。换设备或网络时填写实际 RDK 服务 URL（含端口） |
 | `PROJECT_ROOT` | 仓库根目录 | 小智配置与模型文件的根路径 |
 
 ## 2. 运行数据文件
@@ -54,8 +54,12 @@
 
 ## 5. 示例
 
+连接真机时，在启动 Dashboard 的同一个 PowerShell 窗口设置 `RDK_BASE`，将示例地址和端口换成该电脑能访问的 RDK 服务地址。环境变量优先于团队联调默认值。`scripts/demo.ps1 -NoMock` 同样需要先设置 `RDK_BASE`。
+
+使用 `scripts/demo.ps1` 启动模拟演示时，脚本会为本次运行设置本机模拟 RDK 的地址（默认 `http://127.0.0.1:5000`）。
+
 ```powershell
-$env:RDK_BASE = "http://192.168.43.54:5000"
+$env:RDK_BASE = "http://<实际 RDK IP>:5000"
 $env:ENV_ECO2_LIMIT = "1200"
 $env:ALERT_NOTIFY_URL = "http://127.0.0.1:9000/alert"
 $env:HEALTH_DEVICE_TOKEN = "<至少 24 位随机串>"
