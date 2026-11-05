@@ -52,6 +52,7 @@ ALLOWED_STATUS_TRANSITIONS = {
 MAX_HISTORY = 100
 MAX_PARTICIPANTS = 20
 MAX_EVIDENCE_URL = 500_000
+SNAPSHOT_STATUSES = ("", "ok", "failed", "timeout", "skipped")
 RASTER_DATA_IMAGE = re.compile(
     r"^data:image/(?:png|jpeg|webp|gif);base64,[A-Za-z0-9+/]+={0,2}$",
     re.IGNORECASE,
@@ -241,6 +242,20 @@ def normalize_event(payload: dict, event_id: str | None = None) -> dict:
     share_snapshot = payload.get("share_snapshot", bool(parent_visible_at))
     if type(share_snapshot) is not bool:
         raise EventValidationError("share_snapshot must be a boolean")
+    snapshot_status = text_value(
+        payload.get("snapshot_status"),
+        "snapshot_status",
+        20,
+        default="",
+    )
+    if snapshot_status not in SNAPSHOT_STATUSES:
+        raise EventValidationError("invalid snapshot_status")
+    snapshot_error = text_value(
+        payload.get("snapshot_error"),
+        "snapshot_error",
+        200,
+        default="",
+    )
 
     confidence = payload.get("confidence")
     if confidence in (None, ""):
@@ -308,6 +323,8 @@ def normalize_event(payload: dict, event_id: str | None = None) -> dict:
         "dedupe_key": dedupe_key,
         "evidence_url": evidence_url,
         "evidence_captured_at": evidence_captured_at,
+        "snapshot_status": snapshot_status,
+        "snapshot_error": snapshot_error,
         "participants": participants,
         "parent_visible_at": parent_visible_at,
         "share_snapshot": share_snapshot,

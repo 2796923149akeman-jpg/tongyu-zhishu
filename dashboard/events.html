@@ -1245,6 +1245,7 @@
                   <p id="evidenceCaption">证据画面</p>
                 </div>
                 <div class="evidence-empty" id="evidenceEmpty">该事件暂无证据画面，或当前账号无权读取证据。</div>
+                <button class="btn" id="retrySnapshotBtn" type="button" hidden>重新抓拍证据</button>
               </section>
 
               <div id="eventActions">
@@ -1416,6 +1417,7 @@
         evidenceImage: $("#evidenceImage"),
         evidenceCaption: $("#evidenceCaption"),
         evidenceEmpty: $("#evidenceEmpty"),
+        retrySnapshotBtn: $("#retrySnapshotBtn"),
         eventActions: $("#eventActions"),
         readOnlyNote: $("#readOnlyNote"),
         participantsList: $("#participantsList"),
@@ -1831,6 +1833,8 @@
           confidence: Number.isFinite(item.confidence) ? item.confidence : null,
           hasSnapshot: item.has_snapshot === true,
           snapshotTime: item.snapshot_captured_at || null,
+          snapshot_status: item.snapshot_status || "",
+          snapshot_error: item.snapshot_error || "",
           handled_at: item.handled_at || null,
           handled_by: item.handled_by || item.handler || "",
           note: item.note || "",
@@ -2045,7 +2049,7 @@
       function applyPermissionUi() {
         els.eventActions.hidden = !isAdmin;
         els.readOnlyNote.hidden = isAdmin;
-        for (const button of [els.saveNoteBtn, els.assignParticipants, els.resolveBtn, els.falseAlarmBtn, els.reopenBtn]) {
+        for (const button of [els.saveNoteBtn, els.assignParticipants, els.retrySnapshotBtn, els.resolveBtn, els.falseAlarmBtn, els.reopenBtn]) {
           button.disabled = !isAdmin || actionBusy;
         }
       }
@@ -2057,6 +2061,10 @@
         const originalLink = $("#evidenceLink");
         originalLink.removeAttribute("href");
         const evidenceUrl = window.TongyuBootstrap.permissions.video ? safeEvidenceUrl(raw) : "";
+        const snapshotStatus = String(event.snapshot_status || "");
+        const canRetry = isAdmin && state.mode === "live"
+          && (snapshotStatus === "failed" || snapshotStatus === "timeout");
+        els.retrySnapshotBtn.hidden = true;
         els.evidenceEmpty.textContent = "该事件暂无证据画面，或当前账号无权读取证据。";
         if (!evidenceUrl) {
           els.evidenceBox.hidden = true;
@@ -2064,6 +2072,15 @@
           els.evidenceImage.removeAttribute("src");
           els.evidenceImage.dataset.raw = "";
           els.evidenceEmpty.hidden = false;
+          if (snapshotStatus === "failed") {
+            const reason = event.snapshot_error ? `（${event.snapshot_error}）` : "";
+            els.evidenceEmpty.textContent = `证据获取失败${reason}，可重新抓拍重试。`;
+          } else if (snapshotStatus === "timeout") {
+            els.evidenceEmpty.textContent = "证据获取超时，可重新抓拍重试。";
+          } else if (snapshotStatus === "skipped") {
+            els.evidenceEmpty.textContent = "该事件未触发自动抓拍。";
+          }
+          els.retrySnapshotBtn.hidden = !canRetry;
           return;
         }
 
@@ -2688,6 +2705,35 @@
         showToast("演示数据：备注已更新，不会写入服务器。");
       }
 
+      async function retrySnapshot() {
+        if (!isAdmin) {
+          showToast("当前账号为只读权限，无法重新抓拍。");
+          return;
+        }
+        const event = currentEvent();
+        if (!event || actionBusy || refreshBusy || state.mode !== "live") return;
+        actionBusy = true;
+        renderDetail();
+        try {
+          const data = await postEventJson(
+            `/api/events/${encodeURIComponent(event.id)}/snapshot/retry`,
+            {}
+          );
+          if (!data.event) throw new Error("接口没有返回事件");
+          const updated = normalizeApiEvent(data.event);
+          replaceEvent(updated);
+          renderAll();
+          showToast(updated.snapshot_status === "ok"
+            ? "已重新抓拍并保存证据。"
+            : "重新抓拍失败，请稍后再试。");
+        } catch (error) {
+          showToast(`重新抓拍失败：${eventErrorReason(error)}`);
+        } finally {
+          actionBusy = false;
+          renderAll();
+        }
+      }
+
       async function checkApi() {
         return loadEvents({ background: state.liveLoaded });
       }
@@ -2801,6 +2847,7 @@
       $("#participantCancel").addEventListener("click", () => els.participantDialog.close());
       els.participantDialog.addEventListener("cancel", event => { if (actionBusy) event.preventDefault(); });
       els.saveNoteBtn.addEventListener("click", saveNote);
+      els.retrySnapshotBtn.addEventListener("click", retrySnapshot);
       els.resolveBtn.addEventListener("click", () => updateStatus("resolved"));
       els.falseAlarmBtn.addEventListener("click", () => updateStatus("false_alarm"));
       els.reopenBtn.addEventListener("click", () => updateStatus("pending"));

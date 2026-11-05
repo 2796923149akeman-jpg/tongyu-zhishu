@@ -190,6 +190,8 @@ offset=0
       "dedupe_key": "rdk-fall-20261028-094210",
       "evidence_url": "/evidence/EVT-20261028-ABC123.png",
       "evidence_captured_at": "2026-10-28T09:42:10+08:00",
+      "snapshot_status": "ok",
+      "snapshot_error": "",
       "participants": [
         {
           "student_id": "S-0201",
@@ -237,6 +239,19 @@ offset=0
 ### `GET /api/events/{id}/snapshot`
 
 返回事件抓拍的 JPEG，需要事件查看权限和视频权限。事件列表和详情的 `has_snapshot` 表示当前账号有可查看的抓拍。监控服务记录 RDK 摔倒或斗殴告警时读取一次 `/snapshot`，图片存放在事件数据文件旁的 `event_snapshots` 目录。读取失败仍保存事件。旧事件或没有抓拍的事件返回 `404`。
+
+抓拍结果记录在事件字段中：
+
+| 字段 | 取值 | 说明 |
+|---|---|---|
+| `snapshot_status` | `ok` / `failed` / `timeout` / `skipped` / `""` | 最近一次自动抓拍或重试的结果；旧事件为空 |
+| `snapshot_error` | string | 失败原因（异常类型），最多 200 字 |
+
+抓拍失败或超时时，事件页显示“证据获取失败/超时”和处理记录；管理员可点击“重新抓拍证据”。
+
+### `POST /api/events/{id}/snapshot/retry`
+
+仅管理员，需 CSRF。重新读取 RDK `/snapshot` 并保存证据；响应返回更新后的事件。成功时 `snapshot_status=ok` 并追加“重新抓拍成功”，失败时记录 `failed`/`timeout` 与原因并追加“重新抓拍失败”，不会删除事件。事件不存在返回 `404`。
 
 ### `POST /api/events`
 

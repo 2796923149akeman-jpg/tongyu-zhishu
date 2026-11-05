@@ -204,6 +204,28 @@ class EventApiTests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertEqual(listing["total"], 2)
         self.assertEqual({item["event_type"] for item in listing["events"]}, {"fall", "fight"})
+        self.assertTrue(all(item["snapshot_status"] == "skipped" for item in listing["events"]))
+
+    def test_admin_can_retry_snapshot_and_status_is_recorded(self):
+        status, created = self.request("/api/events", self.event_payload(), "POST")
+        event_id = created["event"]["id"]
+        with patch.object(self.web, "capture_event_snapshot") as capture:
+            status, body = self.request(
+                f"/api/events/{event_id}/snapshot/retry", {}, "POST"
+            )
+        self.assertEqual(status, 200)
+        self.assertEqual(body["event"]["snapshot_status"], "ok")
+        capture.assert_called_once_with(event_id)
+        self.assertEqual(body["event"]["history"][-1]["action"], "重新抓拍成功")
+
+        with patch.object(self.web, "capture_event_snapshot", side_effect=OSError("down")):
+            status, body = self.request(
+                f"/api/events/{event_id}/snapshot/retry", {}, "POST"
+            )
+        self.assertEqual(status, 200)
+        self.assertEqual(body["event"]["snapshot_status"], "failed")
+        self.assertEqual(body["event"]["snapshot_error"], "OSError")
+        self.assertEqual(body["event"]["history"][-1]["action"], "重新抓拍失败")
 
     def test_capture_is_tied_to_event_and_protected_by_video_access(self):
         image = b"\xff\xd8fixture\xff\xd9"
@@ -223,6 +245,7 @@ class EventApiTests(unittest.TestCase):
         self.web.reload_events()
         event = self.request("/api/events")[1]["events"][0]
         self.assertTrue(event["has_snapshot"])
+        self.assertEqual(event["snapshot_status"], "ok")
         route = f"/api/events/{event['id']}/snapshot"
         self.assertEqual(self.request(route), (200, image))
         with patch.object(self.web, "read_rdk_json", return_value={"alert_type": "fight"}), \
@@ -230,6 +253,7 @@ class EventApiTests(unittest.TestCase):
             self.assertEqual(self.request("/api/rdk/status")[0], 200)
         events = {item["event_type"]: item for item in self.request("/api/events")[1]["events"]}
         self.assertFalse(events["fight"]["has_snapshot"])
+        self.assertEqual(events["fight"]["snapshot_status"], "timeout")
         self.assertEqual(self.request(f"/api/events/{events['fight']['id']}/snapshot")[0], 404)
         self.web.AUTH.create_user("viewer", "test-viewer-password")
         token, _ = self.web.AUTH.new_session("viewer")

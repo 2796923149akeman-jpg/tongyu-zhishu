@@ -306,6 +306,8 @@ def event_with_visible_evidence(event: dict, can_view: bool) -> dict:
     if not can_view:
         event.pop("evidence_url", None)
         event.pop("evidence_captured_at", None)
+        event.pop("snapshot_status", None)
+        event.pop("snapshot_error", None)
         return event
     try:
         modified = stored_snapshot_path(event).stat().st_mtime
@@ -316,19 +318,41 @@ def event_with_visible_evidence(event: dict, can_view: bool) -> dict:
     return event
 
 
+def set_event_snapshot_status(event_id: str, status: str, error: str = "", *, history=None) -> None:
+    """记录证据抓拍结果；写入失败不影响主流程。"""
+    with EVENTS_LOCK:
+        index = next((i for i, item in enumerate(EVENTS) if item.get("id") == event_id), None)
+        if index is None:
+            return
+        event = copy_event(EVENTS[index])
+        event["snapshot_status"] = status
+        event["snapshot_error"] = (error or "")[:200]
+        now = now_iso()
+        if history:
+            event["history"].append({
+                "at": now,
+                "action": history[0],
+                "by": "RDK 视频流",
+                "note": history[1],
+            })
+            event["history"] = event["history"][-100:]
+        event["updated_at"] = now
+        replace_event(index, event)
+
+
 def capture_event_snapshot(event_id: str) -> None:
     request = urllib.request.Request(RDK_BASE + "/snapshot", headers={"Accept": "image/jpeg"})
     try:
         with urllib.request.urlopen(request, timeout=1.5) as response:
             if response.headers.get_content_type() != "image/jpeg":
-                return
+                raise ValueError("unexpected content type")
             image = response.read(SNAPSHOT_LIMIT + 1)
     except urllib.error.HTTPError as exc:
         if exc.code not in (404, 405):
             raise
         image = capture_legacy_snapshot()
     if len(image) > SNAPSHOT_LIMIT or not image.startswith(b"\xff\xd8") or not image.endswith(b"\xff\xd9"):
-        return
+        raise ValueError("invalid jpeg")
     path = event_snapshot_path(event_id)
     with EVENTS_LOCK:
         if not any(item["id"] == event_id for item in EVENTS):
@@ -787,11 +811,61 @@ def record_rdk_alert(data: dict) -> None:
             print(f"[EVENT] unable to record RDK alert: {exc}")
             return
         CURRENT_RDK_ALERT = alert
-        if data.get("snapshot_available") is not False:
+        event_id = result["event"]["id"]
+        if data.get("snapshot_available") is False:
+            set_event_snapshot_status(event_id, "skipped")
+        else:
             try:
-                capture_event_snapshot(result["event"]["id"])
+                capture_event_snapshot(event_id)
+            except TimeoutError:
+                print("[EVENT] snapshot unavailable: TimeoutError")
+                set_event_snapshot_status(
+                    event_id,
+                    "timeout",
+                    "TimeoutError",
+                    history=("证据抓拍超时", "RDK /snapshot 在限定时间内没有返回画面。"),
+                )
             except (OSError, ValueError, HTTPException) as exc:
                 print(f"[EVENT] snapshot unavailable: {type(exc).__name__}")
+                set_event_snapshot_status(
+                    event_id,
+                    "failed",
+                    type(exc).__name__,
+                    history=("证据抓拍失败", f"证据抓拍失败：{type(exc).__name__}"),
+                )
+            else:
+                set_event_snapshot_status(event_id, "ok")
+
+
+def retry_event_snapshot(event_id: str) -> dict:
+    """管理员手动重新抓拍事件证据；失败只记录状态，不抛出业务错误。"""
+    with EVENTS_LOCK:
+        if not any(item.get("id") == event_id for item in EVENTS):
+            raise EventNotFound("event not found")
+    try:
+        capture_event_snapshot(event_id)
+    except TimeoutError:
+        set_event_snapshot_status(
+            event_id,
+            "timeout",
+            "TimeoutError",
+            history=("重新抓拍超时", "RDK /snapshot 在限定时间内没有返回画面。"),
+        )
+    except (OSError, ValueError, HTTPException) as exc:
+        set_event_snapshot_status(
+            event_id,
+            "failed",
+            type(exc).__name__,
+            history=("重新抓拍失败", f"重新抓拍失败：{type(exc).__name__}"),
+        )
+    else:
+        set_event_snapshot_status(
+            event_id,
+            "ok",
+            "",
+            history=("重新抓拍成功", "管理员重新抓拍并保存了事件证据。"),
+        )
+    return get_event(event_id)
 
 
 def notify_event_async(event: dict) -> None:
@@ -2142,6 +2216,7 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self) -> None:
         path = urlparse(self.path).path
         event_match = re.fullmatch(r"/api/events/([^/]+)/(status|notes|participants)", path)
+        snapshot_retry = re.fullmatch(r"/api/events/([^/]+)/snapshot/retry", path)
         event_request = path == "/api/events" or event_match is not None
         health_post = path in (
             "/api/health/records",
@@ -2172,6 +2247,15 @@ class Handler(BaseHTTPRequestHandler):
                 if not self.require_local_ingest():
                     return
             elif not self.require_session(path, admin=True, write=True):
+                return
+            if snapshot_retry:
+                try:
+                    event = retry_event_snapshot(unquote(snapshot_retry.group(1)))
+                    self.send_json(200, {'ok': True, 'event': event})
+                except EventNotFound:
+                    self.send_json(404, {'ok': False, 'error': 'event not found'})
+                except OSError:
+                    self.send_json(500, {'ok': False, 'error': 'Unable to save event data'})
                 return
             if path == '/api/admin/policy':
                 self.send_json(200, {'ok': True, 'policy': AUTH.set_policy(item)})
