@@ -2,7 +2,7 @@
 
 核对基线为 `main` 的 `934375e`，验收结果包括本次答辩修订。
 浏览器功能和目录讲解以 [项目仓库](https://github.com/2796923149akeman-jpg/tongyu-zhishu) 为入口。
-请提前确认评阅账号可访问私有仓库及其文档。
+提交前在退出 GitHub 登录的浏览器窗口中核对 README、PR、Actions 和演示 Release 是否能打开。现场另备一份演示视频和脱敏截图。
 
 ## 15 分钟展示顺序
 
@@ -36,7 +36,7 @@
 | --- | --- | --- |
 | 1 | 已有分角色用户手册 | [用户手册](USER_GUIDE.md) |
 | 2 | 已有 UML、结构指标和同输入验证 | [架构](ARCHITECTURE.md)、[设计模式](DESIGN_PATTERNS.md)、[重构对照](REFACTORING.md) |
-| 3 | 已有本地基准、模拟业务对照和真机连通抽查 | [实验结果](EXPERIMENTS.md)、[真机记录](DEVICE_VALIDATION.md)。真实端到端时延、传感器偏差和算法准确率仍待实测 |
+| 3 | 已有本地基准、模拟业务对照和真机连通抽查 | [实验结果](EXPERIMENTS.md)、[真机记录](DEVICE_VALIDATION.md)。真机记录证明接口连通与数据可读。RDK 视觉识别准确率、STM32 测量误差和真实告警到页面的时延仍待实测 |
 | 4 | 已记录软件、模拟环境及真机联调条件 | [环境说明](ENVIRONMENT.md)、[历史联调与当日抽查](DEVICE_VALIDATION.md)。演示时注明所引用的记录版本和范围 |
 | 5 | 已有自动化用例和启动回归 | [测试计划](TEST_PLAN.md)、[本次验证](VALIDATION.md) |
 | 6 | 已有安全设计和越权验证 | [安全设计](SECURITY.md)。本次模拟验证中，同一事件详情和授权截图对绑定家长返回 `200`，对另一家长返回 `404` |
