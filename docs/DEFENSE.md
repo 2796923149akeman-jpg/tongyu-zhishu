@@ -24,9 +24,9 @@
 | 3 | 已有忽略规则和提交候选检查 | [忽略规则](../.gitignore)、[仓库检查](../scripts/verify_repository.py) |
 | 4 | 已有许可证和供应链清单 | [项目许可](../LICENSE)、[上游来源](../THIRD_PARTY.md)、[供应链](SUPPLY_CHAIN.md) |
 | 5 | 常用参数可覆盖，仍有设备默认值 | [配置说明](CONFIGURATION.md) 明确 `RDK_BASE` 等覆盖项。部署时填写实际设备地址 |
-| 6 | 有英文提交规范，历史标题格式有差异 | [提交规范](../CONTRIBUTING.md#3-提交信息规范) |
+| 6 | 新提交使用英文 Conventional Commits，并由本地钩子与 CI 检查 | [提交规范](../CONTRIBUTING.md#3-提交信息规范)、[检查脚本](../scripts/check_commit_messages.py)。历史标题差异保留，避免重写 SHA |
 | 7 | 多数近期任务有独立提交，早期有合并交付 | 用本次 PR 的分项提交展示粒度，历史保留供追溯 |
-| 8 | 已有提交前检查和 CI lint 配置 | [钩子配置](../.pre-commit-config.yaml)、[CI](../.github/workflows/checks.yml)。贡献者需在本机安装钩子 |
+| 8 | 已有提交前检查、commit-msg 检查、CI lint 和提交标题检查 | [钩子配置](../.pre-commit-config.yaml)、[CI](../.github/workflows/checks.yml)。首次配置需安装 commit-msg 钩子 |
 | 9 | 页面与 API 分离，五类业务记录走独立仓储 | [架构说明](ARCHITECTURE.md) |
 | 10 | 已有部署与模拟演示脚本 | [部署说明](DEPLOY.md)。本次验证 Windows 下通过 `demo.ps1 -NoBrowser` 启动两个服务并完成告警请求 |
 

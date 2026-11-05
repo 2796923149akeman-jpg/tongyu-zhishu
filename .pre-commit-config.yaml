@@ -19,3 +19,12 @@ repos:
       - id: ruff
         args: ["check", "--fix"]
         files: ^(dashboard|scripts|tests)/.*\.py$
+
+  - repo: local
+    hooks:
+      - id: conventional-commit-message
+        name: validate Conventional Commit subject
+        entry: python scripts/check_commit_messages.py
+        language: system
+        stages: [commit-msg]
+        pass_filenames: true
