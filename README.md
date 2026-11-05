@@ -35,6 +35,19 @@
 
 账号、展示设置、告警、抓拍、对话和测温记录保存在运行网页服务的电脑上。同一服务下，手机和电脑可按各自权限查看同一份记录。重启网页后，用户用原账号重新登录即可。
 
+## 2.1 文档导航
+
+| 主题 | 文档 |
+|---|---|
+| 架构与重构前后 | [系统架构](docs/ARCHITECTURE.md)、[重构效果量化](docs/REFACTORING.md) |
+| 设计模式与 UML | [设计模式说明](docs/DESIGN_PATTERNS.md) |
+| 接口与字段 | [API 文档](docs/API.md) |
+| 使用与部署 | [用户手册](docs/USER_GUIDE.md)、[部署说明](docs/DEPLOY.md)、[配置说明](docs/CONFIGURATION.md) |
+| 安全与供应链 | [信息安全设计](docs/SECURITY.md)、[开源供应链](docs/SUPPLY_CHAIN.md) |
+| 测试与实验 | [测试计划](docs/TEST_PLAN.md)、[实验与量化](docs/EXPERIMENTS.md)、[验证记录](docs/VALIDATION.md) |
+| 团队与协作 | [团队分工与 KPI](docs/TEAM.md)、[Git 工作流](docs/GIT_WORKFLOW.md)、[贡献指南](CONTRIBUTING.md)、[代码风格](docs/CODE_STYLE.md) |
+| 答辩材料 | [演示脚本](docs/DEMO_SCRIPT.md)、[真实设备联调记录](docs/DEVICE_VALIDATION.md)、[开题对照](docs/PROPOSAL_REVIEW.md) |
+
 ## 3. 系统软件架构
 
 ```mermaid
@@ -95,6 +108,12 @@ Dashboard 将上游接口转换为同源网页接口；浏览器只访问 Dashbo
 ## 6. 下载后快速运行
 
 下列电脑端命令以 Windows 为例，在下载并解压后的项目根目录执行。先按需要选择运行范围。
+
+没有硬件或想快速演示时，可运行一键脚本（模拟 RDK + 网页服务）：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\demo.ps1
+```
 
 | 想使用的功能 | 需要准备 |
 | --- | --- |
