@@ -46,7 +46,7 @@
 | 安全与供应链 | [信息安全设计](docs/SECURITY.md)、[开源供应链](docs/SUPPLY_CHAIN.md) |
 | 测试与实验 | [测试计划](docs/TEST_PLAN.md)、[实验与量化](docs/EXPERIMENTS.md)、[验证记录](docs/VALIDATION.md) |
 | 团队与协作 | [团队分工与 KPI](docs/TEAM.md)、[Git 工作流](docs/GIT_WORKFLOW.md)、[贡献指南](CONTRIBUTING.md)、[代码风格](docs/CODE_STYLE.md) |
-| 答辩材料 | [答辩交付与评分证据](docs/DEFENSE.md)、[演示脚本](docs/DEMO_SCRIPT.md)、[真实设备联调记录](docs/DEVICE_VALIDATION.md)、[开题对照](docs/PROPOSAL_REVIEW.md) |
+| 答辩材料 | [42 秒模拟演示视频](https://github.com/2796923149akeman-jpg/tongyu-zhishu/releases/tag/course-demo)、[答辩交付与评分证据](docs/DEFENSE.md)、[演示脚本](docs/DEMO_SCRIPT.md)、[真实设备联调记录](docs/DEVICE_VALIDATION.md)、[开题对照](docs/PROPOSAL_REVIEW.md) |
 
 ## 3. 系统软件架构
 

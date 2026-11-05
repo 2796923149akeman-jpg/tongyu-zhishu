@@ -34,16 +34,16 @@ class EventApiTests(unittest.TestCase):
         self.web.AUTH.create_user("owner", "test-owner-password", role="admin")
         token, session = self.web.AUTH.new_session("owner")
         self.auth_headers = {"Cookie": "tongyu_session=" + token, "X-CSRF-Token": session["csrf"]}
-        self.web.DIALOGUE_DATA_FILE = Path(self.temp.name) / "dialogue_messages.json"
+        self.web.DATA.messages.path = Path(self.temp.name) / "dialogue_messages.json"
         self.web.DIALOGUE_CONFIG_FILE = Path(self.temp.name) / "dialogue_config.json"
         self.web.ANALYSIS_CONFIG_FILE = Path(self.temp.name) / "analysis_config.json"
-        self.web.CONVERSATION_SUMMARIES_FILE = Path(self.temp.name) / "conversation_summaries.json"
+        self.web.DATA.summaries.path = Path(self.temp.name) / "conversation_summaries.json"
         self.web.PROJECT_ROOT = Path(self.temp.name)
-        self.web.EVENTS_FILE = Path(self.temp.name) / "events.json"
+        self.web.DATA.events.path = Path(self.temp.name) / "events.json"
         self.web.EVIDENCE_DIR = Path(self.temp.name) / "evidence"
         self.web.EVIDENCE_DIR.mkdir()
-        self.web.HEALTH_STUDENTS_FILE = Path(self.temp.name) / "health_students.json"
-        self.web.HEALTH_RECORDS_FILE = Path(self.temp.name) / "health_records.json"
+        self.web.DATA.students.path = Path(self.temp.name) / "health_students.json"
+        self.web.DATA.health_records.path = Path(self.temp.name) / "health_records.json"
         self.web.CURRENT_RDK_ALERT = "normal"
         (Path(self.temp.name) / "xiaozhi-server" / "data").mkdir(parents=True)
         self.web.reload_events()
@@ -143,7 +143,7 @@ class EventApiTests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertEqual(note["event"]["note"], "交接班复核")
 
-        saved = json.loads(self.web.EVENTS_FILE.read_text(encoding="utf-8"))
+        saved = json.loads(self.web.DATA.events.path.read_text(encoding="utf-8"))
         self.assertEqual(saved[0]["id"], event_id)
         self.web.reload_events()
         self.assertEqual(self.web.get_event(event_id)["status"], "resolved")

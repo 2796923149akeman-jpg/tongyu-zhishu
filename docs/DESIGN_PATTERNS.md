@@ -3,7 +3,7 @@
 更新日期：2026-11-05
 
 本项目在重构中使用了策略、适配器、观察者式通知、外观和工厂等设计思路。
-当前数据落盘依赖共用的 JSON 原子读写工具，仓储接口是后续演进方向。
+五类业务记录通过独立仓储读写，仓储复用 JSON 原子读写工具。
 UML 图表示职责和调用关系，代码位置见表格。
 
 ## 1. 模式总览
@@ -15,7 +15,7 @@ UML 图表示职责和调用关系，代码位置见表格。
 | Observer 观察者 | 事件保存后通知播报通道，失败不影响主流程 | `notify_event_async` → `deliver_event_notification` | 通知与事件解耦，结果写入处理记录 |
 | Facade 外观 | 前端只面对一个同源服务与统一 JSON 契约 | `dashboard/server.py` 的 Handler / 路由 | 页面不直连设备与模型 |
 | Factory 工厂 | 生成稳定、可追溯的事件编号 | `event_contract.make_event_id` | 编号规则集中，便于日志与排查 |
-| Repository 仓储（规划） | 将业务与文件路径和存储实现隔离 | 当前由 `json_storage.py` 提供 JSON 读写 | 已共用底层读写，业务仓储接口尚未抽离 |
+| Repository 仓储 | 将业务与文件路径和存储实现隔离 | `repositories.py` 提供 `load()`、`save()` 和事件抓拍路径 | 五类数据共用读写边界，旧 JSON 文件可继续使用 |
 
 ## 2. 策略模式：双模式情绪分析
 
@@ -114,10 +114,10 @@ classDiagram
 
 - `make_event_id` 统一生成 `EVT-YYYYMMDD-XXXXXX`，日志、抓拍文件名和日报都以
   事件编号关联；
-- `json_storage.py` 管理临时文件、原子替换和占用重试。事件容量和文件路径仍由
-  `server.py` 管理。
-- 演进方向：定义 `EventRepository` 协议（`list/find/add/replace`），JSON 与 SQLite
-  各实现一份，业务层只依赖协议。
+- `DashboardRepositories` 集中配置事件、对话、名单、测温和摘要的数据路径。
+  `JsonRepository` 提供集合读写，`EventRepository` 另外负责生成事件抓拍路径。
+- `json_storage.py` 管理临时文件、原子替换和占用重试。业务层负责校验、保留条数和加锁，
+  并在关键更新成功落盘后更新内存状态。
 
 ## 7. 重构效果（定性）
 
@@ -128,6 +128,6 @@ classDiagram
 | 情绪分析 | 无 | 策略切换 + 回退 + 来源记录 + 自动事件 |
 | 通知 | 无 | 观察者式异步播报，失败可追溯 |
 | 权限 | 无 | 角色、模块、家长绑定、截图授权 |
-| 测试 | 6 项 | 112 项 + CI + 仓库自检 |
+| 测试 | 6 项 | 113 项 + CI + 仓库自检 |
 
 量化数据与前后对比见 [重构效果量化](EXPERIMENTS.md)。

@@ -22,7 +22,7 @@ class EnvironmentEventTests(unittest.TestCase):
     def setUp(self):
         self.web = load_server()
         self.temp = tempfile.TemporaryDirectory()
-        self.web.EVENTS_FILE = Path(self.temp.name) / "events.json"
+        self.web.DATA.events.path = Path(self.temp.name) / "events.json"
         self.web.EVIDENCE_DIR = Path(self.temp.name) / "evidence"
         self.web.reload_events()
         self.web.ENV_ACTIVE_CONDITIONS = set()
