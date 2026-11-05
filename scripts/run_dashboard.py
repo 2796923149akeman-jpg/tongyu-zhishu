@@ -80,7 +80,7 @@ def main(argv=None):
     except OSError:
         parser.exit(1, f"端口 {args.port} 已被占用，请停止之前运行的网页服务后再按 F5。\n")
     try:
-        server.start_analysis_worker()
+        server.start_background_workers()
         login = f"http://127.0.0.1:{args.port}/login"
         print("网页已启动：" + login, flush=True)
         print("管理员登录后进入展示设置，普通用户登录后进入已开放的模块。", flush=True)

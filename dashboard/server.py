@@ -2784,7 +2784,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_json(404, {"ok": False, "error": "not found"})
 
 
-def main() -> None:
+def start_background_workers() -> None:
     start_analysis_worker()
     if ENV_MONITOR_ENABLED:
         threading.Thread(
@@ -2793,11 +2793,15 @@ def main() -> None:
             daemon=True,
         ).start()
         print(f"Environment monitor: every {ENV_MONITOR_SECONDS}s (eCO2>{ENV_ECO2_LIMIT:.0f}, TVOC>{ENV_TVOC_LIMIT:.0f})")
+
+
+def main() -> None:
     print(f"Tongyu dashboard: http://127.0.0.1:{PORT}")
     print(f"RDK input: {RDK_BASE}")
     print("Dialogue emotion analysis and summaries run in the dashboard background.")
     http = ThreadingHTTPServer((HOST, PORT), Handler)
     try:
+        start_background_workers()
         http.serve_forever()
     finally:
         PERSON_TYPE_RUNTIME.stop()
