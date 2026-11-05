@@ -131,6 +131,16 @@ python3 web_fall.py
 
 启动后可在电脑浏览器打开 `http://192.168.43.54:5000/alert_status` 和 `http://192.168.43.54:5000/api/iot_payload`。前者应返回行为状态 JSON，后者应返回传感器连接状态、采集时间和读数。测温页读取 RDK 实时数据时可以直接使用此接口。设备主动推送及自动登记需要配置设备令牌，见 [实时红外测温说明](docs/HEALTH_REPORT_UI.md#102-设备推送接口)。抓拍依赖 RDK 提供的 `/snapshot`。如两个 JSON 接口都打不开，先核对 RDK IP、网络和 RDK 终端报错。
 
+没有 RDK 时可用模拟服务完成同样的页面和事件流程：
+
+```powershell
+python scripts/mock_rdk.py --port 5000
+$env:RDK_BASE = "http://127.0.0.1:5000"
+python scripts/run_dashboard.py
+```
+
+模拟服务提供告警、传感器、抓拍和视频流接口，控制方式见 [演示脚本](docs/DEMO_SCRIPT.md)。模拟数据只用于演示和界面检查，不代表真实设备读数。
+
 ### 6.3 启用小智语音
 
 安装 Git 后，在 Conda 终端进入项目根目录。下列命令创建带 Python 3.10、FFmpeg 和 Opus 的语音环境。语音依赖中有从 GitHub 安装的包，安装时需要联网。
@@ -226,7 +236,7 @@ python -m unittest discover -s tests -v
 python scripts\verify_repository.py
 ```
 
-当前自动化测试共 103 项，覆盖登录权限与角色、RDK 数据代理、事件抓拍与家长可见性、对话删除、测温及日报接口、传感器字段过滤和消息写入与转发。浏览器检查覆盖页面渲染和设备筛选。详细结果及软件限制见 [验证记录](docs/VALIDATION.md)。
+当前自动化测试共 112 项，覆盖登录权限与角色、RDK 数据代理、事件抓拍与家长可见性、环境与对话事件、通知记录、对话删除、测温及日报接口、传感器字段过滤和消息写入与转发。浏览器检查覆盖页面渲染和设备筛选。真实设备联调记录模板见 [真实设备联调记录](docs/DEVICE_VALIDATION.md)，演示视频录制步骤见 [演示脚本](docs/DEMO_SCRIPT.md)。详细结果及软件限制见 [验证记录](docs/VALIDATION.md)。
 
 ## 10. 团队开发与开源说明
 
