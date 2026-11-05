@@ -242,4 +242,4 @@ python scripts\verify_repository.py
 
 只有执行 `git commit` 才会产生提交记录，执行 `git push` 后 GitHub 才会显示。三位成员应使用各自的 GitHub 账号和分支提交本人完成的工作，通过 Pull Request 合并，具体流程见 [团队协作说明](docs/DEVELOPMENT.md)。
 
-小智后端来源、导入版本和修改范围见 [第三方来源](THIRD_PARTY.md)。上游小智代码保留其 MIT 许可证。本仓库目前为团队私人协作仓库；公开发布前，应由团队共同确定新增网页代码的许可证，并检查文档、图片和依赖的发布授权。
+小智后端来源、导入版本和修改范围见 [第三方来源](THIRD_PARTY.md)，完整依赖与许可证清单见 [开源供应链说明](docs/SUPPLY_CHAIN.md)。团队新增代码采用 [MIT 许可证](LICENSE)，上游小智代码保留其原 MIT 许可证。公开发布前请复核模型、提示音和依赖的发布授权。

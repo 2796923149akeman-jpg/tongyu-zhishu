@@ -1,5 +1,8 @@
 # 第三方来源
 
+团队新增代码采用 MIT 许可证（根目录 [LICENSE](LICENSE)）；第三方组件保留各自许可证。
+完整组件、版本、许可证与修改范围清单见 [开源供应链说明](docs/SUPPLY_CHAIN.md)。
+
 小智 Python 后端来自 https://github.com/xinnan-tech/xiaozhi-esp32-server ，导入本地已有版本 `c5b64c3ef0cc5d54e95935937bbd9e54af761c2a` 的 `main/xiaozhi-server`。保留 [MIT 许可证](xiaozhi-server/LICENSE)。没有把上游作者工作计作团队新增功能。
 
 导入官方 Python 代码、提示词模板与内置提示音，不包含 Java/Vue 管理端。后端本次源码修改仅为：增加 `core/utils/dialogue_monitor.py`，并在 `core/handle/sendAudioHandle.py` 的 STT 与 TTS 发送位置调用转发函数。`app.py` 保留此上游版本原文件。
