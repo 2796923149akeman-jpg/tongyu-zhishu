@@ -2,7 +2,7 @@
 
 ## 1. 项目简介
 
-本仓库是“童域智枢”项目的网页可视化与语音交互软件，负责监控信息展示、行为状态提示、环境数据展示和对话消息查看。设备通信与数据字段沿用团队先期联调确认过的接口，网页的信息架构、布局、样式和交互在本课程仓库中独立设计和实现。
+本仓库是“童域智枢”项目的网页可视化与语音交互软件，负责监控信息展示、统一异常事件处置、对话与情绪分析、学生测温与当日日报、家长端安全事件查看，以及 RDK/STM32/ESP32 设备数据接口接入。设备通信与数据字段沿用团队先期联调确认过的接口，网页的信息架构、布局、样式和交互在本课程仓库中独立设计和实现。
 
 ### 项目边界与依赖关系
 
@@ -39,18 +39,27 @@
 
 ```mermaid
 flowchart LR
-    Browser[浏览器] -->|HTTP| Dashboard[Dashboard 网页服务]
-    RDK[RDK 数据接口] -->|视频流 / 状态 / 传感器 / 快照| Dashboard
-    Xiaozhi[小智语音后端] -->|对话消息 HTTP| Dashboard
-    Dashboard --> Monitor[监控页面]
-    Dashboard --> Chat[对话测试页面]
+    Browser[浏览器] -->|HTTP + 会话/CSRF| Dashboard[Dashboard 网页服务]
+    RDK[RDK X5] -->|视频流 / 告警 / 传感器 / 快照| Dashboard
+    Sensors[STM32 / 设备推送] -->|HTTP + 设备令牌| Dashboard
+    Xiaozhi[小智语音后端] -->|对话消息| Dashboard
     Model[兼容 OpenAI 的模型 API] --> Xiaozhi
+    Dashboard --> Workbench[Web 工作台]
+    Workbench --> Monitor[实时监控]
+    Workbench --> Events[异常事件]
+    Workbench --> Chat[对话与情绪]
+    Workbench --> Health[学生测温]
+    Workbench --> Reports[当日日报]
+    Workbench --> Family[家长端]
+    Workbench --> Merchant[环境传感器]
+    Workbench --> Admin[账号与展示设置]
+    Dashboard --> Store[(运行数据与抓拍)]
 ```
 
 仓库目录：
 
 ```text
-dashboard/          网页、RDK 数据代理和对话消息接口
+dashboard/          网页、业务接口、RDK/传感器代理与运行数据
 xiaozhi-server/      小智 Python 后端及对话消息转发
 scripts/            本地初始化、环境检查和提交检查
 tests/              网页接口与消息转发自动化测试
@@ -60,11 +69,12 @@ docs/               API、二次开发、协作和验证文档
 ## 4. 技术栈与实现原理
 
 - Python 3.10：运行 Dashboard HTTP 服务和小智后端。
-- HTML/CSS/JavaScript：实现监控页、对话页和定时数据刷新。
-- HTTP 接口：接入视频流、行为状态、环境数据和对话消息。
+- HTML/CSS/JavaScript：实现监控、事件、对话、测温、日报、家长端等页面和定时数据刷新。
+- HTTP 接口：接入视频流、行为状态、环境数据、设备推送和对话消息。
 - WebSocket：由小智后端承载语音交互会话。
 - 异步消息队列：对话消息在后台转发，避免网页处理影响语音服务。
-- 本地记录文件：网页服务保留最近 200 条对话消息，使用原子写入保存到被 Git 忽略的运行时文件。
+- 本地记录文件：事件、抓拍、对话、名单与体温、账号和展示设置均保存在被 Git 忽略的运行时文件，使用原子写入；事件与对话有条数上限。
+- 账号与权限：管理员、演示、家长、商家和待分配账号按角色进入不同页面，业务写接口要求同源、CSRF 和管理员会话。
 
 Dashboard 将上游接口转换为同源网页接口；浏览器只访问 Dashboard。小智后端在处理用户文字和回复句子时，将消息异步发送到 Dashboard，对话页按配置的间隔读取并展示。页面仅显示记录，不发送消息，也不单独调用对话模型。
 
@@ -181,11 +191,17 @@ ESP32 连上小智后，对话文字会转发到同一台电脑上的 Dashboard�
 | GET/POST | `/api/events` | 查询事件或由管理员创建事件 |
 | GET | `/api/events/{id}/snapshot` | 查看有权限访问的告警抓拍 |
 | POST | `/api/events/{id}/status`、`/api/events/{id}/notes` | 管理员处置事件、保存备注 |
+| POST | `/api/events/{id}/participants` | 管理员按姓名关联事件参与学生 |
 | GET | `/api/health/students`、`/api/health/records` | 查询名单和测温记录 |
 | GET | `/api/health/realtime` | 查看实时红外读数 |
 | POST | `/api/health/device-readings` | 接收携带设备令牌的红外读数 |
 | POST | `/api/health/import`、`/api/health/records` | 管理员导入名单、登记体温 |
 | GET | `/api/reports/daily` | 查询按权限过滤的日报 |
+| GET/POST | `/api/admin/accounts`、`/api/admin/parents` | 管理员管理账号角色与家长绑定 |
+| GET | `/api/family/events`、`/api/family/events/{id}` | 家长读取绑定孩子的安全事件 |
+| GET | `/api/family/events/{id}/snapshot` | 家长读取获授权的事件截图 |
+| GET | `/api/family/daily`、`/api/family/students` | 家长读取孩子日报与绑定学生 |
+| GET | `/api/merchant/sensors` | 商家读取环境传感器字段 |
 
 完整请求字段、返回结构和异常状态见 [API 文档](docs/API.md)。
 
@@ -194,8 +210,10 @@ ESP32 连上小智后，对话文字会转发到同一台电脑上的 Dashboard�
 新增监控组件、数据字段、交互页面和后端接口时，可分别扩展：
 
 - `dashboard/index.html`：监控页面结构与刷新逻辑。
-- `dashboard/chat.html`：对话页面和筛选逻辑。
-- `dashboard/server.py`：网页路由、上游接口代理和数据校验。
+- `dashboard/events.html`、`dashboard/family-events.html`：事件处置页和家长端页面。
+- `dashboard/chat.html`、`dashboard/health.html`、`dashboard/reports.html`：对话、测温与日报页面。
+- `dashboard/server.py`：网页路由、上游接口代理、事件/测温/日报业务和数据校验。
+- `dashboard/access_control.py`：账号、角色、家长绑定与展示设置。
 - `xiaozhi-server/core/utils/dialogue_monitor.py`：对话消息转发。
 
 具体扩展步骤见 [二次开发指南](docs/EXTENDING.md)。
@@ -208,7 +226,7 @@ python -m unittest discover -s tests -v
 python scripts\verify_repository.py
 ```
 
-当前自动化测试覆盖登录权限、RDK 数据代理、事件抓拍、对话删除、测温及日报接口、消息写入与转发。浏览器检查覆盖页面渲染和设备筛选。详细结果及软件限制见 [验证记录](docs/VALIDATION.md)。
+当前自动化测试共 103 项，覆盖登录权限与角色、RDK 数据代理、事件抓拍与家长可见性、对话删除、测温及日报接口、传感器字段过滤和消息写入与转发。浏览器检查覆盖页面渲染和设备筛选。详细结果及软件限制见 [验证记录](docs/VALIDATION.md)。
 
 ## 10. 团队开发与开源说明
 
