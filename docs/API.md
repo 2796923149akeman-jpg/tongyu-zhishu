@@ -225,7 +225,7 @@ offset=0
 
 ### `POST /api/events`
 
-写入一条事件。RDK `/alert_status` 的 fall/fight 会在监控代理轮询时自动入库；其他设备采集程序或人工登记入口调用：
+写入一条事件。RDK `/alert_status` 的 fall/fight 会在监控代理轮询时自动入库；对话情绪分析达到 `watch`/`urgent` 时由服务端自动写入 `dialogue_attention` 事件（同一会话、同一等级按 600 秒窗口去重，事件不保存对话原文，只保存通用说明和会话编号）；其他设备采集程序或人工登记入口调用：
 
 ```json
 {

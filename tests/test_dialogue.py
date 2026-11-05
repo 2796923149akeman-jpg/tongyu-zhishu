@@ -3,6 +3,7 @@ import ast
 import asyncio
 import importlib.util
 import json
+from datetime import datetime, timezone
 from pathlib import Path
 import threading
 import time
@@ -240,6 +241,37 @@ class DialogueTests(unittest.TestCase):
         self.sender.publish(SimpleNamespace(), 'assistant', 'recovered')
         self.sender._pending.join()
         self.assertEqual(self.request()[1]['messages'][0]['text'], 'recovered')
+
+
+    def test_attention_message_creates_dialogue_event_without_raw_text(self):
+        now = datetime.now(timezone.utc).isoformat()
+        payload = self.message() | {
+            "id": "attn-1",
+            "text": "我每天都哭，不想上学",
+            "created_at": now,
+            "session_id": "attn-session",
+        }
+        self.assertEqual(self.request(data=payload)[0], 200)
+
+        status, listing = self.request('/api/events')
+        self.assertEqual(status, 200)
+        self.assertEqual(listing['total'], 1)
+        event = listing['events'][0]
+        self.assertEqual(event['event_type'], 'dialogue_attention')
+        self.assertEqual(event['source'], 'dialogue')
+        self.assertEqual(event['level'], 'watch')
+        self.assertNotIn('我每天都哭', json.dumps(event, ensure_ascii=False))
+
+        # 同一会话同等级在时间窗内去重
+        self.assertEqual(self.request(data=payload | {"id": "attn-2"})[0], 200)
+        self.assertEqual(self.request('/api/events')[1]['total'], 1)
+
+        # 其他会话生成新事件
+        self.assertEqual(
+            self.request(data=payload | {"id": "attn-3", "session_id": "attn-session-2"})[0],
+            200,
+        )
+        self.assertEqual(self.request('/api/events')[1]['total'], 2)
 
 
 if __name__ == '__main__':

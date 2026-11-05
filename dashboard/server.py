@@ -55,6 +55,7 @@ from event_contract import (
     normalize_iso,
     normalize_event,
     now_iso,
+    parse_datetime,
     text_value,
     validate_status_transition,
 )
@@ -1212,6 +1213,77 @@ def import_health_students(payload: dict) -> dict:
     return {"imported": imported, "skipped": skipped, "errors": errors}
 
 
+DIALOGUE_EVENT_WINDOW_SECONDS = max(
+    60,
+    int(os.environ.get("DIALOGUE_EVENT_WINDOW_SECONDS", "600")),
+)
+DIALOGUE_EVENT_MAX_AGE_SECONDS = 24 * 60 * 60
+
+
+def maybe_create_dialogue_event(message: dict, result: dict) -> dict | None:
+    """情绪关注达到 watch/urgent 时生成待处理事件；同一会话同等级按时间窗去重。
+
+    事件只保存通用说明，不写入对话原文；原文由有权限的账号在对话页查看。
+    """
+    if message.get("role") != "user":
+        return None
+    attention = result.get("attention")
+    if attention not in ("watch", "urgent"):
+        return None
+    try:
+        occurred = parse_datetime(message.get("created_at") or message.get("received_at") or now_iso())
+    except EventValidationError:
+        occurred = parse_datetime(now_iso())
+    try:
+        received = parse_datetime(message.get("received_at") or message.get("created_at") or now_iso())
+    except EventValidationError:
+        received = datetime.now(timezone.utc)
+    if (datetime.now(timezone.utc) - received).total_seconds() > DIALOGUE_EVENT_MAX_AGE_SECONDS:
+        return None
+    session_id = text_value(message.get("session_id"), "session_id", 160, default="")
+    device_id = text_value(message.get("device_id"), "device_id", 160, default="")
+    label = str(result.get("label") or "unknown")[:32]
+    bucket = int(occurred.timestamp() // DIALOGUE_EVENT_WINDOW_SECONDS)
+    level = "urgent" if attention == "urgent" else "watch"
+    summary = (
+        "对话出现需要及时核实的表达"
+        if attention == "urgent"
+        else "对话出现需要关注的表达"
+    )
+    source_label = "模型分析" if result.get("source") == "model" else "本地规则"
+    detail = (
+        f"对话分析（{source_label}）检测到需要人工核实的情绪线索。"
+        "请在“对话与情绪”页面查看相关会话并确认情况；该提示仅作辅助提醒，不作为心理或医学诊断。"
+    )
+    if session_id:
+        detail += f"（会话编号：{session_id}）"
+    confidence = result.get("confidence")
+    try:
+        confidence = float(confidence) if confidence not in (None, "") else None
+        if confidence is not None and not 0 <= confidence <= 1:
+            confidence = None
+    except (TypeError, ValueError):
+        confidence = None
+    try:
+        created, _ = create_event({
+            "event_type": "dialogue_attention",
+            "level": level,
+            "source": "dialogue",
+            "status": "pending",
+            "occurred_at": occurred.isoformat(timespec="seconds"),
+            "summary": summary,
+            "detail": detail,
+            "device_id": device_id,
+            "location": "对话设备",
+            "confidence": confidence,
+            "dedupe_key": f"dialogue-{session_id or 'unknown'}-{attention}-{label}-{bucket}",
+        })
+    except (EventValidationError, OSError) as exc:
+        print(f"[EVENT] unable to record dialogue attention: {type(exc).__name__}")
+        return None
+    return created["event"]
+
+
 def dialogue_attention_items(date: str, class_id: str, students: dict[str, dict]) -> list[dict]:
     with MESSAGES_LOCK:
         messages = [dict(item) for item in MESSAGES]
@@ -1552,6 +1624,7 @@ def analysis_worker() -> None:
                         if target:
                             target["emotion"] = result
                             save_messages()
+                    maybe_create_dialogue_event(message, result)
             elif kind == "summary":
                 messages = messages_for_session(value)
                 if messages:
@@ -2071,6 +2144,9 @@ class Handler(BaseHTTPRequestHandler):
             if inserted:
                 if record['role'] == 'user':
                     enqueue_analysis('emotion', record['id'])
+                    if not ANALYSIS_WORKER_STARTED:
+                        # 未启动分析线程时（例如隔离测试）先用本地词库结果生成提醒。
+                        maybe_create_dialogue_event(record, record['emotion'])
                 schedule_summary(record['session_id'])
             self.send_json(200, {'ok': True})
         except (ValueError, UnicodeError, TimeoutError):
