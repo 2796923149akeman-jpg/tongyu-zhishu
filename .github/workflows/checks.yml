@@ -1,9 +1,9 @@
-name: Source and dialogue checks
+name: Source, test and lint checks
 on: [push, pull_request]
 permissions:
   contents: read
 jobs:
-  check:
+  test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -16,5 +16,19 @@ jobs:
             tests/requirements.txt
       - name: Install test dependencies
         run: python -m pip install -r tests/requirements.txt
-      - run: python -m unittest discover -s tests -v
-      - run: python scripts/verify_repository.py
+      - name: Run unit tests
+        run: python -m unittest discover -s tests -v
+      - name: Verify repository contents
+        run: python scripts/verify_repository.py
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+      - name: Install ruff
+        run: python -m pip install ruff==0.17.3
+      - name: Lint Python sources
+        run: ruff check dashboard scripts tests
