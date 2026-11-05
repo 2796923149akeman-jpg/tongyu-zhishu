@@ -48,7 +48,7 @@
 
 | 变量 | 默认值 | 说明 |
 |---|---|---|
-| `DIALOGUE_EVENT_WINDOW_SECONDS` | `600` | 同会话同等级情绪事件去重窗口 |
+| `DIALOGUE_EVENT_WINDOW_SECONDS` | `600` | 对话事件固定时间桶宽度（秒）。桶内按会话、关注等级和情绪标签去重 |
 | `ALERT_NOTIFY_URL` | 空 | 播报网关地址，仅支持 http/https；为空时跳过播报 |
 | `ALERT_NOTIFY_TIMEOUT` | `3` | 播报请求超时（秒） |
 
