@@ -7,7 +7,6 @@ dashboard/person_types.json，供实时监控页显示人数。
 from __future__ import annotations
 
 import argparse
-import json
 import os
 import sys
 import threading
@@ -21,6 +20,7 @@ DASHBOARD = ROOT / "dashboard"
 if str(DASHBOARD) not in sys.path:
     sys.path.insert(0, str(DASHBOARD))
 
+from json_storage import atomic_write_json  # noqa: E402
 from person_type import estimate_person_type, majority_vote, summarize_person_types  # noqa: E402
 
 
@@ -63,20 +63,6 @@ def start_parent_watchdog():
         os.read(sys.stdin.fileno(), 1)
         os._exit(0)
     threading.Thread(target=watch_parent, daemon=True).start()
-
-
-def atomic_write_json(path: Path, payload: dict):
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_name(f".{path.name}.{os.getpid()}.tmp")
-    try:
-        temporary.write_text(
-            json.dumps(payload, ensure_ascii=False, indent=2),
-            encoding="utf-8",
-        )
-        os.replace(temporary, path)
-    finally:
-        if temporary.exists():
-            temporary.unlink()
 
 
 def main():
