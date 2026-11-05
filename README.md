@@ -134,6 +134,8 @@ $env:RDK_BASE = "http://192.168.43.54:5000"
 .\.venv\Scripts\python.exe scripts/run_dashboard.py
 ```
 
+命令中的 `RDK_BASE` 是团队联调示例。连接其他设备时，在同一个 PowerShell 窗口填写该电脑可访问的 RDK 地址和端口。无硬件时可直接使用上面的一键演示。[配置说明](docs/CONFIGURATION.md#5-示例)
+
 首次启动时按终端提示创建管理员，再打开 <http://127.0.0.1:8088/login>。网页注册的新账号由管理员分配角色。**仅运行网页时，API Key 可以留空。** 电脑尚未连上 RDK 时，网页仍可登录和管理本机已有记录，实时区域会提示设备不可用。
 
 ### 6.2 提前启动 RDK，提供实时数据
@@ -146,7 +148,7 @@ cd /root/wheeltec_fall_detect
 python3 web_fall.py
 ```
 
-上述地址和目录是现有设备的示例。使用其他 RDK 时，把 SSH 地址及网页的 `RDK_BASE` 都改成对应设备地址，目录按 RDK 上的部署位置填写。**RDK 上需要提前部署 `wheeltec_fall_detect` 程序、模型和依赖，并连接摄像头及传感器。** SSH 终端运行期间保持程序运行，电脑端 Dashboard 会从 RDK 的 `5000` 端口读取数据。
+上述 SSH 地址和 `/root/wheeltec_fall_detect` 是团队设备上的示例。换设备时，先用实际 RDK 地址登录，再在 RDK 终端进入 `web_fall.py` 所在目录。电脑端 Dashboard 通过 `RDK_BASE` 读取 RDK 的 HTTP 接口。**RDK 上需要提前部署 `wheeltec_fall_detect` 程序、模型和依赖，并连接摄像头及传感器。** 演示期间保持 RDK 上的程序运行。
 
 启动后可在电脑浏览器打开 `http://192.168.43.54:5000/alert_status` 和 `http://192.168.43.54:5000/api/iot_payload`。前者应返回行为状态 JSON，后者应返回传感器连接状态、采集时间和读数。测温页读取 RDK 实时数据时可以直接使用此接口。设备主动推送及自动登记需要配置设备令牌，见 [实时红外测温说明](docs/HEALTH_REPORT_UI.md#102-设备推送接口)。抓拍依赖 RDK 提供的 `/snapshot`。如两个 JSON 接口都打不开，先核对 RDK IP、网络和 RDK 终端报错。
 
