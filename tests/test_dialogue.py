@@ -28,15 +28,15 @@ class DialogueTests(unittest.TestCase):
     def setUp(self):
         self.web = load('test_dashboard', 'dashboard/server.py')
         self.temp = tempfile.TemporaryDirectory()
-        self.web.EVENTS_FILE = Path(self.temp.name) / "events.json"
-        self.web.HEALTH_STUDENTS_FILE = Path(self.temp.name) / "health_students.json"
-        self.web.HEALTH_RECORDS_FILE = Path(self.temp.name) / "health_records.json"
+        self.web.DATA.events.path = Path(self.temp.name) / "events.json"
+        self.web.DATA.students.path = Path(self.temp.name) / "health_students.json"
+        self.web.DATA.health_records.path = Path(self.temp.name) / "health_records.json"
         self.web.reload_events()
         self.web.reload_health()
-        self.web.DIALOGUE_DATA_FILE = Path(self.temp.name) / 'dialogue_messages.json'
+        self.web.DATA.messages.path = Path(self.temp.name) / 'dialogue_messages.json'
         self.web.DIALOGUE_CONFIG_FILE = Path(self.temp.name) / 'dialogue_config.json'
         self.web.ANALYSIS_CONFIG_FILE = Path(self.temp.name) / 'analysis_config.json'
-        self.web.CONVERSATION_SUMMARIES_FILE = Path(self.temp.name) / 'conversation_summaries.json'
+        self.web.DATA.summaries.path = Path(self.temp.name) / 'conversation_summaries.json'
         self.web.PROJECT_ROOT = Path(self.temp.name)
         self.web.AUTH = self.web.AccessStore(Path(self.temp.name) / 'auth_config.json', secure=False)
         self.web.AUTH.create_user('testadmin', 'fixture-password', role='admin')

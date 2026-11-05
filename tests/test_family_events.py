@@ -29,13 +29,13 @@ class FamilyEventApiTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         root = Path(self.temp.name)
         self.web.AUTH = self.web.AccessStore(root / "auth_config.json", secure=False)
-        self.web.EVENTS_FILE = root / "events.json"
-        self.web.HEALTH_STUDENTS_FILE = root / "health_students.json"
-        self.web.HEALTH_RECORDS_FILE = root / "health_records.json"
-        self.web.DIALOGUE_DATA_FILE = root / "dialogue_messages.json"
+        self.web.DATA.events.path = root / "events.json"
+        self.web.DATA.students.path = root / "health_students.json"
+        self.web.DATA.health_records.path = root / "health_records.json"
+        self.web.DATA.messages.path = root / "dialogue_messages.json"
         self.web.DIALOGUE_CONFIG_FILE = root / "dialogue_config.json"
         self.web.ANALYSIS_CONFIG_FILE = root / "analysis_config.json"
-        self.web.CONVERSATION_SUMMARIES_FILE = root / "conversation_summaries.json"
+        self.web.DATA.summaries.path = root / "conversation_summaries.json"
         self.web.PROJECT_ROOT = root
         (root / "xiaozhi-server" / "data").mkdir(parents=True)
         self.web.HEALTH_STUDENTS[:] = [
@@ -300,18 +300,18 @@ class FamilyEventApiTests(unittest.TestCase):
         event = dict(self.unassigned)
         del event["participants"]
         event["students"] = [{"id": "S-0201", "name": "张小明"}]
-        self.web.EVIDENCE_DIR = self.web.EVENTS_FILE.parent / "evidence"
+        self.web.EVIDENCE_DIR = self.web.DATA.events.path.parent / "evidence"
         self.web.EVIDENCE_DIR.mkdir()
         filename = event["id"] + ".jpg"
         image = b"\xff\xd8legacy\xff\xd9"
         (self.web.EVIDENCE_DIR / filename).write_bytes(image)
         event["evidence_url"] = "/evidence/" + filename
-        self.web.atomic_write_json(self.web.EVENTS_FILE, [event])
+        self.web.atomic_write_json(self.web.DATA.events.path, [event])
         self.web.reload_events()
         self.assertEqual(self.web.get_event(event["id"])["participants"][0]["student_id"], "S-0201")
         route = "/api/family/events/" + event["id"]
         self.assertEqual(self.request(route, self.parent_one)[0], 404)
-        with patch.object(self.web, "atomic_write_json", side_effect=OSError("write failed")):
+        with patch.object(self.web.DATA.events, "save", side_effect=OSError("write failed")):
             with self.assertRaises(OSError):
                 self.web.assign_event_participants(event["id"], {"names": "张小明"})
         self.assertEqual(self.request(route, self.parent_one)[0], 404)

@@ -32,10 +32,11 @@ flowchart LR
     subgraph Dashboard
       W[Web 层：路由 / 会话 / 响应]
       S[业务层：事件 / 对话 / 测温 / 日报 / 家长 / 账号]
-      R[存储层：JSON 原子读写 + 抓拍文件]
+      R[仓储层：事件 / 对话 / 名单 / 测温 / 摘要]
+      F[JSON 原子读写 / 抓拍文件]
       J[后台任务：情绪分析 / 环境监控 / 通知]
     end
-    D --> W --> S --> R
+    D --> W --> S --> R --> F
     S --> J
 ```
 
@@ -46,6 +47,7 @@ flowchart LR
 | 文件 | 职责 | 备注 |
 |---|---|---|
 | `dashboard/server.py` | HTTP 路由、会话与 CSRF、业务编排、存储调用 | 当前集中式 Web/业务层（约 2800 行） |
+| `dashboard/repositories.py` | 提供五类业务记录的读取、保存和事件抓拍路径 | 沿用原有环境变量和 JSON 格式 |
 | `dashboard/json_storage.py` | JSON 读取与带 Windows 占用重试的原子写入 | Dashboard 和人物估算共用的文件读写工具 |
 | `dashboard/event_contract.py` | 事件字段、枚举、校验、日报映射 | 领域契约 |
 | `dashboard/analysis.py` | 本地词库/模型情绪分析、会话摘要、模型配置 | 策略模式 |
@@ -112,7 +114,7 @@ sequenceDiagram
 
 1. Web 层与业务层仍集中在 `server.py`；后续可按
    `web/`、`services/`、`repositories/` 拆分，并保留现有 HTTP 契约。
-2. 存储为 JSON 运行时文件；如需并发编辑或大数据量查询，可在仓储接口后增加
+2. 仓储使用 JSON 运行时文件；如需并发编辑或大数据量查询，可在仓储边界内增加
    SQLite 实现（开题中的备选方案）。
 3. 环境与设备事件依赖 Dashboard 进程；若要独立采集，可增加守护进程或由
    STM32 网关推送。

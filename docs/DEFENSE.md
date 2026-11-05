@@ -27,7 +27,7 @@
 | 6 | 有英文提交规范，历史标题格式有差异 | [提交规范](../CONTRIBUTING.md#3-提交信息规范) |
 | 7 | 多数近期任务有独立提交，早期有合并交付 | 用本次 PR 的分项提交展示粒度，历史保留供追溯 |
 | 8 | 已有提交前检查和 CI lint 配置 | [钩子配置](../.pre-commit-config.yaml)、[CI](../.github/workflows/checks.yml)。贡献者需在本机安装钩子 |
-| 9 | 页面与 API 分离，后端职责部分集中 | [架构说明](ARCHITECTURE.md)。JSON 读写已共用，业务仓储接口仍待抽离 |
+| 9 | 页面与 API 分离，五类业务记录走独立仓储 | [架构说明](ARCHITECTURE.md) |
 | 10 | 已有部署与模拟演示脚本 | [部署说明](DEPLOY.md)。本次验证 Windows 下通过 `demo.ps1 -NoBrowser` 启动两个服务并完成告警请求 |
 
 ### 文档与实验

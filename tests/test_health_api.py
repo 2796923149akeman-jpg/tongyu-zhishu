@@ -36,14 +36,14 @@ class HealthApiTests(unittest.TestCase):
         token, session = self.web.AUTH.new_session("owner")
         self.auth_headers = {"Cookie": "tongyu_session=" + token, "X-CSRF-Token": session["csrf"]}
         temp = Path(self.temp.name)
-        self.web.DIALOGUE_DATA_FILE = temp / "dialogue_messages.json"
+        self.web.DATA.messages.path = temp / "dialogue_messages.json"
         self.web.DIALOGUE_CONFIG_FILE = temp / "dialogue_config.json"
         self.web.ANALYSIS_CONFIG_FILE = temp / "analysis_config.json"
-        self.web.CONVERSATION_SUMMARIES_FILE = temp / "conversation_summaries.json"
+        self.web.DATA.summaries.path = temp / "conversation_summaries.json"
         self.web.PROJECT_ROOT = temp
-        self.web.EVENTS_FILE = temp / "events.json"
-        self.web.HEALTH_STUDENTS_FILE = temp / "health_students.json"
-        self.web.HEALTH_RECORDS_FILE = temp / "health_records.json"
+        self.web.DATA.events.path = temp / "events.json"
+        self.web.DATA.students.path = temp / "health_students.json"
+        self.web.DATA.health_records.path = temp / "health_records.json"
         self.web.HEALTH_DEVICE_TOKEN = "fixture-device-token-0123456789abcdef"
         self.web.HEALTH_INFRARED_STALE_SECONDS = 10
         self.web.HEALTH_LAST_INFRARED = None

@@ -66,7 +66,7 @@ def main() -> None:
     web = load_server()
     temp = tempfile.TemporaryDirectory()
     try:
-        web.EVENTS_FILE = Path(temp.name) / "events.json"
+        web.DATA.events.path = Path(temp.name) / "events.json"
         web.EVIDENCE_DIR = Path(temp.name) / "evidence"
         web.reload_events()
 

@@ -19,15 +19,15 @@ class AccessTests(unittest.TestCase):
         self.web = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(self.web)
         self.temp = tempfile.TemporaryDirectory()
-        self.web.EVENTS_FILE = Path(self.temp.name) / "events.json"
-        self.web.HEALTH_STUDENTS_FILE = Path(self.temp.name) / "health_students.json"
-        self.web.HEALTH_RECORDS_FILE = Path(self.temp.name) / "health_records.json"
+        self.web.DATA.events.path = Path(self.temp.name) / "events.json"
+        self.web.DATA.students.path = Path(self.temp.name) / "health_students.json"
+        self.web.DATA.health_records.path = Path(self.temp.name) / "health_records.json"
         self.web.reload_events()
         self.web.reload_health()
         self.now = [1000.0]
         self.web.AUTH = self.web.AccessStore(Path(self.temp.name) / 'auth_config.json', secure=False, clock=lambda: self.now[0])
         self.web.AUTH.create_user('owner', 'owner-fixture', role='admin')
-        self.web.DIALOGUE_DATA_FILE = Path(self.temp.name) / 'dialogue_messages.json'
+        self.web.DATA.messages.path = Path(self.temp.name) / 'dialogue_messages.json'
         self.web.MESSAGES.clear()
         self.web.CONVERSATION_SUMMARIES.clear()
         self.web.Handler.log_message = lambda *args: None

@@ -71,6 +71,7 @@ from event_contract import (
 from health_realtime import normalize_infrared_payload, refresh_infrared_status
 from json_storage import atomic_write_json, read_json_file
 from person_type_runtime import PersonTypeRuntime
+from repositories import DashboardRepositories
 
 HOST = os.environ.get("DASHBOARD_HOST", "127.0.0.1")
 PORT = int(os.environ.get("DASHBOARD_PORT", "8088"))
@@ -82,25 +83,17 @@ RDK_BASE = os.environ.get("RDK_BASE", "http://192.168.43.54:5000").rstrip("/")
 PROJECT_ROOT = Path(os.environ.get("PROJECT_ROOT", str(ROOT.parent)))
 PERSON_TYPE_RUNTIME = PersonTypeRuntime(PROJECT_ROOT, RDK_BASE)
 DIALOGUE_LIMIT = 200
-DIALOGUE_DATA_FILE = Path(
-    os.environ.get("DIALOGUE_DATA_FILE", str(ROOT / "dialogue_messages.json"))
-)
+DATA = DashboardRepositories(ROOT)
 DIALOGUE_CONFIG_FILE = Path(
     os.environ.get("DIALOGUE_CONFIG_FILE", str(ROOT / "dialogue_config.json"))
 )
 ANALYSIS_CONFIG_FILE = Path(
     os.environ.get("ANALYSIS_CONFIG_FILE", str(ROOT / "analysis_config.json"))
 )
-CONVERSATION_SUMMARIES_FILE = Path(
-    os.environ.get("CONVERSATION_SUMMARIES_FILE", str(ROOT / "conversation_summaries.json"))
-)
 EMOTION_LEXICON_FILE = Path(
     os.environ.get("EMOTION_LEXICON_FILE", str(ROOT / "emotion_lexicon.json"))
 )
-EVENTS_FILE = Path(os.environ.get("EVENTS_FILE", str(ROOT / "events.json")))
 EVIDENCE_DIR = Path(os.environ.get("EVIDENCE_DIR", str(ROOT / "evidence")))
-HEALTH_STUDENTS_FILE = Path(os.environ.get("HEALTH_STUDENTS_FILE", str(ROOT / "health_students.json")))
-HEALTH_RECORDS_FILE = Path(os.environ.get("HEALTH_RECORDS_FILE", str(ROOT / "health_records.json")))
 HEALTH_DEVICE_TOKEN = os.environ.get("HEALTH_DEVICE_TOKEN", "")
 HEALTH_INFRARED_STALE_SECONDS = max(
     1,
@@ -211,15 +204,13 @@ SUMMARY_TIMERS_LOCK = threading.Lock()
 
 
 def load_messages() -> deque:
-    data = read_json_file(DIALOGUE_DATA_FILE, [])
-    if not isinstance(data, list):
-        data = []
+    data = DATA.messages.load()
     valid = [item for item in data if isinstance(item, dict)]
     return deque(valid[-DIALOGUE_LIMIT:], maxlen=DIALOGUE_LIMIT)
 
 
 def save_messages() -> None:
-    atomic_write_json(DIALOGUE_DATA_FILE, list(MESSAGES))
+    DATA.messages.save(list(MESSAGES))
 
 
 def copy_event(event: dict) -> dict:
@@ -227,9 +218,7 @@ def copy_event(event: dict) -> dict:
 
 
 def load_events() -> list[dict]:
-    data = read_json_file(EVENTS_FILE, [])
-    if not isinstance(data, list):
-        return []
+    data = DATA.events.load()
     loaded = []
     for raw in data[-EVENTS_LIMIT:]:
         try:
@@ -251,14 +240,14 @@ def load_events() -> list[dict]:
 
 
 def save_events() -> None:
-    atomic_write_json(EVENTS_FILE, EVENTS)
+    DATA.events.save(EVENTS)
 
 
 def replace_event(index: int, event: dict) -> None:
     # Call under EVENTS_LOCK so a failed write cannot change family visibility.
     updated = EVENTS.copy()
     updated[index] = event
-    atomic_write_json(EVENTS_FILE, updated)
+    DATA.events.save(updated)
     EVENTS[index] = event
 
 
@@ -266,8 +255,7 @@ SNAPSHOT_LIMIT = 2 * 1024 * 1024
 
 
 def event_snapshot_path(event_id: str) -> Path:
-    key = hashlib.sha256(event_id.encode("utf-8")).hexdigest()
-    return EVENTS_FILE.parent / "event_snapshots" / f"{key}.jpg"
+    return DATA.events.snapshot_path(event_id)
 
 
 def stored_snapshot_path(event: dict) -> Path:
@@ -559,7 +547,7 @@ def create_event(payload: dict) -> tuple[dict, int]:
             raise EventConflict("event id already exists")
         updated = [*EVENTS, event]
         retained = updated[-EVENTS_LIMIT:]
-        atomic_write_json(EVENTS_FILE, retained)
+        DATA.events.save(retained)
         EVENTS[:] = retained
         for removed in updated[:-EVENTS_LIMIT]:
             try:
@@ -1070,9 +1058,7 @@ def health_classes_from(students: list[dict]) -> list[dict]:
 
 
 def load_health_students() -> list[dict]:
-    data = read_json_file(HEALTH_STUDENTS_FILE, [])
-    if not isinstance(data, list):
-        return []
+    data = DATA.students.load()
     result = []
     for raw in data:
         if not isinstance(raw, dict):
@@ -1102,9 +1088,7 @@ def load_health_students() -> list[dict]:
 
 
 def load_health_records() -> list[dict]:
-    data = read_json_file(HEALTH_RECORDS_FILE, [])
-    if not isinstance(data, list):
-        return []
+    data = DATA.health_records.load()
     result = []
     for raw in data:
         if not isinstance(raw, dict):
@@ -1158,11 +1142,11 @@ def load_health_records() -> list[dict]:
 
 
 def save_health_students() -> None:
-    atomic_write_json(HEALTH_STUDENTS_FILE, HEALTH_STUDENTS)
+    DATA.students.save(HEALTH_STUDENTS)
 
 
 def save_health_records() -> None:
-    atomic_write_json(HEALTH_RECORDS_FILE, HEALTH_RECORDS)
+    DATA.health_records.save(HEALTH_RECORDS)
 
 
 def reload_health() -> None:
@@ -1204,7 +1188,7 @@ def update_student_nickname(student_id, nickname) -> dict:
         student = {**HEALTH_STUDENTS[index], "nickname": nickname}
         updated = HEALTH_STUDENTS.copy()
         updated[index] = student
-        atomic_write_json(HEALTH_STUDENTS_FILE, updated)
+        DATA.students.save(updated)
         HEALTH_STUDENTS[index] = student
         return student
 
@@ -1379,7 +1363,7 @@ def process_infrared_reading(reading: dict, *, persist: bool = False) -> dict:
             "ambient_c": reading["ambient_c"],
         }
         updated = [*HEALTH_RECORDS, record]
-        atomic_write_json(HEALTH_RECORDS_FILE, updated)
+        DATA.health_records.save(updated)
         HEALTH_RECORDS[:] = updated
         result.update(stored=True, reason="stored", record=dict(record))
         return result
@@ -1786,8 +1770,7 @@ def load_analysis_config() -> dict:
 
 
 def load_summaries() -> dict:
-    data = read_json_file(CONVERSATION_SUMMARIES_FILE, {})
-    return data if isinstance(data, dict) else {}
+    return DATA.summaries.load()
 
 
 MESSAGES = load_messages()
@@ -1828,7 +1811,7 @@ def conversation_items() -> list[dict]:
 
 
 def save_summaries() -> None:
-    atomic_write_json(CONVERSATION_SUMMARIES_FILE, CONVERSATION_SUMMARIES)
+    DATA.summaries.save(CONVERSATION_SUMMARIES)
 
 
 def delete_dialogue_records(payload: dict) -> int:
@@ -1848,11 +1831,11 @@ def delete_dialogue_records(payload: dict) -> int:
             key: value for key, value in CONVERSATION_SUMMARIES.items() if key not in sessions
         }
         if summaries != CONVERSATION_SUMMARIES:
-            atomic_write_json(CONVERSATION_SUMMARIES_FILE, summaries)
+            DATA.summaries.save(summaries)
             CONVERSATION_SUMMARIES.clear()
             CONVERSATION_SUMMARIES.update(summaries)
         if removed:
-            atomic_write_json(DIALOGUE_DATA_FILE, remaining)
+            DATA.messages.save(remaining)
             MESSAGES.clear()
             MESSAGES.extend(remaining)
     return len(removed)
@@ -2287,7 +2270,7 @@ class Handler(BaseHTTPRequestHandler):
                          "class_id": students.get(student_id, {}).get("class_id", "")}
                         if message.get("id") == message_id else message for message in MESSAGES
                     ]
-                    atomic_write_json(DIALOGUE_DATA_FILE, updated)
+                    DATA.messages.save(updated)
                     MESSAGES.clear()
                     MESSAGES.extend(updated)
                 self.send_json(200, {"ok": True})
@@ -2419,7 +2402,7 @@ class Handler(BaseHTTPRequestHandler):
             with MESSAGES_LOCK:
                 if not any(m['id'] == record['id'] for m in MESSAGES):
                     updated = [*MESSAGES, record][-DIALOGUE_LIMIT:]
-                    atomic_write_json(DIALOGUE_DATA_FILE, updated)
+                    DATA.messages.save(updated)
                     MESSAGES.clear()
                     MESSAGES.extend(updated)
                     inserted = True
