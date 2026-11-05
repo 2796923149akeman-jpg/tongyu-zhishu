@@ -20,6 +20,8 @@ powershell -ExecutionPolicy Bypass -File scripts\demo.ps1
 
 脚本会启动模拟 RDK、设置 `RDK_BASE`、启动 Dashboard 并打开登录页。
 按 Ctrl+C 停止，脚本会一并关闭模拟服务。
+首次运行需要在终端初始化管理员。自动验证可加 `-NoBrowser`，并用
+`-MockPort` 和 `-DashboardPort` 指定两个不同的本机端口。
 
 手动方式：
 
@@ -32,15 +34,17 @@ python scripts/run_dashboard.py
 ## 3. 连接真实设备
 
 ```powershell
-$env:RDK_BASE = "http://192.168.43.54:5000"
-$env:DASHBOARD_HOST = "0.0.0.0"
+$env:RDK_BASE = "http://<RDK实际IP>:5000"
 $env:HEALTH_DEVICE_TOKEN = "<至少 24 位随机串>"
 python scripts/run_dashboard.py
 ```
 
 1. RDK 端启动 `web_fall.py`，确认 `/alert_status`、`/api/iot_payload`、`/snapshot` 可访问；
 2. ESP32 指向 `ws://<电脑IP>:8000/xiaozhi/v1/`，OTA 为 `8003`；
-3. 打开 <http://127.0.0.1:8088/login>，创建管理员并导入名单。
+3. 首次运行在终端创建管理员，再打开 <http://127.0.0.1:8088/login> 登录并导入名单。
+
+`run_dashboard.py` 的网页监听固定为本机回环地址。手机访问使用 [手机分享说明](MOBILE_DEMO.md) 中的 `--share`。
+`DASHBOARD_HOST` 只影响直接运行 `dashboard/server.py` 时的监听地址。
 
 ## 4. 配置项
 

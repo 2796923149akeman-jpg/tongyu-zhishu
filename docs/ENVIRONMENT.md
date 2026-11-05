@@ -49,7 +49,6 @@
 
 ```powershell
 $env:RDK_BASE = "http://192.168.43.54:5000"
-$env:DASHBOARD_HOST = "0.0.0.0"
 $env:HEALTH_DEVICE_TOKEN = "<至少 24 位随机串>"
 ```
 

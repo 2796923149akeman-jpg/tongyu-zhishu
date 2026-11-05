@@ -10,7 +10,7 @@
 
 | 变量 | 默认值 | 说明 |
 |---|---|---|
-| `DASHBOARD_HOST` | `127.0.0.1` | 监听地址；局域网演示可设为 `0.0.0.0` |
+| `DASHBOARD_HOST` | `127.0.0.1` | 直接运行 `dashboard/server.py` 的监听地址。F5 启动脚本固定使用回环地址 |
 | `DASHBOARD_PORT` | `8088` | 网页与 API 端口 |
 | `DASHBOARD_AUTH_FILE` | `dashboard/auth_config.json` | 账号与展示设置文件（已忽略） |
 | `DASHBOARD_COOKIE_SECURE` | `1` | 会话 Cookie 是否加 `Secure`；仅本地 HTTP 演示可设 `0` |
@@ -56,7 +56,6 @@
 
 ```powershell
 $env:RDK_BASE = "http://192.168.43.54:5000"
-$env:DASHBOARD_HOST = "0.0.0.0"
 $env:ENV_ECO2_LIMIT = "1200"
 $env:ALERT_NOTIFY_URL = "http://127.0.0.1:9000/alert"
 $env:HEALTH_DEVICE_TOKEN = "<至少 24 位随机串>"

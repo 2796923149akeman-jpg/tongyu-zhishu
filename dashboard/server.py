@@ -69,6 +69,7 @@ from event_contract import (
     validate_status_transition,
 )
 from health_realtime import normalize_infrared_payload, refresh_infrared_status
+from json_storage import atomic_write_json, read_json_file
 from person_type_runtime import PersonTypeRuntime
 
 HOST = os.environ.get("DASHBOARD_HOST", "127.0.0.1")
@@ -207,35 +208,6 @@ ANALYSIS_QUEUE = queue.Queue(maxsize=512)
 ANALYSIS_WORKER_STARTED = False
 SUMMARY_TIMERS = {}
 SUMMARY_TIMERS_LOCK = threading.Lock()
-
-
-def read_json_file(path: Path, fallback):
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeError, json.JSONDecodeError):
-        return fallback
-
-
-def atomic_write_json(path: Path, data) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fd, temporary_name = tempfile.mkstemp(prefix=f".{path.name}-", dir=path.parent)
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as stream:
-            json.dump(data, stream, ensure_ascii=False, indent=2)
-            stream.flush()
-            os.fsync(stream.fileno())
-        # Windows may briefly deny replacement while another process has the file open.
-        for delay in (0.01, 0.025, 0.05, 0.1, None):
-            try:
-                os.replace(temporary_name, path)
-                break
-            except PermissionError as exc:
-                if delay is None or getattr(exc, "winerror", None) not in (5, 32, 33):
-                    raise
-                time.sleep(delay)
-    finally:
-        if os.path.exists(temporary_name):
-            os.unlink(temporary_name)
 
 
 def load_messages() -> deque:
@@ -2812,7 +2784,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_json(404, {"ok": False, "error": "not found"})
 
 
-def main() -> None:
+def start_background_workers() -> None:
     start_analysis_worker()
     if ENV_MONITOR_ENABLED:
         threading.Thread(
@@ -2821,11 +2793,15 @@ def main() -> None:
             daemon=True,
         ).start()
         print(f"Environment monitor: every {ENV_MONITOR_SECONDS}s (eCO2>{ENV_ECO2_LIMIT:.0f}, TVOC>{ENV_TVOC_LIMIT:.0f})")
+
+
+def main() -> None:
     print(f"Tongyu dashboard: http://127.0.0.1:{PORT}")
     print(f"RDK input: {RDK_BASE}")
     print("Dialogue emotion analysis and summaries run in the dashboard background.")
     http = ThreadingHTTPServer((HOST, PORT), Handler)
     try:
+        start_background_workers()
         http.serve_forever()
     finally:
         PERSON_TYPE_RUNTIME.stop()

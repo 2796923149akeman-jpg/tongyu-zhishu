@@ -8,15 +8,15 @@
 
 ```mermaid
 flowchart LR
-    RDK[RDK X5] -->|视频流 / 告警 / 传感器| Monitor[监控页]
-    ESP32[ESP32 + 小智] -->|对话消息| Chat[对话测试页]
-    Monitor --> Browser[浏览器]
-    Chat --> Browser
+    RDK[RDK X5] -->|视频流 / 告警 / 传感器| D[Dashboard HTTP 代理]
+    ESP32[ESP32 + 小智] -->|对话消息| D
+    D --> Monitor[监控页]
+    D --> Chat[对话测试页]
 ```
 
-- 只有 4 个 `dashboard` 文件，`server.py` 172 行；
-- 监控页负责展示，对话页只做记录查看；
-- 没有统一事件、名单体温、日报、账号权限，也没有测试和 CI。
+- `dashboard` 有 4 个文件，`server.py` 共 194 个物理行。
+- 监控页展示代理的数据，对话页显示会话记录。
+- 已有 6 项对话与路由测试及一个 CI 任务。统一事件、名单体温、日报和账号权限是后续增加的。
 
 ## 2. 重构后（当前 `main`）
 
@@ -27,7 +27,7 @@ flowchart LR
     DEV[STM32 / 设备推送] -->|HTTP + Device Token| D
     XZ[小智语音后端] -->|对话消息| D
     M[兼容 OpenAI 模型 API] --> XZ
-    N[播报网关 / TTS] <-->|Webhook| D
+    D -->|可选 Webhook| N[播报网关 / TTS]
 
     subgraph Dashboard
       W[Web 层：路由 / 会话 / 响应]
@@ -41,9 +41,12 @@ flowchart LR
 
 ### 模块职责
 
+图中按职责划分层次。当前 Web 和部分业务逻辑仍在同一 Python 模块中。
+
 | 文件 | 职责 | 备注 |
 |---|---|---|
 | `dashboard/server.py` | HTTP 路由、会话与 CSRF、业务编排、存储调用 | 当前集中式 Web/业务层（约 2800 行） |
+| `dashboard/json_storage.py` | JSON 读取与带 Windows 占用重试的原子写入 | Dashboard 和人物估算共用的文件读写工具 |
 | `dashboard/event_contract.py` | 事件字段、枚举、校验、日报映射 | 领域契约 |
 | `dashboard/analysis.py` | 本地词库/模型情绪分析、会话摘要、模型配置 | 策略模式 |
 | `dashboard/access_control.py` | 账号、角色、家长绑定、会话、限流 | 领域服务 |

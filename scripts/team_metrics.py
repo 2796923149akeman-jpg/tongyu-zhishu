@@ -13,16 +13,25 @@ import argparse
 import collections
 import json
 import subprocess
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
 
 
 def git(*args: str) -> str:
     return subprocess.check_output(
-        ["git", *args], text=True, encoding="utf-8", errors="replace"
+        ["git", *args], cwd=ROOT, text=True, encoding="utf-8", errors="replace"
     )
 
 
-def collect() -> dict:
-    log = git("log", "--numstat", "--date=short", "--format=__AUTHOR__%an|%ad")
+def commit_sha(ref: str) -> str:
+    return git("rev-parse", "--verify", "--end-of-options", f"{ref}^{{commit}}").strip()
+
+
+def collect(ref: str = "HEAD", after: str | None = None) -> dict:
+    head = commit_sha(ref)
+    revision = f"{commit_sha(after)}..{head}" if after else head
+    log = git("log", "--no-merges", "--numstat", "--date=short", "--format=__AUTHOR__%aN|%ad", revision, "--")
     authors: dict[str, dict] = collections.defaultdict(
         lambda: {
             "commits": 0,
@@ -42,8 +51,8 @@ def collect() -> dict:
             current = name.strip()
             entry = authors[current]
             entry["commits"] += 1
-            entry["first"] = entry["first"] or date
-            entry["last"] = date
+            entry["first"] = min(entry["first"] or date, date)
+            entry["last"] = max(entry["last"] or date, date)
             continue
         if not current or not line.strip():
             continue
@@ -51,19 +60,18 @@ def collect() -> dict:
         if len(parts) != 3:
             continue
         added, deleted, path = parts
-        if not added.isdigit() or not deleted.isdigit():
-            continue
         entry = authors[current]
-        entry["added"] += int(added)
-        entry["deleted"] += int(deleted)
         entry["files"] += 1
+        if added.isdigit() and deleted.isdigit():
+            entry["added"] += int(added)
+            entry["deleted"] += int(deleted)
         area = path.split("/")[0] if "/" in path else "(root)"
         entry["areas"][area] += 1
 
     order = sorted(authors.items(), key=lambda item: item[1]["commits"], reverse=True)
     return {
-        "commits": int(git("rev-list", "--count", "HEAD").strip()),
-        "branch": git("rev-parse", "--abbrev-ref", "HEAD").strip(),
+        "commits": int(git("rev-list", "--no-merges", "--count", revision, "--").strip()),
+        "revision": revision,
         "authors": [
             {
                 "author": name,
@@ -83,9 +91,9 @@ def collect() -> dict:
 
 def to_markdown(data: dict) -> str:
     lines = [
-        f"Branch `{data['branch']}`, {data['commits']} commits.",
+        f"Revision `{data['revision']}`, {data['commits']} non-merge commits.",
         "",
-        "| Author | Commits | Added | Deleted | Net | Files | Main areas |",
+        "| Author | Commits | Added | Deleted | Net | File changes | Main areas |",
         "|---|---:|---:|---:|---:|---:|---|",
     ]
     for item in data["authors"]:
@@ -100,8 +108,10 @@ def to_markdown(data: dict) -> str:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Team contribution metrics")
     parser.add_argument("--json", action="store_true")
+    parser.add_argument("--ref", default="HEAD", help="Revision to measure")
+    parser.add_argument("--after", help="Exclude this revision and its ancestors")
     args = parser.parse_args()
-    data = collect()
+    data = collect(args.ref, args.after)
     print(json.dumps(data, ensure_ascii=False, indent=2) if args.json else to_markdown(data))
 
 

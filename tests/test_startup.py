@@ -6,8 +6,10 @@ import socket
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import unittest
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from unittest.mock import patch
 
@@ -48,7 +50,8 @@ class StartupTests(unittest.TestCase):
             store.set_policy(policy)
             before = path.read_bytes()
             environment = os.environ.copy()
-            environment.update(DASHBOARD_AUTH_FILE=str(path), PROJECT_ROOT=str(runtime), PYTHONIOENCODING='utf-8')
+            environment.update(DASHBOARD_AUTH_FILE=str(path), PROJECT_ROOT=str(runtime),
+                               PYTHONIOENCODING='utf-8', ENV_MONITOR_ENABLED='0')
             for name in ('DIALOGUE_DATA_FILE', 'DIALOGUE_CONFIG_FILE', 'ANALYSIS_CONFIG_FILE', 'CONVERSATION_SUMMARIES_FILE'):
                 environment[name] = str(runtime / (name.lower() + '.json'))
             old_cookie = ''
@@ -94,6 +97,61 @@ class StartupTests(unittest.TestCase):
                 finally:
                     process.terminate()
                     process.communicate(timeout=5)
+
+    def test_launcher_records_environment_alert_without_browser_polling(self):
+        class MockRdk(BaseHTTPRequestHandler):
+            def do_GET(self):
+                if self.path != '/api/iot_payload':
+                    self.send_error(404)
+                    return
+                payload = json.dumps({
+                    'connected': True, 'collected_at': time.time(), 'eco2': 1800,
+                }).encode()
+                self.send_response(200)
+                self.send_header('Content-Type', 'application/json')
+                self.end_headers()
+                self.wfile.write(payload)
+
+            def log_message(self, *_args):
+                pass
+
+        with tempfile.TemporaryDirectory() as directory, ThreadingHTTPServer(('127.0.0.1', 0), MockRdk) as rdk:
+            runtime = Path(directory)
+            accounts = runtime / 'auth.json'
+            AccessStore(accounts).create_user('owner', 'owner-fixture', role='admin')
+            events = runtime / 'events.json'
+            environment = {
+                **os.environ, 'DASHBOARD_AUTH_FILE': str(accounts), 'PROJECT_ROOT': str(runtime),
+                'EVENTS_FILE': str(events), 'RDK_BASE': f'http://127.0.0.1:{rdk.server_port}',
+                'ENV_MONITOR_ENABLED': '1', 'ENV_ECO2_LIMIT': '1000', 'PYTHONIOENCODING': 'utf-8',
+            }
+            for key in ('DIALOGUE_DATA_FILE', 'DIALOGUE_CONFIG_FILE', 'ANALYSIS_CONFIG_FILE',
+                        'CONVERSATION_SUMMARIES_FILE', 'HEALTH_STUDENTS_FILE', 'HEALTH_RECORDS_FILE'):
+                environment[key] = str(runtime / f'{key.lower()}.json')
+            thread = threading.Thread(target=rdk.serve_forever, daemon=True)
+            thread.start()
+            try:
+                with socket.socket() as free:
+                    free.bind(('127.0.0.1', 0))
+                    port = free.getsockname()[1]
+                with subprocess.Popen(
+                    [sys.executable, str(ROOT / 'scripts/run_dashboard.py'), '--no-browser', '--port', str(port)],
+                    cwd=ROOT, env=environment, stdin=subprocess.DEVNULL,
+                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                ) as process:
+                    try:
+                        deadline = time.monotonic() + 6
+                        while not events.is_file() and process.poll() is None and time.monotonic() < deadline:
+                            time.sleep(.05)
+                        self.assertTrue(events.is_file(), 'Expected a background event without a browser request')
+                        recorded = json.loads(events.read_text(encoding='utf-8'))
+                        self.assertTrue(any(event['event_type'] == 'environment' for event in recorded))
+                    finally:
+                        process.terminate()
+                        process.communicate(timeout=5)
+            finally:
+                rdk.shutdown()
+                thread.join(timeout=2)
 
 
 if __name__ == '__main__':
