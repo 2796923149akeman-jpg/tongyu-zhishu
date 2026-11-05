@@ -10,6 +10,7 @@ py -3.10 -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r tests\requirements.txt
 .\.venv\Scripts\python.exe -m pip install pre-commit
 pre-commit install
+pre-commit install --hook-type commit-msg
 ```
 
 运行网页：
@@ -62,6 +63,19 @@ chore(ci): run ruff in the checks workflow
 
 > 说明：2026-11-04 之前的提交早于本规范，历史信息中英混用；新提交统一按上述格式。
 
+提交标题由 `scripts/check_commit_messages.py` 自动检查：
+
+```powershell
+# 检查最近一次提交
+python scripts/check_commit_messages.py
+
+# 检查当前分支相对 main 新增的提交
+python scripts/check_commit_messages.py --range origin/main..HEAD
+```
+
+CI 会对 Pull Request 或 Push 包含的提交执行同样的检查。历史提交不改写 SHA，
+以保证已有 PR、文档链接和追溯记录继续有效。
+
 ## 4. 提交前检查
 
 `pre-commit install` 后，`git commit` 会自动执行：
@@ -69,6 +83,7 @@ chore(ci): run ruff in the checks workflow
 - 去除行尾空格、补齐文件末尾换行；
 - 检查 YAML/JSON 语法、私钥和大文件；
 - `ruff check --fix`（仅 `dashboard/`、`scripts/`、`tests/`）。
+- 校验提交标题符合 Conventional Commits。
 
 也可以手动执行：
 

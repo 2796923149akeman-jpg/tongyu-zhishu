@@ -193,7 +193,7 @@
 
 ## 答辩交付复查（2026-11-05）
 
-- Windows 11（构建 26200）、Python 3.13.9。全量 unittest 113 项通过，仓库检查无错误。
+- Windows 11（构建 26200）、Python 3.13.9。全量 unittest 117 项通过，仓库检查无错误。
 - `run_dashboard.py` 和直接启动共享后台任务入口。新增回归用例从 F5 入口启动，
   模拟 RDK 返回 eCO₂ 超限，确认没有浏览器请求也会写入一条环境事件。
 - 用 Windows PowerShell 运行 `scripts/demo.ps1 -NoBrowser`。模拟 RDK 与 Dashboard

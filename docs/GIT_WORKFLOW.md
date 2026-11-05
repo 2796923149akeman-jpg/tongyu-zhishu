@@ -33,7 +33,14 @@ main                稳定、可运行、可演示
   `feat(events): add participant assignment by student name`；
 - 一次提交只做一件事；格式化、重命名与功能改动分开；
 - 提交前运行 `pre-commit`（见根目录 `.pre-commit-config.yaml`）；
+- `commit-msg` 钩子和 CI 使用 `scripts/check_commit_messages.py` 强制检查标题；
 - 历史提交（2026-11-04 之前）早于本规范，存在中英混用，不再改写历史。
+
+检查当前分支新增提交：
+
+```powershell
+python scripts/check_commit_messages.py --range origin/main..HEAD
+```
 
 ## 4. Issue 使用
 

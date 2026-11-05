@@ -257,7 +257,7 @@ python -m unittest discover -s tests -v
 python scripts\verify_repository.py
 ```
 
-当前自动化测试共 113 项，覆盖登录权限与角色、RDK 数据代理、事件抓拍与家长可见性、环境与对话事件、通知记录、对话删除、测温及日报接口、传感器字段过滤和消息写入与转发。浏览器检查覆盖页面渲染和设备筛选。真实设备联调记录模板见 [真实设备联调记录](docs/DEVICE_VALIDATION.md)，演示视频录制步骤见 [演示脚本](docs/DEMO_SCRIPT.md)，测试计划与历史覆盖率见 [测试计划](docs/TEST_PLAN.md)。详细结果及软件限制见 [验证记录](docs/VALIDATION.md)。
+当前自动化测试共 117 项，覆盖登录权限与角色、RDK 数据代理、事件抓拍与家长可见性、环境与对话事件、通知记录、对话删除、测温及日报接口、传感器字段过滤、提交信息规范和消息写入与转发。浏览器检查覆盖页面渲染和设备筛选。真实设备联调记录模板见 [真实设备联调记录](docs/DEVICE_VALIDATION.md)，演示视频录制步骤见 [演示脚本](docs/DEMO_SCRIPT.md)，测试计划与历史覆盖率见 [测试计划](docs/TEST_PLAN.md)。详细结果及软件限制见 [验证记录](docs/VALIDATION.md)。
 
 ## 10. 团队开发与开源说明
 
