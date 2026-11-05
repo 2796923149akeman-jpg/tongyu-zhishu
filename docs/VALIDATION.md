@@ -191,3 +191,15 @@
 - 本地覆盖率测量：合计 80%（`server.py` 79%、`access_control.py` 91%、
   `event_contract.py` 88%），命令见 `docs/TEST_PLAN.md`；
 - 当前完整回归：112 项测试通过，`verify_repository.py` 0 错误，ruff 0 错误。
+
+## 答辩交付复查（2026-11-05）
+
+- Windows 11（构建 26200）、Python 3.13.9。全量 unittest 113 项通过，仓库检查无错误。
+- `run_dashboard.py` 和直接启动共享后台任务入口。新增回归用例从 F5 入口启动，
+  模拟 RDK 返回 eCO₂ 超限，确认没有浏览器请求也会写入一条环境事件。
+- 用 Windows PowerShell 运行 `scripts/demo.ps1 -NoBrowser`。模拟 RDK 与 Dashboard
+  使用不同的本机端口，连续 5 次读取同一摔倒告警只新增 1 条事件，测试抓拍成功。
+- 使用两个虚构家长账号核对同一事件的详情和授权截图。绑定账号两项均返回 `200`，
+  另一个账号两项均返回 `404`。对照初始版本的结果见 [重构对照](REFACTORING.md)。
+- 共用 JSON 原子写入工具，人物估算结果继承 Windows 文件占用时的有界重试。
+  用例覆盖重试和成功落盘，摄像头与模型的现场稳定性仍需真机验证。

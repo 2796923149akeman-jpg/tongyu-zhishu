@@ -46,7 +46,7 @@
 | 安全与供应链 | [信息安全设计](docs/SECURITY.md)、[开源供应链](docs/SUPPLY_CHAIN.md) |
 | 测试与实验 | [测试计划](docs/TEST_PLAN.md)、[实验与量化](docs/EXPERIMENTS.md)、[验证记录](docs/VALIDATION.md) |
 | 团队与协作 | [团队分工与 KPI](docs/TEAM.md)、[Git 工作流](docs/GIT_WORKFLOW.md)、[贡献指南](CONTRIBUTING.md)、[代码风格](docs/CODE_STYLE.md) |
-| 答辩材料 | [演示脚本](docs/DEMO_SCRIPT.md)、[真实设备联调记录](docs/DEVICE_VALIDATION.md)、[开题对照](docs/PROPOSAL_REVIEW.md) |
+| 答辩材料 | [答辩交付与评分证据](docs/DEFENSE.md)、[演示脚本](docs/DEMO_SCRIPT.md)、[真实设备联调记录](docs/DEVICE_VALIDATION.md)、[开题对照](docs/PROPOSAL_REVIEW.md) |
 
 ## 3. 系统软件架构
 
@@ -255,7 +255,7 @@ python -m unittest discover -s tests -v
 python scripts\verify_repository.py
 ```
 
-当前自动化测试共 112 项，覆盖登录权限与角色、RDK 数据代理、事件抓拍与家长可见性、环境与对话事件、通知记录、对话删除、测温及日报接口、传感器字段过滤和消息写入与转发。浏览器检查覆盖页面渲染和设备筛选。真实设备联调记录模板见 [真实设备联调记录](docs/DEVICE_VALIDATION.md)，演示视频录制步骤见 [演示脚本](docs/DEMO_SCRIPT.md)，测试计划与覆盖率（合计 80%）见 [测试计划](docs/TEST_PLAN.md)。详细结果及软件限制见 [验证记录](docs/VALIDATION.md)。
+当前自动化测试共 113 项，覆盖登录权限与角色、RDK 数据代理、事件抓拍与家长可见性、环境与对话事件、通知记录、对话删除、测温及日报接口、传感器字段过滤和消息写入与转发。浏览器检查覆盖页面渲染和设备筛选。真实设备联调记录模板见 [真实设备联调记录](docs/DEVICE_VALIDATION.md)，演示视频录制步骤见 [演示脚本](docs/DEMO_SCRIPT.md)，测试计划与历史覆盖率见 [测试计划](docs/TEST_PLAN.md)。详细结果及软件限制见 [验证记录](docs/VALIDATION.md)。
 
 ## 10. 团队开发与开源说明
 

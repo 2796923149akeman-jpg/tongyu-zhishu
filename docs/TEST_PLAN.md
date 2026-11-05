@@ -25,7 +25,7 @@
 
 CI：`.github/workflows/checks.yml` 在 push/PR 时执行单元测试、仓库自检和 ruff。
 
-## 3. 用例分布（共 112 项）
+## 3. 用例分布（共 113 项）
 
 | 测试文件 | 数量 | 覆盖内容 |
 |---|---|---|
@@ -41,7 +41,7 @@ CI：`.github/workflows/checks.yml` 在 push/PR 时执行单元测试、仓库�
 | `test_health_report.py` | 7 | 日报统计、跨日、班级筛选、导出数据 |
 | `test_monitor_events_ux.py` | 8 | 事件页控件、快捷筛选、证据与重试区域、DOM 完整性 |
 | `test_person_type.py` | 9 | 可选人物估算进程与接口 |
-| `test_startup.py` | 2 | 启动脚本与仓库结构 |
+| `test_startup.py` | 3 | 管理员初始化、F5 重启与后台环境监控 |
 | `test_weather.py` | 5 | 天气工具调用与失败处理 |
 
 ## 4. 需求覆盖
@@ -58,7 +58,7 @@ CI：`.github/workflows/checks.yml` 在 push/PR 时执行单元测试、仓库�
 
 ## 5. 验收命令与通过标准
 
-- 单元测试：`Ran 112 tests ... OK`；
+- 单元测试：`Ran 113 tests ... OK`；
 - 仓库自检：`{"errors": 0}`；
 - ruff：`All checks passed!`；
 - 浏览器手工检查：见 `docs/VALIDATION.md` 与 `docs/MONITOR_EVENTS_UI.md`；

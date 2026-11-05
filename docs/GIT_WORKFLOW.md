@@ -22,7 +22,7 @@ main                稳定、可运行、可演示
 |---|---|---|
 | #1 `feat/monitor-events-ui` | 监控与异常事件界面改版 | Merge pull request |
 | #3–#13 系列分支 | 事件契约、健康日报、账号权限、人物估算、实时红外 | Merge pull request |
-| #14 `feat/family-safety-events` | 家长安全事件、账号角色、家长日报 | Merge pull request |
+| #14 `feat/family-safety-events` | 家长安全事件箱、学生绑定和家长范围验证 | Merge pull request |
 | `fix/family-access-reports` | 日报口径修复、账号角色、商家传感器、开题对照 | 合并到 `main` |
 
 后续任务统一在 GitHub Issues 中登记，PR 描述关联 `Closes #id`。
