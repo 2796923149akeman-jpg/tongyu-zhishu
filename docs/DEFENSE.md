@@ -40,7 +40,7 @@
 | 4 | 已记录软件、模拟环境及真机联调条件 | [环境说明](ENVIRONMENT.md)、[历史联调与当日抽查](DEVICE_VALIDATION.md)。演示时注明所引用的记录版本和范围 |
 | 5 | 已有自动化用例和启动回归 | [测试计划](TEST_PLAN.md)、[本次验证](VALIDATION.md) |
 | 6 | 已有安全设计和越权验证 | [安全设计](SECURITY.md)。本次模拟验证中，同一事件详情和授权截图对绑定家长返回 `200`，对另一家长返回 `404` |
-| 7 | 已录制模拟链路短片，正式提交链接待填写 | [录制脚本](DEMO_SCRIPT.md)。正式视频需标明设备或模拟数据来源，附评阅者可访问的地址 |
+| 7 | 已提供 42 秒系统演示视频，使用模拟 RDK 和合成数据 | [下载演示视频](https://github.com/2796923149akeman-jpg/tongyu-zhishu/releases/tag/course-demo) · [现场演示流程](DEMO_SCRIPT.md) |
 
 ### 团队与经验
 
