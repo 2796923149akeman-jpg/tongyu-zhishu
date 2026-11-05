@@ -1,8 +1,8 @@
 """Weather lookup regression tests; no API credentials or external requests."""
 import copy
 import importlib.util
-from pathlib import Path
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 import httpx

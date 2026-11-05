@@ -12,7 +12,6 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from urllib.parse import urlsplit
 
-
 EVENT_LEVELS = ("urgent", "watch", "info")
 EVENT_STATUSES = ("pending", "resolved", "false_alarm")
 EVENT_TYPES = (

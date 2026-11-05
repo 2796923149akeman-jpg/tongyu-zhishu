@@ -6,9 +6,8 @@
 
 from __future__ import annotations
 
-from collections import Counter
 import math
-
+from collections import Counter
 
 HEAD_POINTS = (0, 1, 2, 3, 4)
 SHOULDER_POINTS = (5, 6)

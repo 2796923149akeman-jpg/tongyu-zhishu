@@ -6,7 +6,6 @@ import hashlib
 import math
 from datetime import datetime, timedelta, timezone
 
-
 LOCAL_TZ = timezone(timedelta(hours=8))
 MIN_TEMPERATURE = 35.0
 MAX_TEMPERATURE = 42.0

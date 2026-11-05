@@ -5,12 +5,10 @@ import unittest
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "dashboard"))
 
 import health_realtime as realtime  # noqa: E402
-
 
 NOW = datetime(2026, 11, 4, 10, 0, 10, tzinfo=timezone(timedelta(hours=8)))
 

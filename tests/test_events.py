@@ -8,12 +8,11 @@ import threading
 import unittest
 import urllib.error
 import urllib.request
-from urllib.parse import urlencode
 from datetime import datetime, timedelta, timezone
 from email.message import Message
 from pathlib import Path
 from unittest.mock import patch
-
+from urllib.parse import urlencode
 
 ROOT = Path(__file__).resolve().parents[1]
 

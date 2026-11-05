@@ -7,9 +7,9 @@ STM32 传感器数据转发到同一个简易网页，并提供 ESP32 对话回�
 
 from __future__ import annotations
 
-import json
 import hashlib
 import hmac
+import json
 import math
 import os
 import queue
@@ -18,28 +18,37 @@ import tempfile
 import threading
 import time
 import unicodedata
+import urllib.error
+import urllib.request
 import uuid
 from collections import deque
 from datetime import datetime, timedelta, timezone
-import urllib.error
-import urllib.request
 from http.client import HTTPException
+from http.cookies import CookieError, SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from http.cookies import SimpleCookie, CookieError
 from pathlib import Path
-from urllib.parse import parse_qs, unquote, urlparse, quote
-
+from urllib.parse import parse_qs, quote, unquote, urlparse
 
 ROOT = Path(__file__).resolve().parent
 import sys
+
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from access_control import COOKIE_NAME, MODULES, AccessStore
 from analysis import (
-    ATTENTION_ORDER, DEFAULT_ANALYSIS_CONFIG, analyze_emotion, analyze_lexicon,
-    load_lexicon, load_xiaozhi_model, local_conversation_summary,
-    public_analysis_config, public_xiaozhi_model, summarize_conversation,
-    update_xiaozhi_model, validate_analysis_config,
+    ATTENTION_ORDER,
+    DEFAULT_ANALYSIS_CONFIG,
+    analyze_emotion,
+    analyze_lexicon,
+    load_lexicon,
+    load_xiaozhi_model,
+    local_conversation_summary,
+    public_analysis_config,
+    public_xiaozhi_model,
+    summarize_conversation,
+    update_xiaozhi_model,
+    validate_analysis_config,
 )
 from event_contract import (
     EVENT_LEVELS,
@@ -52,14 +61,13 @@ from event_contract import (
     date_key,
     event_for_report,
     make_event_id,
-    normalize_iso,
     normalize_event,
+    normalize_iso,
     now_iso,
     parse_datetime,
     text_value,
     validate_status_transition,
 )
-from access_control import AccessStore, COOKIE_NAME, MODULES
 from health_realtime import normalize_infrared_payload, refresh_infrared_status
 from person_type_runtime import PersonTypeRuntime
 
@@ -1679,7 +1687,6 @@ def build_daily_report(params: dict) -> dict:
     class_id = ((params.get("class_id") or [""])[-1]).strip()
     students = health_student_snapshot()
     all_classes = health_classes_payload()
-    class_names = {item["id"]: item["name"] for item in all_classes}
     active_students = [item for item in students if item.get("active", True)]
     if class_id:
         active_students = [item for item in active_students if item.get("class_id") == class_id]

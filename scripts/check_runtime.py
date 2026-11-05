@@ -1,9 +1,9 @@
 """Check local prerequisites; no network requests or credential output."""
 import importlib.util
 import json
-from pathlib import Path
 import shutil
 import sys
+from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 

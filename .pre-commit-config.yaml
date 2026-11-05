@@ -1,0 +1,21 @@
+# 本地提交前检查：安装方式 pip install pre-commit && pre-commit install
+# 提交信息格式检查见 CONTRIBUTING.md；当前钩子只做低风险自动修复。
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-json
+        exclude: ^xiaozhi-server/
+      - id: check-added-large-files
+        args: ["--maxkb=1024"]
+      - id: detect-private-key
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.17.3
+    hooks:
+      - id: ruff
+        args: ["check", "--fix"]
+        files: ^(dashboard|scripts|tests)/.*\.py$

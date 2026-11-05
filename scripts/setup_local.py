@@ -1,6 +1,6 @@
 """Initialize a private config from the example; keep existing local settings."""
-from pathlib import Path
 import shutil
+from pathlib import Path
 
 root = Path(__file__).resolve().parents[1]
 target = root / 'xiaozhi-server/data/.config.yaml'

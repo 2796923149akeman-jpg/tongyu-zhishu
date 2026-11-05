@@ -2,19 +2,19 @@
 import http.client
 import json
 import os
-from pathlib import Path
 import socket
 import subprocess
 import sys
 import tempfile
 import time
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'dashboard'))
-from access_control import AccessStore
 import manage_access
+from access_control import AccessStore
 
 
 class StartupTests(unittest.TestCase):

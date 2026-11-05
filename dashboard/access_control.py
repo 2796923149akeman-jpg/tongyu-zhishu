@@ -6,13 +6,13 @@ import hashlib
 import hmac
 import json
 import os
-from pathlib import Path
 import re
 import secrets
 import tempfile
 import threading
 import time
 import unicodedata
+from pathlib import Path
 
 MODULES = ("monitor", "events", "chat", "health", "reports")
 DEFAULT_POLICY = {"modules": dict.fromkeys(MODULES, True), "video": False, "dialogue_raw": False}

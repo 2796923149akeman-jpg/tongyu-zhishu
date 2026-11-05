@@ -1,10 +1,9 @@
 """Audit the exact Git-visible candidate files without staging or committing."""
 import ast
 import json
-from pathlib import Path
 import re
 import subprocess
-import sys
+from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 

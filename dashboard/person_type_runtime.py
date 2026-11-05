@@ -2,14 +2,14 @@
 from __future__ import annotations
 
 import atexit
-from datetime import datetime, timezone
 import json
 import os
-from pathlib import Path
 import subprocess
 import sys
 import threading
 import uuid
+from datetime import datetime, timezone
+from pathlib import Path
 
 
 class PersonTypeRuntime:

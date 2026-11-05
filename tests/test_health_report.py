@@ -5,14 +5,14 @@
 """
 import importlib.util
 import json
-from html.parser import HTMLParser
-from pathlib import Path
 import re
 import tempfile
 import threading
 import unittest
 import urllib.error
 import urllib.request
+from html.parser import HTMLParser
+from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 

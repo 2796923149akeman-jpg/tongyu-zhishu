@@ -4,15 +4,12 @@ import importlib.util
 import json
 import sys
 import tempfile
-import threading
 import unittest
-import urllib.error
-import urllib.request
 from pathlib import Path
 from unittest.mock import patch
+
 import test_access as access_tests
 from person_type_runtime import PersonTypeRuntime
-
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "dashboard"))
