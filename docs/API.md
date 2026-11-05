@@ -261,6 +261,15 @@ offset=0
 
 成功返回 HTTP `201`。相同 `dedupe_key` 再次写入不会产生第二条事件，返回 HTTP `200` 和原事件，`duplicate` 为 `true`。
 
+### 事件播报与通知结果
+
+配置 `ALERT_NOTIFY_URL` 后，摔倒/斗殴事件保存后会异步向该地址 POST JSON
+（`event_id`、`event_type`、`level`、`summary`、`location`、`occurred_at`、
+`message`），供 ESP32 TTS 网关或其它播报服务使用。成功时事件处理记录追加
+“设备播报”，失败追加“设备播报失败”并写明异常类型；通知失败不影响事件入库。
+`ALERT_NOTIFY_TIMEOUT` 默认 3 秒，只接受 `http`/`https` 地址；未配置时跳过，
+不会在事件中留下空记录。事件页轮询本身负责网页端提醒。
+
 ### `POST /api/events/{id}/status`
 
 ```json

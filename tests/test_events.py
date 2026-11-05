@@ -391,5 +391,47 @@ class EventApiTests(unittest.TestCase):
         self.assertNotIn("evidence_captured_at", event)
 
 
+    def test_fall_event_notifies_configured_channel(self):
+        self.web.ALERT_NOTIFY_URL = "http://notify.local/alert"
+        with patch.object(self.web, "notify_event_async") as notify:
+            status, created = self.request("/api/events", self.event_payload(), "POST")
+            self.assertEqual(status, 201)
+            notify.assert_called_once()
+            self.assertEqual(notify.call_args[0][0]["event_type"], "fall")
+
+    def test_notification_success_and_failure_are_recorded(self):
+        status, created = self.request("/api/events", self.event_payload(), "POST")
+        event_id = created["event"]["id"]
+        self.web.ALERT_NOTIFY_URL = "http://notify.local/alert"
+
+        class Response:
+            status = 200
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+        with patch.object(self.web.urllib.request, "urlopen", return_value=Response()):
+            self.assertTrue(self.web.deliver_event_notification(self.web.get_event(event_id)))
+        event = self.web.get_event(event_id)
+        self.assertEqual(event["history"][-1]["action"], "设备播报")
+        self.assertEqual(event["history"][-1]["by"], "通知服务")
+
+        with patch.object(self.web.urllib.request, "urlopen", side_effect=OSError("down")):
+            self.assertFalse(self.web.deliver_event_notification(self.web.get_event(event_id)))
+        event = self.web.get_event(event_id)
+        self.assertEqual(event["history"][-1]["action"], "设备播报失败")
+
+    def test_notification_only_for_behavior_alerts(self):
+        self.web.ALERT_NOTIFY_URL = "http://notify.local/alert"
+        with patch.object(self.web.threading, "Thread") as thread:
+            self.web.notify_event_async({"id": "EVT-1", "event_type": "environment"})
+            thread.assert_not_called()
+            self.web.notify_event_async({"id": "EVT-2", "event_type": "fall"})
+            thread.assert_called_once()
+
+
 if __name__ == "__main__":
     unittest.main()

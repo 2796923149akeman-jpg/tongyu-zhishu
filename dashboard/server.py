@@ -107,6 +107,12 @@ ENV_TVOC_LIMIT = float(os.environ.get("ENV_TVOC_LIMIT", "500"))
 ENV_EVENT_WINDOW_SECONDS = max(60, int(os.environ.get("ENV_EVENT_WINDOW_SECONDS", "1800")))
 ENV_STATE_LOCK = threading.Lock()
 ENV_ACTIVE_CONDITIONS: set[str] = set()
+# 事件通知：可选 HTTP 播报通道（例如 ESP32 TTS 网关），失败不影响事件记录。
+ALERT_NOTIFY_URL = os.environ.get("ALERT_NOTIFY_URL", "").strip()
+ALERT_NOTIFY_TIMEOUT = max(1.0, float(os.environ.get("ALERT_NOTIFY_TIMEOUT", "3")))
+if ALERT_NOTIFY_URL and urlparse(ALERT_NOTIFY_URL).scheme not in ("http", "https"):
+    print("[EVENT] ALERT_NOTIFY_URL ignored: only http/https is supported")
+    ALERT_NOTIFY_URL = ""
 HEALTH_SOURCES = ("forehead", "infrared", "ear", "axillary")
 HEALTH_SOURCE_LABELS = {
     "forehead": "额温枪",
@@ -556,6 +562,7 @@ def create_event(payload: dict) -> tuple[dict, int]:
                 event_snapshot_path(removed["id"]).unlink(missing_ok=True)
             except OSError as exc:
                 print(f"[EVENT] snapshot cleanup failed: {type(exc).__name__}")
+    notify_event_async(event)
     return {"event": copy_event(event), "duplicate": False}, 201
 
 
@@ -785,6 +792,69 @@ def record_rdk_alert(data: dict) -> None:
                 capture_event_snapshot(result["event"]["id"])
             except (OSError, ValueError, HTTPException) as exc:
                 print(f"[EVENT] snapshot unavailable: {type(exc).__name__}")
+
+
+def notify_event_async(event: dict) -> None:
+    """事件保存后异步通知播报通道；未配置或非行为告警时跳过。"""
+    if not ALERT_NOTIFY_URL or event.get("event_type") not in ("fall", "fight"):
+        return
+    snapshot = copy_event(event)
+    threading.Thread(
+        target=deliver_event_notification,
+        args=(snapshot,),
+        name=f"notify-{event.get('id', 'event')}",
+        daemon=True,
+    ).start()
+
+
+def deliver_event_notification(event: dict) -> bool:
+    """向配置的播报通道推送事件，并把成功或失败写入事件处理记录。"""
+    payload = {
+        "event_id": event.get("id"),
+        "event_type": event.get("event_type"),
+        "level": event.get("level"),
+        "summary": event.get("summary"),
+        "location": event.get("location"),
+        "occurred_at": event.get("occurred_at"),
+        "message": (
+            "检测到疑似摔倒，请立即查看现场。"
+            if event.get("event_type") == "fall"
+            else "检测到疑似斗殴，请立即查看现场。"
+        ),
+    }
+    action, note, delivered = "设备播报", "已推送告警播报", True
+    try:
+        request = urllib.request.Request(
+            ALERT_NOTIFY_URL,
+            data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+            headers={
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+                "User-Agent": "TongyuDashboard/1.0",
+            },
+            method="POST",
+        )
+        with urllib.request.urlopen(request, timeout=ALERT_NOTIFY_TIMEOUT) as response:
+            if response.status >= 400:
+                raise OSError(f"HTTP {response.status}")
+    except Exception as exc:
+        delivered = False
+        action = "设备播报失败"
+        note = f"通知发送失败：{type(exc).__name__}"
+    with EVENTS_LOCK:
+        index = next(
+            (i for i, item in enumerate(EVENTS) if item.get("id") == event.get("id")),
+            None,
+        )
+        if index is None:
+            return delivered
+        target = copy_event(EVENTS[index])
+        now = now_iso()
+        target["history"].append({"at": now, "action": action, "by": "通知服务", "note": note})
+        target["history"] = target["history"][-100:]
+        target["updated_at"] = now
+        replace_event(index, target)
+    return delivered
 
 
 def environment_reading(data: dict) -> dict | None:
