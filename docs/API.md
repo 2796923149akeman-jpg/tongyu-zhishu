@@ -110,6 +110,21 @@
 }
 ```
 
+### 环境与设备异常自动事件
+
+Dashboard 启动后在后台每 `ENV_MONITOR_SECONDS`（默认 30 秒）读取一次 RDK
+`/api/iot_payload`，并把异常状态写入统一事件库：
+
+- `connected=false` → `device_offline`（来源 `device`）；
+- 缺少采集时间或采集时间超过 `ENV_STALE_SECONDS`（默认 60 秒）→ `sensor_expired`；
+- `eco2` 超过 `ENV_ECO2_LIMIT`（默认 1000 ppm）或 `tvoc` 超过
+  `ENV_TVOC_LIMIT`（默认 500 ppb）→ `environment`，详情保存当前读数与阈值。
+
+只在“正常 → 异常”的上升沿创建事件；恢复后重置状态。同一异常在
+`ENV_EVENT_WINDOW_SECONDS`（默认 1800 秒）内按 `dedupe_key` 去重，服务重启
+不会重复建事件。设备读取失败只写服务日志，不会生成事件。设置
+`ENV_MONITOR_ENABLED=0` 可关闭后台监控。
+
 ### `GET /api/rdk/person-types`
 
 需登录并开放监控、视频权限（管理员不受开关限制）。返回可选人物估算进程状态；默认关闭，不启动模型。状态为 disabled、starting、running、stale 或 error。只有 running 返回本次运行且未过期的人数，不返回摄像头源地址、人物框、模型本地路径或日志。

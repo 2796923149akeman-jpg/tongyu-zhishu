@@ -98,6 +98,15 @@ HEALTH_INFRARED_STALE_SECONDS = max(
     int(os.environ.get("HEALTH_INFRARED_STALE_SECONDS", "10")),
 )
 EVENTS_LIMIT = 2000
+# 环境/设备异常监控：后台定时读取 RDK 传感器数据，按状态边沿生成事件。
+ENV_MONITOR_ENABLED = os.environ.get("ENV_MONITOR_ENABLED", "1") != "0"
+ENV_MONITOR_SECONDS = max(10, int(os.environ.get("ENV_MONITOR_SECONDS", "30")))
+ENV_STALE_SECONDS = max(10, int(os.environ.get("ENV_STALE_SECONDS", "60")))
+ENV_ECO2_LIMIT = float(os.environ.get("ENV_ECO2_LIMIT", "1000"))
+ENV_TVOC_LIMIT = float(os.environ.get("ENV_TVOC_LIMIT", "500"))
+ENV_EVENT_WINDOW_SECONDS = max(60, int(os.environ.get("ENV_EVENT_WINDOW_SECONDS", "1800")))
+ENV_STATE_LOCK = threading.Lock()
+ENV_ACTIVE_CONDITIONS: set[str] = set()
 HEALTH_SOURCES = ("forehead", "infrared", "ear", "axillary")
 HEALTH_SOURCE_LABELS = {
     "forehead": "额温枪",
@@ -776,6 +785,146 @@ def record_rdk_alert(data: dict) -> None:
                 capture_event_snapshot(result["event"]["id"])
             except (OSError, ValueError, HTTPException) as exc:
                 print(f"[EVENT] snapshot unavailable: {type(exc).__name__}")
+
+
+def environment_reading(data: dict) -> dict | None:
+    """把 RDK 传感器上报归一化为监控判断所需的读数。"""
+    if not isinstance(data, dict):
+        return None
+    sensor = data.get("sensor") if isinstance(data.get("sensor"), dict) else data
+    properties = data.get("properties")
+    if not isinstance(properties, dict):
+        properties = sensor.get("properties") if isinstance(sensor.get("properties"), dict) else sensor
+
+    def number(key: str):
+        raw = data.get(key, properties.get(key))
+        if type(raw) not in (int, float, str):
+            return None
+        try:
+            value = float(raw)
+        except (TypeError, ValueError):
+            return None
+        return value if math.isfinite(value) else None
+
+    timestamp = data.get("timestamp") or properties.get("timestamp")
+    normalized = None
+    if isinstance(timestamp, str) and timestamp.strip():
+        try:
+            normalized = normalize_iso(timestamp)
+        except EventValidationError:
+            normalized = None
+    connected = data.get("connected", sensor.get("connected"))
+    return {
+        "connected": connected if isinstance(connected, bool) else None,
+        "timestamp": normalized,
+        "eco2": number("eco2"),
+        "tvoc": number("tvoc"),
+        "sht_t": number("sht_t"),
+        "sht_h": number("sht_h"),
+        "device_id": text_value(
+            data.get("device_id") or sensor.get("device_id"),
+            "device_id",
+            160,
+            default="",
+        ),
+    }
+
+
+def environment_conditions(reading: dict) -> list[dict]:
+    """根据一次读数生成待上报的异常条件；正常时返回空列表。"""
+    if reading.get("connected") is False:
+        return [{
+            "key": "offline",
+            "event_type": "device_offline",
+            "source": "device",
+            "summary": "环境传感器连接断开",
+            "detail": "传感器上报 connected=false，监控页会保留最后一次读数；请检查供电、串口和网络连接。",
+        }]
+    conditions = []
+    if reading.get("timestamp") is None:
+        conditions.append({
+            "key": "stale-unknown",
+            "event_type": "sensor_expired",
+            "source": "sensor",
+            "summary": "环境数据缺少采集时间",
+            "detail": "传感器上报未包含可解析的采集时间，无法判断数据是否新鲜，请检查设备时钟和上报格式。",
+        })
+    else:
+        try:
+            age = (datetime.now(timezone.utc) - parse_datetime(reading["timestamp"])).total_seconds()
+        except EventValidationError:
+            age = None
+        if age is not None and age > ENV_STALE_SECONDS:
+            conditions.append({
+                "key": "stale",
+                "event_type": "sensor_expired",
+                "source": "sensor",
+                "summary": "环境数据超过刷新时间",
+                "detail": f"最近一次采集在 {int(age)} 秒前，超过 {ENV_STALE_SECONDS} 秒阈值；页面会保留最后读数并继续重试。",
+            })
+    if reading.get("eco2") is not None and reading["eco2"] > ENV_ECO2_LIMIT:
+        conditions.append({
+            "key": "eco2",
+            "event_type": "environment",
+            "source": "sensor",
+            "summary": "室内 eCO₂ 偏高",
+            "detail": f"当前 eCO₂ 为 {reading['eco2']:.0f} ppm，超过参考阈值 {ENV_ECO2_LIMIT:.0f} ppm；请开窗通风并复核读数。",
+        })
+    if reading.get("tvoc") is not None and reading["tvoc"] > ENV_TVOC_LIMIT:
+        conditions.append({
+            "key": "tvoc",
+            "event_type": "environment",
+            "source": "sensor",
+            "summary": "室内 TVOC 偏高",
+            "detail": f"当前 TVOC 为 {reading['tvoc']:.0f} ppb，超过参考阈值 {ENV_TVOC_LIMIT:.0f} ppb；请检查通风和污染源。",
+        })
+    return conditions
+
+
+def evaluate_environment(reading: dict) -> list[dict]:
+    """按异常状态的上升沿创建事件；恢复后重置，30 分钟窗口内不重复建事件。"""
+    global ENV_ACTIVE_CONDITIONS
+    conditions = environment_conditions(reading)
+    active = {item["key"] for item in conditions}
+    with ENV_STATE_LOCK:
+        previous = set(ENV_ACTIVE_CONDITIONS)
+        ENV_ACTIVE_CONDITIONS = active
+    created = []
+    bucket = int(time.time() // ENV_EVENT_WINDOW_SECONDS)
+    for condition in conditions:
+        if condition["key"] in previous:
+            continue
+        try:
+            result, _ = create_event({
+                "event_type": condition["event_type"],
+                "level": "watch",
+                "source": condition["source"],
+                "status": "pending",
+                "occurred_at": now_iso(),
+                "summary": condition["summary"],
+                "detail": condition["detail"],
+                "device_id": reading.get("device_id") or "stm32-sensor",
+                "location": "环境监测区域",
+                "dedupe_key": f"env-{condition['key']}-{bucket}",
+            })
+        except (EventValidationError, OSError) as exc:
+            print(f"[ENV] unable to record {condition['key']}: {type(exc).__name__}")
+            continue
+        if not result.get("duplicate"):
+            created.append(result["event"])
+    return created
+
+
+def environment_monitor_worker() -> None:
+    while True:
+        try:
+            data = read_rdk_json("/api/iot_payload")
+            reading = environment_reading(data)
+            if reading is not None:
+                evaluate_environment(reading)
+        except Exception as exc:  # 设备不可用时保持静默，避免刷屏
+            print(f"[ENV] monitor read failed: {type(exc).__name__}")
+        time.sleep(ENV_MONITOR_SECONDS)
 
 
 def local_today() -> str:
@@ -2504,6 +2653,13 @@ class Handler(BaseHTTPRequestHandler):
 
 def main() -> None:
     start_analysis_worker()
+    if ENV_MONITOR_ENABLED:
+        threading.Thread(
+            target=environment_monitor_worker,
+            name="environment-monitor",
+            daemon=True,
+        ).start()
+        print(f"Environment monitor: every {ENV_MONITOR_SECONDS}s (eCO2>{ENV_ECO2_LIMIT:.0f}, TVOC>{ENV_TVOC_LIMIT:.0f})")
     print(f"Tongyu dashboard: http://127.0.0.1:{PORT}")
     print(f"RDK input: {RDK_BASE}")
     print("Dialogue emotion analysis and summaries run in the dashboard background.")

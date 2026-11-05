@@ -145,3 +145,16 @@
   完成后按最终结果再次判断，不会重复创建。
 - `tests/test_dialogue.py` 新增用例覆盖事件生成、去重和原文不落事件库；完整
   回归 104 项通过。
+
+## 环境与设备异常自动事件（2026-11-05）
+
+- Dashboard 启动后启动 `environment-monitor` 后台线程，默认每 30 秒读取
+  `/api/iot_payload`，判断连接断开、采集时间缺失/过期、eCO₂ 和 TVOC 超限。
+- 只在正常→异常的上升沿建事件，恢复后重置；同一异常按 1800 秒窗口用
+  `dedupe_key` 去重，服务重启不会重复建事件。
+- 阈值和周期均可用环境变量调整：`ENV_MONITOR_SECONDS`、`ENV_STALE_SECONDS`、
+  `ENV_ECO2_LIMIT`、`ENV_TVOC_LIMIT`、`ENV_EVENT_WINDOW_SECONDS`；
+  `ENV_MONITOR_ENABLED=0` 可关闭。
+- 设备读取失败只写服务日志，不会因此生成“设备离线”事件，避免网络抖动刷屏。
+- `tests/test_environment_events.py` 覆盖正常读数、离线边沿、恢复重置、过期数据、
+  气体超限和缺失采集时间；完整回归 108 项通过。
