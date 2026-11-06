@@ -261,6 +261,32 @@ class FamilyEventApiTests(unittest.TestCase):
         self.web.AUTH.update_parent_bindings("parent-one", ["S-0201"], access)
         self.assertEqual(self.request(path + "S-0201", self.parent_one)[0], 403)
 
+    def test_dialogue_batch_assignment_is_atomic_and_admin_only(self):
+        self.web.MESSAGES.extend([
+            {"id": "first", "role": "user", "text": "用户消息"},
+            {"id": "second", "role": "assistant", "text": "设备回复"},
+            {"id": "untouched", "role": "user", "text": "其他消息", "family_student_id": "S-0301"},
+        ])
+        self.web.AUTH.create_user("teacher", "teacher-password", role="admin")
+        admin = self.auth_headers("teacher", "teacher-password")
+        path = "/api/dialogue/student"
+        payload = {"ids": ["first", "second", "first"], "student_id": "S-0201"}
+        self.assertEqual(self.request(path, self.parent_one, payload)[0], 403)
+        self.assertEqual(self.request(path, admin, {**payload, "ids": []})[0], 400)
+        self.assertEqual(self.request(path, admin, {**payload, "ids": ["first", "missing"]})[0], 404)
+        self.assertNotIn("family_student_id", self.web.MESSAGES[0])
+        self.assertFalse(self.web.DATA.messages.path.exists())
+
+        self.assertEqual(self.request(path, admin, payload)[0], 200)
+        saved = json.loads(self.web.DATA.messages.path.read_text(encoding="utf-8"))
+        self.assertEqual([message.get("family_student_id") for message in saved], ["S-0201", "S-0201", "S-0301"])
+        for message in saved[:2]:
+            self.assertEqual(message["student_id"], "S-0201")
+            self.assertEqual(message["class_id"], "C-02")
+
+        self.assertEqual(self.request(path, admin, {**payload, "student_id": ""})[0], 200)
+        self.assertEqual([message.get("family_student_id") for message in self.web.MESSAGES], ["", "", "S-0301"])
+
     def test_disabling_snapshots_revokes_direct_image_access(self):
         path = self.web.event_snapshot_path(self.fall["id"])
         path.parent.mkdir(parents=True)
