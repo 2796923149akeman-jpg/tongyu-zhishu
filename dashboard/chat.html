@@ -57,6 +57,11 @@
     .avatar { display: grid; flex: 0 0 37px; width: 37px; height: 37px; place-items: center; border-radius: 11px; background: var(--brand-soft); color: var(--brand); font-weight: 700; font-size: 11px; }
     .assistant .avatar { background: var(--assistant); color: #5366aa; }
     .message-body { max-width: min(78%, 720px); }
+    .selection-bar, .message-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; }
+    .selection-bar { padding: 8px 20px; border-bottom: 1px solid var(--line); }
+    .selection-bar label, .message-actions label { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; }
+    .selection-bar input, .message-actions input { accent-color: var(--brand); }
+    .message-actions { margin-top: 6px; }
     .message-head { display: flex; gap: 8px; margin: 0 3px 6px; color: var(--muted); font-size: 11px; }
     .user .message-head { justify-content: flex-end; }
     .bubble { padding: 12px 15px; border: 1px solid var(--line); border-radius: 5px 15px 15px 15px; background: #fff; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.72; box-shadow: 0 4px 13px rgba(33, 60, 58, .04); }
@@ -194,6 +199,11 @@
           <button class="btn" id="deleteConversation" type="button" hidden disabled>删除当前会话</button>
           <div class="connection" id="connection" role="status"><span class="dot"></span><span>正在连接</span></div>
         </div>
+        <div class="selection-bar" id="studentSelection" hidden>
+          <label><input id="selectVisibleMessages" type="checkbox">全选当前显示</label>
+          <button class="button soft" id="assignSelectedMessages" type="button" disabled>批量关联学生</button>
+          <span id="studentSelectionCount" role="status"></span>
+        </div>
         <section class="message-list" id="messageList" aria-live="polite" aria-label="对话消息">
           <div class="empty" id="empty"><div><strong>暂无对话记录</strong><span>设备产生语音对话后，记录会显示在这里。</span></div></div>
         </section>
@@ -250,11 +260,11 @@
 
   <dialog id="studentDialog">
     <form id="studentForm">
-      <div class="dialog-head"><h2>关联本条对话</h2></div>
-      <div class="settings-grid">
-        <p>请选择这条对话所属的孩子。开放对话权限后，对应家长可在日报中查看本条内容。</p>
-        <label>学生 <select id="dialogueStudent"></select></label>
-        <p id="studentSaveState" role="status"></p>
+      <div class="dialog-head"><h2 id="studentDialogTitle">关联本条对话</h2></div>
+      <div class="settings">
+        <p class="section-note" id="studentDialogNote"></p>
+        <div class="field"><label for="dialogueStudent">学生</label><select id="dialogueStudent"></select></div>
+        <div class="save-state" id="studentSaveState" role="status"></div>
         <div class="dialog-actions">
           <button id="studentCancel" class="button" type="button">取消</button>
           <button class="button primary" type="submit">保存关联</button>
@@ -278,6 +288,9 @@
     const canManageRecords = window.TongyuBootstrap.user?.role === 'admin';
     const deleteButton = $('deleteConversation');
     const clearButton = $('clearDialogues');
+    const selectVisible = $('selectVisibleMessages');
+    const assignSelected = $('assignSelectedMessages');
+    const selectedMessages = new Set();
     deleteButton.hidden = clearButton.hidden = !canManageRecords;
     let deleting = false;
     let pollRevision = 0;
@@ -349,6 +362,13 @@
       const current = conversations.find(item => item.key === selectedSession);
       return (current?.messages || []).filter(matchesFilters).slice(-config.page_size);
     }
+    function updateStudentSelection(shown) {
+      $('studentSelection').hidden = !canManageRecords || !shown.length;
+      selectVisible.checked = shown.length > 0 && selectedMessages.size === shown.length;
+      selectVisible.indeterminate = selectedMessages.size > 0 && !selectVisible.checked;
+      assignSelected.disabled = !selectedMessages.size;
+      $('studentSelectionCount').textContent = `已选 ${selectedMessages.size} 条`;
+    }
     function attentionChip(level) {
       if (level === 'urgent') return ['优先查看', 'attention-urgent'];
       if (level === 'watch') return ['建议留意', 'attention-watch'];
@@ -389,6 +409,12 @@
     function render(force = false) {
       updateDeleteButtons();
       const shown = visibleRecords();
+      const visibleIds = new Set(shown.map(item => item.id));
+      for (const id of selectedMessages) {
+        if (!visibleIds.has(id)) selectedMessages.delete(id);
+      }
+      updateStudentSelection(shown);
+      const scrollTop = elements.list.scrollTop;
       const current = conversations.find(item => item.key === selectedSession);
       const signature = JSON.stringify([shown, current?.title, records.length, conversations.length, config, selectedSession, elements.device.value, elements.search.value]);
       if (!force && signature === renderedSignature) return;
@@ -421,8 +447,22 @@
           assign.type = 'button';
           assign.className = 'button';
           assign.textContent = item.family_student_id ? `已关联 ${item.family_student_id} · 修改` : '关联学生';
-          assign.addEventListener('click', () => openStudentDialog(item));
-          body.append(assign);
+          assign.addEventListener('click', () => openStudentDialog([item]));
+          const checkbox = document.createElement('input');
+          checkbox.type = 'checkbox';
+          checkbox.dataset.messageId = item.id;
+          checkbox.checked = selectedMessages.has(item.id);
+          checkbox.addEventListener('change', () => {
+            if (checkbox.checked) selectedMessages.add(item.id);
+            else selectedMessages.delete(item.id);
+            updateStudentSelection(shown);
+          });
+          const label = document.createElement('label');
+          label.append(checkbox, '选择此条');
+          const actions = document.createElement('div');
+          actions.className = 'message-actions';
+          actions.append(label, assign);
+          body.append(actions);
         }
         if (config.show_session_id) { const session = document.createElement('div'); session.className = 'session'; session.textContent = `会话 ${item.session_id || '未知'}`; body.append(session); }
         row.append(avatar, body); fragment.append(row);
@@ -433,7 +473,8 @@
       elements.empty.querySelector('strong').textContent = records.length ? '没有符合筛选条件的对话' : '暂无对话记录';
       elements.empty.querySelector('span').textContent = records.length ? '请调整搜索关键词或设备。' : '设备产生语音对话后，记录会显示在这里。';
       $('messageStats').textContent = `${records.length} 条记录 · ${conversations.length} 个会话`;
-      if (config.auto_scroll && shown.length) elements.list.scrollTop = elements.list.scrollHeight;
+      if (selectedMessages.size) elements.list.scrollTop = scrollTop;
+      else if (config.auto_scroll && shown.length) elements.list.scrollTop = elements.list.scrollHeight;
     }
     function applyConfig(next) {
       config = {...defaults, ...next}; document.title = `${config.title} · 童域智枢`; elements.title.textContent = config.title;
@@ -458,38 +499,74 @@
     const dialogueStudent = $('dialogueStudent');
     const studentSave = studentForm.querySelector('[type=submit]');
     const studentState = $('studentSaveState');
-    async function openStudentDialog(message) {
-      studentForm.dataset.messageId = message.id;
+    const studentCancel = $('studentCancel');
+    let studentMessageIds = null;
+
+    selectVisible.addEventListener('change', () => {
+      const shown = visibleRecords();
+      selectedMessages.clear();
+      if (selectVisible.checked) shown.forEach(item => selectedMessages.add(item.id));
+      for (const checkbox of elements.list.querySelectorAll('[data-message-id]')) {
+        checkbox.checked = selectedMessages.has(checkbox.dataset.messageId);
+      }
+      updateStudentSelection(shown);
+    });
+    assignSelected.addEventListener('click', () => {
+      const selected = visibleRecords().filter(item => selectedMessages.has(item.id));
+      if (selected.length) openStudentDialog(selected, true);
+    });
+    async function openStudentDialog(messages, batch = false) {
+      const ids = messages.map(item => item.id);
+      studentMessageIds = ids;
+      $('studentDialogTitle').textContent = batch ? `关联选中的 ${ids.length} 条对话` : '关联本条对话';
+      $('studentDialogNote').textContent = batch
+        ? '选中的记录将使用同一个学生，已有的关联也会更新。对应家长可按权限查看。'
+        : '请选择这条对话所属的孩子。开放对话权限后，对应家长可在日报中查看本条内容。';
       dialogueStudent.replaceChildren(new Option('不向家长分享', ''));
+      dialogueStudent.disabled = true;
       studentSave.disabled = true;
       studentState.textContent = '正在读取名单…';
       studentDialog.showModal();
       try {
         const data = await requestJson('/api/health/students');
-        if (!studentDialog.open || studentForm.dataset.messageId !== message.id) return;
+        if (!studentDialog.open || studentMessageIds !== ids) return;
         for (const student of data.students.filter(item => item.active !== false)) {
           dialogueStudent.add(new Option(window.TongyuStudentLabel(student), student.id));
         }
-        if (message.family_student_id) dialogueStudent.value = message.family_student_id;
-        studentState.textContent = '';
-        studentSave.disabled = false;
+        if (batch) dialogueStudent.selectedIndex = -1;
+        else if (messages[0].family_student_id) dialogueStudent.value = messages[0].family_student_id;
+        dialogueStudent.disabled = false;
+        studentSave.disabled = dialogueStudent.selectedIndex < 0;
+        studentState.textContent = batch ? '请选择要关联的学生，或选择不向家长分享。' : '';
       } catch (error) {
-        studentState.textContent = error.message;
+        if (studentDialog.open && studentMessageIds === ids) studentState.textContent = error.message;
       }
     }
-    $('studentCancel').addEventListener('click', () => studentDialog.close());
+    dialogueStudent.addEventListener('change', () => {
+      studentSave.disabled = dialogueStudent.selectedIndex < 0;
+      studentState.textContent = '';
+    });
+    studentCancel.addEventListener('click', () => studentDialog.close());
+    studentDialog.addEventListener('cancel', event => {
+      if (studentCancel.disabled) event.preventDefault();
+    });
     studentForm.addEventListener('submit', async event => {
       event.preventDefault();
-      studentSave.disabled = true;
+      if (studentSave.disabled) return;
+      const ids = studentMessageIds;
+      const target = ids.length === 1 ? {id: ids[0]} : {ids};
+      studentSave.disabled = studentCancel.disabled = dialogueStudent.disabled = true;
       try {
         await requestJson('/api/dialogue/student', {method: 'POST', headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({id: studentForm.dataset.messageId, student_id: dialogueStudent.value})});
+          body: JSON.stringify({...target, student_id: dialogueStudent.value})});
+        ids.forEach(id => selectedMessages.delete(id));
         studentDialog.close();
+        render(true);
         await poll();
       } catch (error) {
         studentState.textContent = error.message;
       } finally {
-        studentSave.disabled = false;
+        studentSave.disabled = studentCancel.disabled = dialogueStudent.disabled = false;
       }
     });
     async function loadConfig() { const data = await requestJson('/api/dialogue/config'); applyConfig(data.config); }

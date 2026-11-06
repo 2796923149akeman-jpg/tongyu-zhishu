@@ -579,6 +579,10 @@ offset=0
 
 `emotion.source` 可能为模型结合词库、纯词库或模型失败后的词库兜底。`attention` 取值为 `none`、`watch`、`urgent`，只表示文本线索的查看优先级。
 
+### `POST /api/dialogue/student`
+
+仅管理员可用，需通过来源及 CSRF 检查。传入 `{"id":"消息ID","student_id":"学生ID"}` 关联单条消息，或传入 `{"ids":["消息ID1","消息ID2"],"student_id":"学生ID"}` 批量关联到同一学生。页面的全选范围为当前会话中显示的消息。将 `student_id` 设为空字符串可解除关联。所有消息须存在才会保存，任意一条不存在时返回 `404`。成功返回 `{"ok":true}`。
+
 ### `POST /api/dialogue/delete`
 
 仅管理员可用，需通过来源及 CSRF 检查。传入 `{"ids":["消息ID"]}` 删除指定消息。页面使用当前会话完整分组中的消息 ID。传入 `{"scope":"all","confirm":true}` 清空对话和摘要。成功返回 `{"ok":true,"deleted":1}`，其中 `deleted` 是实际删除的消息数。

@@ -2252,23 +2252,29 @@ class Handler(BaseHTTPRequestHandler):
                     self.send_json(400, {"ok": False, "error": str(exc)})
                 return
             if path == "/api/dialogue/student":
-                message_id = item.get("id")
+                ids = item.get("ids", [item.get("id")])
                 student_id = item.get("student_id")
-                if not isinstance(message_id, str) or not isinstance(student_id, str):
+                if (
+                    ("id" in item and "ids" in item)
+                    or not isinstance(ids, list) or not 1 <= len(ids) <= DIALOGUE_LIMIT
+                    or any(not isinstance(message_id, str) or not message_id for message_id in ids)
+                    or not isinstance(student_id, str)
+                ):
                     self.send_json(400, {"ok": False, "error": "请选择消息与学生"})
                     return
+                message_ids = set(ids)
                 students = {student["id"]: student for student in health_student_snapshot() if student.get("active", True)}
                 if student_id and student_id not in students:
                     self.send_json(400, {"ok": False, "error": "学生不在当前名单"})
                     return
                 with MESSAGES_LOCK:
-                    if not any(message.get("id") == message_id for message in MESSAGES):
-                        self.send_json(404, {"ok": False, "error": "消息不存在"})
+                    if not message_ids.issubset(message.get("id") for message in MESSAGES):
+                        self.send_json(404, {"ok": False, "error": "部分或全部消息不存在，请刷新后重新选择"})
                         return
                     updated = [
                         {**message, "family_student_id": student_id, "student_id": student_id,
                          "class_id": students.get(student_id, {}).get("class_id", "")}
-                        if message.get("id") == message_id else message for message in MESSAGES
+                        if message.get("id") in message_ids else message for message in MESSAGES
                     ]
                     DATA.messages.save(updated)
                     MESSAGES.clear()
