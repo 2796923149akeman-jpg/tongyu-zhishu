@@ -120,6 +120,9 @@ class StartupTests(unittest.TestCase):
             accounts = runtime / 'auth.json'
             AccessStore(accounts).create_user('owner', 'owner-fixture', role='admin')
             events = runtime / 'events.json'
+            # File existence is not readiness: startup may persist an empty
+            # collection before the background monitor has polled the device.
+            events.write_text('[]', encoding='utf-8')
             environment = {
                 **os.environ, 'DASHBOARD_AUTH_FILE': str(accounts), 'PROJECT_ROOT': str(runtime),
                 'EVENTS_FILE': str(events), 'RDK_BASE': f'http://127.0.0.1:{rdk.server_port}',
@@ -140,12 +143,21 @@ class StartupTests(unittest.TestCase):
                     stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                 ) as process:
                     try:
-                        deadline = time.monotonic() + 6
-                        while not events.is_file() and process.poll() is None and time.monotonic() < deadline:
+                        deadline = time.monotonic() + 10
+                        recorded = []
+                        while process.poll() is None and time.monotonic() < deadline:
+                            try:
+                                recorded = json.loads(events.read_text(encoding='utf-8'))
+                            except (OSError, json.JSONDecodeError):
+                                # Windows replacement can briefly contend with a reader.
+                                recorded = []
+                            if any(event['event_type'] == 'environment' for event in recorded):
+                                break
                             time.sleep(.05)
-                        self.assertTrue(events.is_file(), 'Expected a background event without a browser request')
-                        recorded = json.loads(events.read_text(encoding='utf-8'))
-                        self.assertTrue(any(event['event_type'] == 'environment' for event in recorded))
+                        self.assertTrue(
+                            any(event['event_type'] == 'environment' for event in recorded),
+                            f'Background environment event not persisted; exit={process.poll()}, events={recorded}',
+                        )
                     finally:
                         process.terminate()
                         process.communicate(timeout=5)
