@@ -2,7 +2,7 @@
 
 [![Source, test and lint checks](https://github.com/2796923149akeman-jpg/tongyu-zhishu/actions/workflows/checks.yml/badge.svg?branch=main)](https://github.com/2796923149akeman-jpg/tongyu-zhishu/actions/workflows/checks.yml)
 
-[快速运行](#6-下载后快速运行) · [用户手册](docs/USER_GUIDE.md) · [架构与 UML](docs/ARCHITECTURE.md) · [质量检查与 CI 报告](docs/QUALITY.md) · [测试用例](docs/TEST_PLAN.md) · [分工与 KPI](docs/TEAM.md)
+[快速运行](#6-下载后快速运行) · [用户手册](docs/USER_GUIDE.md) · [架构与 UML](docs/ARCHITECTURE.md) · [质量检查与 CI 报告](docs/QUALITY.md) · [测试用例](docs/TEST_PLAN.md) · [分工与贡献记录](docs/TEAM.md)
 
 ## 1. 项目简介
 
@@ -49,7 +49,7 @@
 | 使用与部署 | [用户手册](docs/USER_GUIDE.md)、[部署说明](docs/DEPLOY.md)、[配置说明](docs/CONFIGURATION.md) |
 | 安全与供应链 | [信息安全设计](docs/SECURITY.md)、[开源供应链](docs/SUPPLY_CHAIN.md) |
 | 测试与实验 | [测试计划](docs/TEST_PLAN.md)、[实验与量化](docs/EXPERIMENTS.md)、[验证记录](docs/VALIDATION.md) |
-| 团队与协作 | [团队分工与 KPI](docs/TEAM.md)、[Git 工作流](docs/GIT_WORKFLOW.md)、[贡献指南](CONTRIBUTING.md)、[代码风格](docs/CODE_STYLE.md) |
+| 团队与协作 | [团队分工与贡献记录](docs/TEAM.md)、[Git 工作流](docs/GIT_WORKFLOW.md)、[贡献指南](CONTRIBUTING.md)、[代码风格](docs/CODE_STYLE.md) |
 | 答辩材料 | [42 秒模拟演示视频](https://github.com/2796923149akeman-jpg/tongyu-zhishu/releases/tag/course-demo)、[答辩交付与评分证据](docs/DEFENSE.md)、[演示脚本](docs/DEMO_SCRIPT.md)、[真实设备联调记录](docs/DEVICE_VALIDATION.md)、[开题对照](docs/PROPOSAL_REVIEW.md) |
 
 ## 3. 系统软件架构
