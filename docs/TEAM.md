@@ -1,14 +1,14 @@
 # 团队分工与工作量度量
 
-更新日期：2026-11-05
+更新日期：2026-11-11
 
 ## 1. 成员与模块
 
-| 姓名 | GitHub 账号 | 主要模块 | 说明 |
+| 姓名 | GitHub 账号 | 主要职责 | 代表交付与证据 |
 |---|---|---|---|
-| 靳能州 | `2796923149akeman-jpg` | 对话、小智后端集成、账号与部署 | [对话看板](https://github.com/2796923149akeman-jpg/tongyu-zhishu/commit/ee920dd)、[账号与启动](https://github.com/2796923149akeman-jpg/tongyu-zhishu/commit/3ada8b1) |
-| 郁继鑫 | `yanjuxia` | 监控、事件契约、实时红外与家长事件 | [事件契约 PR #7](https://github.com/2796923149akeman-jpg/tongyu-zhishu/pull/7)、[家长安全 PR #14](https://github.com/2796923149akeman-jpg/tongyu-zhishu/pull/14) |
-| 韩欣然 | `yanghesu99` | 测温和日报页面、环境告警、抓拍重试、工程规范 | [测温与日报 PR #2](https://github.com/2796923149akeman-jpg/tongyu-zhishu/pull/2)、[环境异常事件](https://github.com/2796923149akeman-jpg/tongyu-zhishu/commit/b566fb6)、[CI 与协作规范](https://github.com/2796923149akeman-jpg/tongyu-zhishu/commit/38bcf53) |
+| 靳能州 | `2796923149akeman-jpg` | 对话设计、小智后端集成、账号与部署、功能检查和合并 | [对话看板](https://github.com/2796923149akeman-jpg/tongyu-zhishu/commit/ee920dd)、[对话批量关联](https://github.com/2796923149akeman-jpg/tongyu-zhishu/pull/20)、[账号与启动](https://github.com/2796923149akeman-jpg/tongyu-zhishu/commit/3ada8b1)、[工程质量改进合并](https://github.com/2796923149akeman-jpg/tongyu-zhishu/pull/21) |
+| 郁继鑫 | `yanjuxia` | 监控、事件契约、实时红外、家长事件与权限测试 | [事件契约 PR #7](https://github.com/2796923149akeman-jpg/tongyu-zhishu/pull/7)、[家长安全 PR #14](https://github.com/2796923149akeman-jpg/tongyu-zhishu/pull/14) |
+| 韩欣然 | `yanghesu99` | 测温和日报页面、环境告警、模拟 RDK、抓拍重试、工程规范 | [测温与日报 PR #2](https://github.com/2796923149akeman-jpg/tongyu-zhishu/pull/2)、[环境异常事件](https://github.com/2796923149akeman-jpg/tongyu-zhishu/commit/b566fb6)、[CI 与协作规范](https://github.com/2796923149akeman-jpg/tongyu-zhishu/commit/38bcf53) |
 
 ## 2. 客观度量（`python scripts/team_metrics.py`）
 
@@ -26,20 +26,11 @@
 - 初始导入包含上游代码和基线资料，剔除该提交后仍保留后续对上游代码的实际修改。
 - 测试、设计、文档和联调以用例、图表、记录或评审证据补充，分开核对交付。
 
-## 3. 最终绩效分配（团队已确认）
+## 3. 贡献评价口径
 
-评分权重：功能与代码 50%、测试与质量 20%、文档与设计 20%、协作与评审 10%。
-
-| 姓名 | GitHub 账号 | 最终 KPI | 主要依据 |
-|---|---|---:|---|
-| 靳能州 | `2796923149akeman-jpg` | 40% | 语音、账号和启动集成，设备联调与部署工作 |
-| 郁继鑫 | `yanjuxia` | 35% | 监控与事件页、事件契约、家长权限、红外接口及关联测试 |
-| 韩欣然 | `yanghesu99` | 25% | 测温和日报页、环境告警、模拟 RDK、抓拍重试与工程规范 |
-
-**为什么这样分**：以提交数和目录分布为基础，结合模块复杂度（语音后端与设备联调、
-事件链路、权限与测试）调整；三人均在核心模块有可见提交，避免“只一人提交”的问题。
-
-最终分配于 2026-11-05 经团队确认，比例为 **40% / 35% / 25%**。
+三位成员采用相同的评价口径。按各自职责核对功能交付、测试与质量、文档与设计、协作与评审。
+用提交、PR、Issue、测试用例和联调记录佐证实际工作。提交数与变更行数用于描述可统计的代码变更，
+评估贡献时结合模块职责与交付成果。
 
 ## 4. 协作与评审证据
 
