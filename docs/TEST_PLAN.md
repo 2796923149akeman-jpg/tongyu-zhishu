@@ -1,6 +1,6 @@
 # 测试计划与用例
 
-更新日期：2026-11-05
+更新日期：2026-11-11
 
 ## 1. 测试策略
 
@@ -23,9 +23,10 @@
 .\.venv\Scripts\ruff.exe check dashboard scripts tests
 ```
 
-CI：`.github/workflows/checks.yml` 在 push/PR 时执行单元测试、仓库自检和 ruff。
+CI：`.github/workflows/checks.yml` 在 push/PR 或手动触发时执行测试、仓库自检和 Ruff。
+环境矩阵及报告下载方式见 [质量检查说明](QUALITY.md)。
 
-## 3. 用例分布（共 117 项）
+## 3. 用例分布（共 125 项；子测试不重复计数）
 
 | 测试文件 | 数量 | 覆盖内容 |
 |---|---|---|
@@ -36,7 +37,8 @@ CI：`.github/workflows/checks.yml` 在 push/PR 时执行单元测试、仓库�
 | `test_environment_events.py` | 4 | 离线、过期、eCO₂/TVOC、恢复与去重 |
 | `test_event_contract.py` | 9 | 字段校验、状态转换、证据 URL、日报映射 |
 | `test_events.py` | 13 | 创建/查询/去重、参与者、抓拍状态与重试、播报记录 |
-| `test_family_events.py` | 11 | 家长隔离、多人姓名过滤、截图越权、家长日报、商家字段 |
+| `test_family_events.py` | 15 | 家长隔离、截图越权、批量关联、非法参数、CSRF、同源与持久化 |
+| `test_json_storage.py` | 4 | 序列化/替换失败保留原文件、临时文件清理、Windows 占用重试及重试耗尽 |
 | `test_health_api.py` | 7 | 名单导入、登记、复测、查询、权限 |
 | `test_health_realtime.py` | 5 | 红外新鲜度、自动入库、去重、异常状态 |
 | `test_health_report.py` | 7 | 日报统计、跨日、班级筛选、导出数据 |
@@ -59,7 +61,7 @@ CI：`.github/workflows/checks.yml` 在 push/PR 时执行单元测试、仓库�
 
 ## 5. 验收命令与通过标准
 
-- 单元测试：`Ran 117 tests ... OK`；
+- 单元测试：`Ran 125 tests ... OK`（数量随功能变化，以当前运行结果为准）；
 - 仓库自检：`{"errors": 0}`；
 - ruff：`All checks passed!`；
 - 浏览器手工检查：见 `docs/VALIDATION.md` 与 `docs/MONITOR_EVENTS_UI.md`；

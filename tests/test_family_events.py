@@ -287,6 +287,57 @@ class FamilyEventApiTests(unittest.TestCase):
         self.assertEqual(self.request(path, admin, {**payload, "student_id": ""})[0], 200)
         self.assertEqual([message.get("family_student_id") for message in self.web.MESSAGES], ["", "", "S-0301"])
 
+    def prepare_dialogue_assignment(self):
+        self.web.MESSAGES.extend([{"id": "first", "role": "user", "text": "测试消息"}])
+        self.web.DATA.messages.save(list(self.web.MESSAGES))
+        self.web.AUTH.create_user("teacher", "teacher-password", role="admin")
+        return self.auth_headers("teacher", "teacher-password")
+
+    def test_batch_assignment_rejects_invalid_inputs_without_writing(self):
+        admin = self.prepare_dialogue_assignment()
+        before = self.web.DATA.messages.path.read_bytes()
+        self.web.HEALTH_STUDENTS[1]["active"] = False
+        invalid = [
+            {"ids": "first", "student_id": "S-0201"},
+            {"ids": [None], "student_id": "S-0201"},
+            {"ids": [""], "student_id": "S-0201"},
+            {"ids": ["first"] * (self.web.DIALOGUE_LIMIT + 1), "student_id": "S-0201"},
+            {"id": "first", "ids": ["first"], "student_id": "S-0201"},
+            {"ids": ["first"], "student_id": "unknown"},
+            {"ids": ["first"], "student_id": "S-0202"},
+            {"ids": ["first"], "student_id": None},
+        ]
+        for payload in invalid:
+            with self.subTest(payload=payload):
+                self.assertEqual(self.request("/api/dialogue/student", admin, payload)[0], 400)
+                self.assertEqual(self.web.DATA.messages.path.read_bytes(), before)
+                self.assertNotIn("student_id", self.web.MESSAGES[0])
+
+    def test_batch_assignment_requires_csrf_and_same_origin(self):
+        admin = self.prepare_dialogue_assignment()
+        before = self.web.DATA.messages.path.read_bytes()
+        payload = {"ids": ["first"], "student_id": "S-0201"}
+        for headers in (
+            {"Cookie": admin["Cookie"]},
+            {**admin, "X-CSRF-Token": "invalid"},
+            {**admin, "Origin": "https://untrusted.example"},
+        ):
+            with self.subTest(headers=headers):
+                self.assertEqual(self.request("/api/dialogue/student", headers, payload)[0], 403)
+                self.assertEqual(self.web.DATA.messages.path.read_bytes(), before)
+                self.assertNotIn("student_id", self.web.MESSAGES[0])
+
+    def test_single_assignment_and_batch_reassignment_persist(self):
+        admin = self.prepare_dialogue_assignment()
+        path = "/api/dialogue/student"
+        self.assertEqual(self.request(path, admin, {"id": "first", "student_id": "S-0201"})[0], 200)
+        self.assertEqual(self.request(path, admin, {"ids": ["first"], "student_id": "S-0301"})[0], 200)
+        saved = self.web.DATA.messages.load()
+        self.assertEqual(saved, list(self.web.MESSAGES))
+        self.assertEqual(saved[0]["student_id"], "S-0301")
+        self.assertEqual(saved[0]["family_student_id"], "S-0301")
+        self.assertEqual(saved[0]["class_id"], "C-11")
+
     def test_disabling_snapshots_revokes_direct_image_access(self):
         path = self.web.event_snapshot_path(self.fall["id"])
         path.parent.mkdir(parents=True)

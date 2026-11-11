@@ -1,5 +1,9 @@
 # 童域智枢：网页监控与语音交互软件
 
+[![Source, test and lint checks](https://github.com/2796923149akeman-jpg/tongyu-zhishu/actions/workflows/checks.yml/badge.svg?branch=main)](https://github.com/2796923149akeman-jpg/tongyu-zhishu/actions/workflows/checks.yml)
+
+[快速运行](#6-下载后快速运行) · [用户手册](docs/USER_GUIDE.md) · [架构与 UML](docs/ARCHITECTURE.md) · [质量检查与 CI 报告](docs/QUALITY.md) · [测试用例](docs/TEST_PLAN.md) · [分工与 KPI](docs/TEAM.md)
+
 ## 1. 项目简介
 
 本仓库是“童域智枢”项目的网页可视化与语音交互软件，负责监控信息展示、统一异常事件处置、对话与情绪分析、学生测温与当日日报、家长端安全事件查看，以及 RDK/STM32/ESP32 设备数据接口接入。设备通信与数据字段沿用团队先期联调确认过的接口，网页的信息架构、布局、样式和交互在本课程仓库中独立设计和实现。
