@@ -1,17 +1,37 @@
 name: Source, test and lint checks
-on: [push, pull_request]
+on: [push, pull_request, workflow_dispatch]
 permissions:
   contents: read
+concurrency:
+  group: checks-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   test:
-    runs-on: ubuntu-latest
+    name: Tests (${{ matrix.os }}, Python ${{ matrix.python }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            python: '3.10'
+          - os: windows-latest
+            python: '3.10'
+          - os: ubuntu-latest
+            python: '3.12'
+    defaults:
+      run:
+        shell: bash
+    env:
+      PYTHONUTF8: '1'
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.10'
+          python-version: ${{ matrix.python }}
           cache: pip
           cache-dependency-path: |
             dashboard/requirements.txt
@@ -19,11 +39,30 @@ jobs:
       - name: Install test dependencies
         run: |
           python -m pip install -r tests/requirements.txt
-          python -m pip install coverage
+          python -m pip install coverage==7.10.7
       - name: Run unit tests with coverage
         run: |
-          python -m coverage run --source=dashboard -m unittest discover -s tests -v
-          python -m coverage report
+          set -o pipefail
+          mkdir -p output/quality
+          python -m coverage run --source=dashboard -m unittest discover -s tests -v 2>&1 | tee output/quality/tests.log
+      - name: Export coverage reports
+        if: always()
+        run: |
+          mkdir -p output/quality
+          python -m coverage report > output/quality/coverage.txt
+          python -m coverage xml -o output/quality/coverage.xml
+          python -m coverage html -d output/quality/html
+          cat output/quality/coverage.txt >> "$GITHUB_STEP_SUMMARY"
+      - name: Enforce coverage floor
+        run: python -m coverage report --fail-under=80
+      - name: Upload test evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: quality-${{ matrix.os }}-py${{ matrix.python }}
+          path: output/quality/
+          if-no-files-found: warn
+          retention-days: 14
       - name: Verify repository contents
         run: python scripts/verify_repository.py
 
@@ -48,6 +87,7 @@ jobs:
 
   lint:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
